@@ -63,6 +63,7 @@ class Encoder(nn.Module):
         super().__init__()
 
         n_position = len_max_seq + 1
+        self.dropout_emb = nn.Dropout(dropout)
 
         self.src_word_emb = nn.Embedding(
             n_src_vocab, d_word_vec, padding_idx=Constants.PAD)
@@ -84,6 +85,7 @@ class Encoder(nn.Module):
 
         # -- Forward
         enc_output = self.src_word_emb(src_seq) + self.position_enc(src_pos)
+        enc_output = self.dropout_emb(enc_output)
         
         non_pad_mask = get_non_pad_mask(src_seq, dtype=enc_output.dtype)
 
