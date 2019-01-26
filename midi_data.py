@@ -89,7 +89,7 @@ def transpose_midi2c(file, score=None, out_file=None, overwrite=False, conversio
         score = music21.converter.parse(file)
     if halfsteps is None:
         key = score.analyze('key')
-        halfsteps = keyc_offset(key)
+        halfsteps = keyc_offset(key.tonic.name, key.mode)
 
     if conversion_type=='RAW':
         transpose_raw_midi(file, out_file, offset=halfsteps)
@@ -104,7 +104,7 @@ def transpose_midi2c(file, score=None, out_file=None, overwrite=False, conversio
 
 # converting everything into the key of C major or A minor
 # https://gist.github.com/aldous-rey/68c6c43450517aa47474
-majors = {
+major2offset = {
     'G-': 6,'F#': 6,
     'G':  5,
     'A-': 4,'G#': 4,
@@ -116,34 +116,19 @@ majors = {
     'D': -2,
     'E-':-3,'D#':-3,
     'E': -4,
-    'F': -5,
+    'F': -5,'E#':-5,
 }
-mode = ['C','D','E','F','G','A','B']
-mode = {
-    'major':     'C',
-    'dorian':    'D',
-    'phrygian':  'E',
-    'lydian':    'F',
-    'mixolydian':'G',
-    'aeolian':   'A',
-    'minor':     'A',
-    'locrian':   'B'
-}
-minors = {
-    'A-': 1,'G#': 1,
-    'A':  0,
-    'B-':-1,
-    'B': -2,
-    'C': -3,
-    'D-':-4,'C#':-4,
-    'D': -5,
-    'E-': 6,'D#': 6,
-    'E':  5,
-    'F':  4,
-    'G-': 3,'F#': 3,
-    'G':  2
-}
+mode_key = ['C','D','E','F','G','A','B','C','A']
+mode_name = ['ionian','dorian','phyrgian','lydian','mixolydian','aeolian','locrian','major','minor']
+name_mode = {i[0]:i[1] for i in zip(mode_name, mode_key)}
+num_mode = {str(idx+1):key for idx,key in enumerate(mode_key[:-2])}
+mode2key = {**name_mode, **num_mode}
 
-def keyc_offset(key):
-    if key.mode == "major":   return majors[key.tonic.name]
-    elif key.mode == "minor": return minors[key.tonic.name]
+def keyc_offset(key, mode):
+    if len(key) == 2 and key[-1] == 'b': key = key.replace('b', '-')
+    mode_basekey = mode2key[str(mode).lower()] # find mode relative to C major - minor:A,dorian:D
+    mode_offset = major2offset[mode_basekey] # get mode offset from C major
+    key_offset = major2offset[key] # key offset when in major mode
+    transpose_offset = key_offset - mode_offset # actual transpose offset
+    if transpose_offset <= -6: transpose_offset = transpose_offset + 12
+    return transpose_offset
