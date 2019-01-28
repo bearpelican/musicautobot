@@ -1,3 +1,5 @@
+# Functions for manipulating midi data/files
+
 from pathlib import Path
 import music21
 import json
