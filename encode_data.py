@@ -65,7 +65,8 @@ class NoteEnc():
         return kname+tname
     
     def ival(self): # instrument number value
-        return int(self.inst or 0)
+        if self.inst is None: return 0
+        return int(self.inst)
     
     def m21_note(self):
         return music21.note.Note(self.note)
