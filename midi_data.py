@@ -36,8 +36,7 @@ except Exception as e:
     print('Failed to load FluidSynth. Must install if you want to convert to wav files.')
 
 def midi2wav(midi_file, wav_file=None):
-    if wav_file is None:
-        unique_filename = f'/tmp/{str(uuid.uuid4())}.wav'
+    if wav_file is None: wav_file = f'/tmp/{str(uuid.uuid4())}.wav'
     fluidsynth_player.midi_to_audio(str(midi_file), wav_file)
     return wav_file
 
@@ -71,12 +70,15 @@ def _transpose_raw_midi(mf, offset):
 
 def file2stream(fp, use_parser=True):
     if use_parser: return music21.converter.parse(fp)
+    mf = file2mf(fp)
+    return music21.midi.translate.midiFileToStream(mf)
+
+def file2mf(fp):
     mf = music21.midi.MidiFile()
     mf.open(fp)
     mf.read()
     mf.close()
-    return music21.midi.translate.midiFileToStream(mf)
-
+    return mf
 
 def transpose_midi2c(file, score=None, out_file=None, overwrite=False, conversion_type='RAW', halfsteps=None):
     if out_file.exists() and not overwrite: 

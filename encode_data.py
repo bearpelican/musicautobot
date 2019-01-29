@@ -82,6 +82,13 @@ class NoteEnc():
         return NoteEnc(note=note, tie=tie, inst=kv.get(IPRE))
 
 ##### ENCODING ######
+
+def midi2seq(midi_file):
+    "Converts midi file to string representation for language model"
+    stream = file2stream(midi_file) # 1.
+    s_arr = stream2chordarr(stream) # 2.
+    return chordarr2seq(s_arr) # 3.
+
 # master encoder
 def midi2str(midi_file):
     "Converts midi file to string representation for language model"
@@ -139,14 +146,16 @@ def timestep2seq(timestep):
     return sorted_keys
 
 # 4.
-def seq2str(seq):
+def seq2str(seq, note_func=None, measure_sep=True):
+    "Note function returns a list of note components for spearation"
     result = []
+    if note_func is None:
+        note_func = lambda n: n.long_comp()
     for idx,timestep in enumerate(seq):
-        if idx and idx%4 == 0:
-            result.append(MEND)
-        if idx and idx < len(seq)-1:
-            result.append(MSTART)
-        flat_time = [i for n in timestep for i in n.long_comp()]
+        if measure_sep:
+            if idx and idx%4 == 0: result.append(MEND)
+            if idx and idx < len(seq)-1: result.append(MSTART)
+        flat_time = [i for n in timestep for i in note_func(n)]
         result.extend(flat_time)
         result.append(TSEP)
     return ' '.join(result)

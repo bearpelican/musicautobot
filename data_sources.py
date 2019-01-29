@@ -8,6 +8,27 @@ from fastprogress.fastprogress import master_bar, progress_bar
 import json
 import music21
 
+def get_music21_attr(fp, transpose=True, offset=None):
+    try:
+        stream = music21.converter.parse(fp)
+    except Exception as e:
+        print('Could not parse stream', fp, e)
+#         traceback.print_exc()
+        return {}
+    stream_attr = get_stream_attr(stream)
+    if transpose:
+        out_file = Path(str(fp).replace('/midi/midi_sources/', '/midi/transposed/'))
+        transposed_file = transpose_midi2c(fp, stream, out_file=out_file, halfsteps=offset)
+        transposed_stream = music21.converter.parse(fp)
+        t_key = transposed_stream.flat.analyze('key')
+        transposed_attr = {
+            'inferred_keyc': f'{t_key.tonic.name} {t_key.mode}',
+            'midi_keyc': str(transposed_file),
+        }
+        stream_attr = {**stream_attr, **transposed_attr}
+    return stream_attr
+
+
 def get_stream_attr(s):
     "Pull stream metadata from midi file"
     instruments = [i.instrumentName for i in list(s.getInstruments(recurse=True)) if i.instrumentName]
@@ -24,12 +45,13 @@ def get_stream_attr(s):
         'time_signature': time_sig,
     }
 
-def process_parallel(func, arr, max_workers=None):
+def process_parallel(func, arr, total=None, max_workers=None):
     "Process array in parallel"
+    if total is None: total = len(arr)
     results = {}
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
         futures = [ex.submit(func,o) for i,o in enumerate(arr)]
-        for f in progress_bar(concurrent.futures.as_completed(futures), total=len(arr)):
+        for f in progress_bar(concurrent.futures.as_completed(futures), total=total):
             k,v = f.result()
             results[k] = v
     return results
