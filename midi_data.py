@@ -79,7 +79,6 @@ def file2stream(fp, use_parser=True):
 
 
 def transpose_midi2c(file, score=None, out_file=None, overwrite=False, conversion_type='RAW', halfsteps=None):
-    if out_file is None: out_file = Path(str(file).replace('/midi/original/', '/midi/transposed/'))
     if out_file.exists() and not overwrite: 
 #         print('Transposed file exists. Skipping: ', out_file)
         return out_file
