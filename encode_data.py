@@ -163,15 +163,15 @@ def trim_seq_rests(seq):
     start_idx = 0
     for idx,t in enumerate(seq):
         if len(t) != 0: break
-        start_idx = idx
+        start_idx = idx+1
         
-    end_idx = len(seq)
+    end_idx = 0
     for idx,t in enumerate(reversed(seq)):
         if len(t) != 0: break
-        end_idx = idx
+        end_idx = idx+1
     start_idx = start_idx - start_idx % 4
     end_idx = end_idx - end_idx % 4
-#     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(seq)-end_idx)
+#     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(seq)-end_idx, end_idx)
     return seq[start_idx:(len(seq)-end_idx)]
 
 def remove_seq_rests(seq, max_rests=16):
