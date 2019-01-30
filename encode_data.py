@@ -151,9 +151,9 @@ def seq2str(seq, note_func=None, separate_measures=True):
     result = []
     if note_func is None: note_func = lambda n: n.long_comp()
     for idx,timestep in enumerate(seq):
-        if separate_measures:
-            if idx and idx%4 == 0: result.append(MEND)
-            if idx and idx < len(seq)-1: result.append(MSTART)
+        if separate_measures and idx and idx%4 == 0:
+            result.append(MEND)
+            if idx < len(seq)-1: result.append(MSTART)
         flat_time = [i for n in timestep for i in note_func(n)]
         result.extend(flat_time)
         result.append(TSEP)
