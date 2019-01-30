@@ -1,33 +1,12 @@
 import csv
 import pandas as pd
 from fastai.data_block import get_files
-from midi_data import save_json, load_json
+from midi_data import save_json, load_json, keyc_offset
 import concurrent
 from concurrent.futures import ProcessPoolExecutor
 from fastprogress.fastprogress import master_bar, progress_bar
 import json
 import music21
-
-def get_music21_attr(fp, transpose=True, offset=None):
-    try:
-        stream = music21.converter.parse(fp)
-    except Exception as e:
-        print('Could not parse stream', fp, e)
-#         traceback.print_exc()
-        return {}
-    stream_attr = get_stream_attr(stream)
-    if transpose:
-        out_file = Path(str(fp).replace('/midi/midi_sources/', '/midi/transposed/'))
-        transposed_file = transpose_midi2c(fp, stream, out_file=out_file, halfsteps=offset)
-        transposed_stream = music21.converter.parse(fp)
-        t_key = transposed_stream.flat.analyze('key')
-        transposed_attr = {
-            'inferred_keyc': f'{t_key.tonic.name} {t_key.mode}',
-            'midi_keyc': str(transposed_file),
-        }
-        stream_attr = {**stream_attr, **transposed_attr}
-    return stream_attr
-
 
 def get_stream_attr(s):
     "Pull stream metadata from midi file"
@@ -37,12 +16,14 @@ def get_stream_attr(s):
     s_flat = s.flat
     key = s_flat.analyze('key')
     time_sig = s_flat.timeSignature.ratioString if hasattr(s_flat.timeSignature, 'ratioString') else None
+    offset = keyc_offset(key.tonic.name, key.mode)
     return {
         'instruments': instruments,
         'bpm': bpm,
         'inferred_key': f'{key.tonic.name} {key.mode}',
         'seconds': s_flat.seconds,
         'time_signature': time_sig,
+        'inferred_offset': offset
     }
 
 def process_parallel(func, arr, total=None, max_workers=None):
@@ -52,7 +33,7 @@ def process_parallel(func, arr, total=None, max_workers=None):
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
         futures = [ex.submit(func,o) for i,o in enumerate(arr)]
         for f in progress_bar(concurrent.futures.as_completed(futures), total=total):
-            k,v = f.result()
+            k,v = f.result(timeout=60)
             results[k] = v
     return results
 
@@ -60,9 +41,10 @@ def parse_songs(data):
     "Extract stream attributes"
     fp = data.get('file_path')
     metadata = data.get('metadata', {})
-    offset = data.get('offset', None)
     attr = {}
-    try: attr = get_music21_attr(fp, offset=offset)
+    try: 
+        stream = music21.converter.parse(fp)
+        attr = get_stream_attr(stream)
     except Exception as e: print('Midi Exeption:', fp, e)
     return str(fp), {**metadata, **attr}
 
