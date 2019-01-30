@@ -1,5 +1,6 @@
 from enum import Enum
 import music21
+from midi_data import file2mf
 
 class Track(Enum):
     INFO = 0
@@ -16,13 +17,19 @@ type2inst = {
     Track.PIANO: 0 # Piano
 }
 
-INFO_TYPES = set(['TIME_SIGNATURE', 'KEY_SIGNATURE', 'SET_TEMPO'])
+INFO_TYPES = set(['TIME_SIGNATURE'])
+# INFO_TYPES = set(['TIME_SIGNATURE', 'KEY_SIGNATURE', 'SET_TEMPO'])
 
-def transform_midi(midi_file, out_file, cutoff=6, offset=None):
+def transform_midi(midi_file, out_file, cutoff=6, transpose=True, offset=None):
     music_file = compress_midi_file(midi_file, cutoff=cutoff) # remove non note tracks and standardize instruments
-    music_file = transpose_midi_file(music_file, offset) # transpose to keyc
+    if music_file is None: return
+    if offset is not None: music_file = transpose_midi_file(music_file, offset) # transpose to keyc if offset passed
     s_out = music21.midi.translate.midiFileToStream(music_file) # create music21 stream
     s_comb = music21.instrument.partitionByInstrument(s_out) # combine same track instruments to single part
+    if transpose and offset is None: 
+        key = s_comb.analyze('key')
+        halfsteps = keyc_offset(key.tonic.name, key.mode)
+        s_comb = s_comb.transpose(halfSteps)
     return s_comb.write('midi', fp=out_file)
 
 def compress_midi_file(fp, cutoff=6, unsup_types=set([Track.UNDEF, Track.PERC])):
@@ -35,6 +42,7 @@ def compress_midi_file(fp, cutoff=6, unsup_types=set([Track.UNDEF, Track.PERC]))
         if track_type in type2inst:
             change_track_instrument(t, type2inst[track_type])
         supported_tracks.append(t)
+    if not supported_tracks: return None
     music_file.tracks = supported_tracks
     return music_file
 
@@ -74,9 +82,10 @@ def has_event_type(t, etypes):
     return False
 
 def is_info_track(t, idx):
+    if t.hasNotes(): return False
     is_ch0 = idx == 0
     is_info = has_event_type(t, INFO_TYPES)
-    if is_info and t.hasNotes(): raise Exception('Error: found track with notes and track info')
+#     if is_info and t.hasNotes(): raise Exception('Error: found track with notes and track info')
     if is_ch0 ^ is_info: raise Exception('Error: info channel is not channel 0')
     return is_info
 
@@ -85,6 +94,7 @@ def is_melody(t, fp=''):
     # special case for hooktheory
     if 'hooktheory' in str(fp):
         if is_channel(t, 1): return True
+        if is_channel(t, 0): return True
         return False
     if has_event_type(t, ['LYRIC']): return True # lyrics associated with vocals
     if is_channel(t, 1): return True # (AS) WARNING - assuming first track is always the melody track
