@@ -146,13 +146,12 @@ def timestep2seq(timestep):
     return sorted_keys
 
 # 4.
-def seq2str(seq, note_func=None, measure_sep=True):
+def seq2str(seq, note_func=None, separate_measures=True):
     "Note function returns a list of note components for spearation"
     result = []
-    if note_func is None:
-        note_func = lambda n: n.long_comp()
+    if note_func is None: note_func = lambda n: n.long_comp()
     for idx,timestep in enumerate(seq):
-        if measure_sep:
+        if separate_measures:
             if idx and idx%4 == 0: result.append(MEND)
             if idx and idx < len(seq)-1: result.append(MSTART)
         flat_time = [i for n in timestep for i in note_func(n)]
@@ -160,7 +159,36 @@ def seq2str(seq, note_func=None, measure_sep=True):
         result.append(TSEP)
     return ' '.join(result)
         
+def trim_seq_rests(seq):
+    start_idx = 0
+    for idx,t in enumerate(seq):
+        if len(t) != 0: break
+        start_idx = idx
         
+    end_idx = len(seq)
+    for idx,t in enumerate(reversed(seq)):
+        if len(t) != 0: break
+        end_idx = idx
+    start_idx = start_idx - start_idx % 4
+    end_idx = end_idx - end_idx % 4
+#     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(seq)-end_idx)
+    return seq[start_idx:(len(seq)-end_idx)]
+
+def remove_seq_rests(seq, max_rests=16):
+    rest_count = 0
+    result = []
+    for timestep in seq:
+        if len(timestep) == 0: 
+            rest_count += 1
+        else:
+            if rest_count > max_rests:
+                print('Compressing rests:', rest_count)
+                rest_count = (rest_count - max_rests) % 4
+                for i in range(rest_count): result.append([])
+            rest_count = 0
+            result.append(timestep)
+    return result
+
     
     
 ##### DECODING #####
