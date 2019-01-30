@@ -181,10 +181,10 @@ def remove_seq_rests(seq, max_rests=16):
         if len(timestep) == 0: 
             rest_count += 1
         else:
-            if rest_count > max_rests:
-                print('Compressing rests:', rest_count)
-                rest_count = (rest_count - max_rests) % 4
-                for i in range(rest_count): result.append([])
+            if rest_count > max_rests+4:
+                new_count = rest_count % 4 + max_rests
+                print(f'Compressing rests: {rest_count} -> {new_count}')
+                for i in range(new_count): result.append([])
             rest_count = 0
             result.append(timestep)
     return result
