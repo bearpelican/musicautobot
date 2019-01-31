@@ -45,7 +45,8 @@ class NoteEnc():
     # tie = note start/continue, note = midi value, inst = instrument
     def __init__(self, note, tie, inst=None):
         assert(tie > 0)
-        self.note,self.tie,self.inst = note,int(tie),str(inst)
+        self.note,self.tie,self.inst = note,int(tie),inst
+        if self.inst is not None: self.inst = str(self.inst)
         self.pitch = music21.pitch.Pitch(self.note)
         
     def long_comp(self):
