@@ -52,7 +52,9 @@ class OpenAIGPTConfig(object):
                  resid_pdrop=0.1,
                  embd_pdrop=0.1,
                  attn_pdrop=0.1,
-                 initializer_range=0.02):
+                 initializer_range=0.02,
+                 separate_embed=False
+                ):
         """Constructs OpenAIGPTConfig.
 
         Args:
@@ -90,6 +92,7 @@ class OpenAIGPTConfig(object):
             self.embd_pdrop = embd_pdrop
             self.attn_pdrop = attn_pdrop
             self.initializer_range = initializer_range
+            self.separate_embed = separate_embed
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
                              "or the path to a pretrained model config file (str)")
@@ -484,9 +487,12 @@ class OpenAIGPTModel(OpenAIGPTPreTrainedModel):
     def __init__(self, config):
         super(OpenAIGPTModel, self).__init__(config)
         total_embeddings_size = config.vocab_size + config.n_special + config.n_ctx
-        self.embed = nn.Embedding(total_embeddings_size, config.n_embd)
-#         self.embed = nn.Embedding(config.vocab_size + config.n_special, config.n_embd)
-#         self.embed_pos = nn.Embedding(config.n_ctx, config.n_embd)
+        if config.separate_embed:
+            self.embed = nn.Embedding(config.vocab_size + config.n_special, config.n_embd)
+            self.embed_pos = nn.Embedding(config.n_ctx, config.n_embd)
+        else:
+            self.embed = nn.Embedding(total_embeddings_size, config.n_embd)
+            self.embed_pos = self.embed
         self.drop = nn.Dropout(config.embd_pdrop)
         block = Block(config.n_ctx, config, scale=True)
         self.h = nn.ModuleList([copy.deepcopy(block) for _ in range(config.n_layer)])
@@ -509,7 +515,7 @@ class OpenAIGPTModel(OpenAIGPTPreTrainedModel):
 
     def forward(self, input_ids, position_ids=None, token_type_ids=None):
         if position_ids is None:
-            start = self.config.vocab_size + self.config.n_special
+            start = 0 if self.config.separate_embed else self.config.vocab_size + self.config.n_special
             end = start + input_ids.size(-1)
             position_ids = torch.arange(start, end, dtype=torch.long, device=input_ids.device)
             position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
@@ -519,7 +525,7 @@ class OpenAIGPTModel(OpenAIGPTPreTrainedModel):
         position_ids = position_ids.view(-1, position_ids.size(-1))
 
         inputs_embeds = self.embed(input_ids)
-        position_embeds = self.embed(position_ids)
+        position_embeds = self.embed_pos(position_ids)
         if token_type_ids is not None:
             token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1))
             token_type_embeds = self.embed(token_type_ids)
