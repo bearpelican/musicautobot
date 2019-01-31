@@ -5,7 +5,7 @@ import gpt
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='data/midi_transcribe_v1_simple/')
+parser.add_argument('--path', type=str, default='data/midi/midi_transcribe_v1_simple/')
 parser.add_argument('--cache', type=str, default='tmp_clc')
 parser.add_argument("--local_rank", type=int)
 parser.add_argument("--batch_size", type=int, default=8)
@@ -16,7 +16,10 @@ parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 args = parser.parse_args()
 
-
+if args.local_rank != 0:
+    f = open('/dev/null', 'w')
+    sys.stdout = f
+    
 torch.cuda.set_device(args.local_rank)
 torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
