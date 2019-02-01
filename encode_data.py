@@ -87,7 +87,7 @@ class NoteEnc():
 def midi2seq(midi_file, encode_duration=False):
     "Converts midi file to string representation for language model"
     stream = file2stream(midi_file) # 1.
-    s_arr = stream2chordarr(stream) # 2.
+    s_arr = stream2chordarr(stream, encode_duration=encode_duration) # 2.
     return chordarr2seq(s_arr) # 3.
 
 # master encoder
@@ -96,12 +96,12 @@ def midi2str(midi_file, encode_duration=False, note_func=None):
 #     stream = file2stream(midi_file) # 1.
 #     s_arr = stream2chordarr(stream, encode_duration) # 2.
 #     seq = chordarr2seq(s_arr) # 3.
-    seq = midi2seq(midi_file, encode_duration)
+    seq = midi2seq(midi_file, encode_duration=encode_duration)
     if encode_duration: return seq2str_duration(seq, note_func=note_func)
     return seq2str(seq, note_func=note_func) # 4.
 
 # 2.
-def stream2chordarr(s, note_range=127, sample_freq=4, encode_duration):
+def stream2chordarr(s, note_range=127, sample_freq=4, encode_duration=False):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
