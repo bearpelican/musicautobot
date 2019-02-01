@@ -160,8 +160,10 @@ def stream2chordarr(s, note_range=127, sample_freq=4):
         score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
     return score_arr
 
+def compress_chordarr(arr):
+    return _shorten_chordarr_rests(_trim_chordarr_rests(chordarr))
 
-def trim_chordarr_rests(arr, max_rests=16):
+def _trim_chordarr_rests(arr, max_rests=16):
     start_idx = 0
     for idx,t in enumerate(arr):
         if t.sum() != 0: break
@@ -176,7 +178,7 @@ def trim_chordarr_rests(arr, max_rests=16):
 #     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(arr)-end_idx, end_idx)
     return arr[start_idx:(len(arr)-end_idx)]
 
-def remove_chordarr_rests(arr, max_rests=32):
+def _shorten_chordarr_rests(arr, max_rests=32):
     rest_count = 0
     result = []
     for timestep in arr:
@@ -242,7 +244,7 @@ def seq2str_duration(seq, note_func=None):
 # 
 def str2stream(seq_str):
     seq = str2seq(seq_str)
-    arr = seq2numpy(seq)
+    arr = seq2chordarr(seq)
     return chordarr2stream(arr)
 
 # 1.
@@ -274,7 +276,7 @@ def steps2chordarr(tarr):
     return notes
 
 # 2.
-def seq2numpy(seq, note_range=127):
+def seq2chordarr(seq, note_range=127):
     num_instruments = max([n.ival() for t in seq for n in t]) + 1
     score_arr = np.zeros((len(seq), num_instruments, note_range))
     for idx,ts in enumerate(seq):
@@ -299,7 +301,7 @@ def partarr2stream(part, duration, stream=None):
     stream.append(music21.meter.TimeSignature(TIMESIG))
     stream.append(music21.tempo.MetronomeMark(number=120))
     stream.append(music21.key.KeySignature(0))
-    if part.sum() > 0: part_append_duration_notes(part, duration, stream) # notes already have duration calcualted
+    if np.any(part > 0): part_append_duration_notes(part, duration, stream) # notes already have duration calcualted
     else: part_append_continuous_notes(part, duration, stream) # notes are either start or continued 
 
     return stream
@@ -309,7 +311,7 @@ def part_append_continuous_notes(part, duration, stream):
     starts = part == VALTSTART
     durations = calc_note_durations(part)
     for tidx,t in enumerate(starts):
-        note_idxs = t.nonzero()[0]
+        note_idxs = np.where(t < 0)[0]
         if len(note_idxs) == 0: continue
         notes = []
         for nidx in note_idxs:
@@ -332,7 +334,7 @@ def calc_note_durations(part):
 def part_append_duration_notes(part, duration, stream=None):
     "convert instrument part to music21 chords"
     for tidx,t in enumerate(part):
-        note_idxs = t.nonzero()[0]
+        note_idxs = np.where(t > 0)[0] # filter out any negative values (continuous mode)
         if len(note_idxs) == 0: continue
         notes = []
         for nidx in note_idxs:
