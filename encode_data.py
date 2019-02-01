@@ -47,18 +47,44 @@ class NoteEnc():
         assert(dur != 0)
         self.note,self.dur,self.inst = note,int(dur),inst
         if self.inst is not None: self.inst = str(self.inst)
-        self.pitch = music21.pitch.Pitch(self.note)
-        
-    def long_comp(self):
+            
+    @property
+    def pitch(self):
+        return music21.pitch.Pitch(self.note)
+    
+    # binary format is -1 for note strike, -2 for note continued
+    def long_bin(self):
         nname = NPRE + self.pitch.name
         oname = OPRE + str(self.pitch.octave)
-        tname = f'{TPRE}{self.dur}' # ts=note start, tc=note continue
+        dur = self.dur if self.dur == VALTCONT else VALTSTART
+        tname = f'{TPRE}{dur}' # ts=note start, tc=note continue
         iname = IPRE+self.inst
         return [nname,oname,tname,iname]
+    
+    def short_bin(self):
+        nname = NPRE + note.pitch.nameWithOctave
+        dur = self.dur if self.dur == VALTCONT else VALTSTART
+        tname = f'{TPRE}{self.dur}'
+        return [nname,tname]
         
-    def long_repr(self):
-        # returns something like 'nG:o2:ts:i1'
-        return NOTE_SEP.join(self.long_comp())
+    # duration format is tX for note duration, Return nothing if continued note
+    def long_dur(self):
+        if self.dur == VALTCONT: return []
+        nname = NPRE + self.pitch.name
+        oname = OPRE + str(self.pitch.octave)
+        tname = f'{TPRE}{self.dur}'
+        iname = IPRE+self.inst
+        return [nname,oname,tname,iname]
+    
+    def short_dur(self):
+        if self.dur == VALTCONT: return []
+        nname = NPRE + note.pitch.nameWithOctave
+        tname = f'{TPRE}{self.dur}'
+        return [nname,tname]
+    
+#     def joined_repr(self):
+#         # returns something like 'nG:o2:ts:i1'
+#         return NOTE_SEP.join(self.long_comp())
     
     def __repr__(self):
         kname = self.pitch.nameWithOctave
@@ -87,7 +113,7 @@ class NoteEnc():
 def midi2seq(midi_file, encode_duration=False):
     "Converts midi file to string representation for language model"
     stream = file2stream(midi_file) # 1.
-    s_arr = stream2chordarr(stream, encode_duration=encode_duration) # 2.
+    s_arr = stream2chordarr(stream) # 2.
     return chordarr2seq(s_arr) # 3.
 
 # master encoder
@@ -96,17 +122,17 @@ def midi2str(midi_file, encode_duration=False, note_func=None):
 #     stream = file2stream(midi_file) # 1.
 #     s_arr = stream2chordarr(stream, encode_duration) # 2.
 #     seq = chordarr2seq(s_arr) # 3.
-    seq = midi2seq(midi_file, encode_duration=encode_duration)
+    seq = midi2seq(midi_file)
     if encode_duration: return seq2str_duration(seq, note_func=note_func)
     return seq2str(seq, note_func=note_func) # 4.
 
 # 2.
-def stream2chordarr(s, note_range=127, sample_freq=4, encode_duration=False):
+def stream2chordarr(s, note_range=127, sample_freq=4):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
     # FYI: midi middle C value=60
-    maxTimeStep = int(s.duration.quarterLength * sample_freq)+1
+    maxTimeStep = int(s.flat.duration.quarterLength * sample_freq)+1
     
     # (AS) TODO: need to order by instruments most played and filter out percussion or include the channel
     inst2idx = {inst.id:idx for idx,inst in enumerate(s.flat.getInstruments())}
@@ -132,15 +158,12 @@ def stream2chordarr(s, note_range=127, sample_freq=4, encode_duration=False):
     for n in notes:
         if n is None: continue
         pitch,offset,duration,inst = n
-        if encode_duration: # duration encoding
-            score_arr[offset, inst, pitch] = duration
-        else: # binary note encoding
-            score_arr[offset, inst, pitch] = VALTSTART                 # Strike note
-            score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
+        score_arr[offset, inst, pitch] = duration
+        score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
     return score_arr
 
 
-def trim_chordarr_rests(arr):
+def trim_chordarr_rests(arr, max_rests=16):
     start_idx = 0
     for idx,t in enumerate(arr):
         if t.sum() != 0: break
@@ -150,12 +173,12 @@ def trim_chordarr_rests(arr):
     for idx,t in enumerate(reversed(arr)):
         if t.sum() != 0: break
         end_idx = idx+1
-    start_idx = start_idx - start_idx % 4
-    end_idx = end_idx - end_idx % 4
-    if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(arr)-end_idx, end_idx)
+    start_idx = start_idx - start_idx % max_rests
+    end_idx = end_idx - end_idx % max_rests
+#     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(arr)-end_idx, end_idx)
     return arr[start_idx:(len(arr)-end_idx)]
 
-def remove_chordarr_rests(arr, max_rests=16):
+def remove_chordarr_rests(arr, max_rests=32):
     rest_count = 0
     result = []
     for timestep in arr:
@@ -188,7 +211,7 @@ def timestep2seq(timestep):
 def seq2str(seq, note_func=None, separate_measures=True):
     "Note function returns a list of note components for spearation"
     result = []
-    if note_func is None: note_func = lambda n: n.long_comp()
+    if note_func is None: note_func = lambda n: n.long_bin()
     for idx,timestep in enumerate(seq):
         if separate_measures and idx and idx%4 == 0:
             result.append(MEND)
@@ -202,7 +225,7 @@ def seq2str(seq, note_func=None, separate_measures=True):
 def seq2str_duration(seq, note_func=None):
     "Note function returns a list of note components for spearation"
     result = []
-    if note_func is None: note_func = lambda n: n.long_comp()
+    if note_func is None: note_func = lambda n: n.long_dur()
     wait_count = 0
     for idx,timestep in enumerate(seq):
         flat_time = [i for n in timestep for i in note_func(n)]
@@ -214,40 +237,6 @@ def seq2str_duration(seq, note_func=None):
             result.extend(flat_time)
             wait_count = 0
     return ' '.join(result)
-
-# def trim_seq_rests(seq):
-#     start_idx = 0
-#     for idx,t in enumerate(seq):
-#         if len(t) != 0: break
-#         start_idx = idx+1
-        
-#     end_idx = 0
-#     for idx,t in enumerate(reversed(seq)):
-#         if len(t) != 0: break
-#         end_idx = idx+1
-#     start_idx = start_idx - start_idx % 4
-#     end_idx = end_idx - end_idx % 4
-# #     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(seq)-end_idx, end_idx)
-#     return seq[start_idx:(len(seq)-end_idx)]
-
-# def remove_seq_rests(seq, max_rests=16):
-#     rest_count = 0
-#     result = []
-#     for timestep in seq:
-#         if len(timestep) == 0: 
-#             rest_count += 1
-#         else:
-#             if rest_count > max_rests+4:
-#                 new_count = rest_count % 4 + max_rests
-#                 print(f'Compressing rests: {rest_count} -> {new_count}')
-#             for i in range(new_count): result.append([])
-#             rest_count = 0
-#             result.append(timestep)
-    
-#     for i in range(new_count): result.append([])
-#     return result
-
-    
     
 ##### DECODING #####
 # 
