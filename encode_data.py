@@ -240,6 +240,7 @@ def partarr2stream(part, duration, stream=None, inst=None):
     if stream is None: stream = music21.stream.Stream()
     stream.append(music21.instrument.Piano())
     stream.append(music21.meter.TimeSignature(TIMESIG))
+    stream.append(music21.tempo.MetronomeMark(number=120))
     stream.append(music21.key.KeySignature(0))
     starts = part == 1
     durations = calc_note_durations(part)
@@ -252,8 +253,8 @@ def partarr2stream(part, duration, stream=None, inst=None):
             tnext = durations[tidx+1,nidx] if tidx+1 < len(part) else 0
             note.duration = music21.duration.Duration((tnext+1)*duration.quarterLength)
             notes.append(note)
-        chord = music21.chord.Chord(notes, offset=tidx*duration.quarterLength)
-        stream.append(chord)
+        chord = music21.chord.Chord(notes)
+        stream.insert(tidx*duration.quarterLength, chord)
     return stream
     
 # 3c.
