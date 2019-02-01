@@ -139,6 +139,39 @@ def stream2chordarr(s, note_range=127, sample_freq=4, encode_duration=False):
             score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
     return score_arr
 
+
+def trim_chordarr_rests(arr):
+    start_idx = 0
+    for idx,t in enumerate(arr):
+        if t.sum() != 0: break
+        start_idx = idx+1
+        
+    end_idx = 0
+    for idx,t in enumerate(reversed(arr)):
+        if t.sum() != 0: break
+        end_idx = idx+1
+    start_idx = start_idx - start_idx % 4
+    end_idx = end_idx - end_idx % 4
+    if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(arr)-end_idx, end_idx)
+    return arr[start_idx:(len(arr)-end_idx)]
+
+def remove_chordarr_rests(arr, max_rests=16):
+    rest_count = 0
+    result = []
+    for timestep in arr:
+        if timestep.sum() == 0: 
+            rest_count += 1
+        else:
+            if rest_count > max_rests+4:
+                old_count = rest_count
+                rest_count = rest_count % 4 + max_rests
+                print(f'Compressing rests: {old_count} -> {rest_count}')
+            for i in range(rest_count): result.append(np.zeros(timestep.shape))
+            rest_count = 0
+            result.append(timestep)
+    for i in range(rest_count): result.append(np.zeros(timestep.shape))
+    return np.array(result)
+
 # 3a.
 def chordarr2seq(score_arr):
     # note x instrument x pitch
@@ -182,35 +215,37 @@ def seq2str_duration(seq, note_func=None):
             wait_count = 0
     return ' '.join(result)
 
-def trim_seq_rests(seq):
-    start_idx = 0
-    for idx,t in enumerate(seq):
-        if len(t) != 0: break
-        start_idx = idx+1
+# def trim_seq_rests(seq):
+#     start_idx = 0
+#     for idx,t in enumerate(seq):
+#         if len(t) != 0: break
+#         start_idx = idx+1
         
-    end_idx = 0
-    for idx,t in enumerate(reversed(seq)):
-        if len(t) != 0: break
-        end_idx = idx+1
-    start_idx = start_idx - start_idx % 4
-    end_idx = end_idx - end_idx % 4
-#     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(seq)-end_idx, end_idx)
-    return seq[start_idx:(len(seq)-end_idx)]
+#     end_idx = 0
+#     for idx,t in enumerate(reversed(seq)):
+#         if len(t) != 0: break
+#         end_idx = idx+1
+#     start_idx = start_idx - start_idx % 4
+#     end_idx = end_idx - end_idx % 4
+# #     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(seq)-end_idx, end_idx)
+#     return seq[start_idx:(len(seq)-end_idx)]
 
-def remove_seq_rests(seq, max_rests=16):
-    rest_count = 0
-    result = []
-    for timestep in seq:
-        if len(timestep) == 0: 
-            rest_count += 1
-        else:
-            if rest_count > max_rests+4:
-                new_count = rest_count % 4 + max_rests
-                print(f'Compressing rests: {rest_count} -> {new_count}')
-                for i in range(new_count): result.append([])
-            rest_count = 0
-            result.append(timestep)
-    return result
+# def remove_seq_rests(seq, max_rests=16):
+#     rest_count = 0
+#     result = []
+#     for timestep in seq:
+#         if len(timestep) == 0: 
+#             rest_count += 1
+#         else:
+#             if rest_count > max_rests+4:
+#                 new_count = rest_count % 4 + max_rests
+#                 print(f'Compressing rests: {rest_count} -> {new_count}')
+#             for i in range(new_count): result.append([])
+#             rest_count = 0
+#             result.append(timestep)
+    
+#     for i in range(new_count): result.append([])
+#     return result
 
     
     
