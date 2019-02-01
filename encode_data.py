@@ -53,35 +53,33 @@ class NoteEnc():
     def pitch(self):
         return music21.pitch.Pitch(self.note)
     
-    # binary format is -1 for note strike, -2 for note continued
-    def long_bin(self):
-        nname = NPRE + self.pitch.name
-        oname = OPRE + str(self.pitch.octave)
+    # continuous format is -1 for note strike, -2 for note continued
+    def continuous_repr(self, short=True, instrument=False):
         dur = self.dur if self.dur == VALTCONT else VALTSTART
         tname = f'{TPRE}{dur}' # ts=note start, tc=note continue
-        iname = IPRE+self.inst
-        return [nname,oname,tname,iname]
-    
-    def short_bin(self):
-        nname = NPRE + self.pitch.nameWithOctave
-        dur = self.dur if self.dur == VALTCONT else VALTSTART
-        tname = f'{TPRE}{self.dur}'
-        return [nname,tname]
-        
-    # duration format is tX for note duration, Return nothing if continued note
-    def long_dur(self):
-        if self.dur == VALTCONT: return []
+        if short: 
+            nname = NPRE + self.pitch.nameWithOctave
+            return [nname, tname]
         nname = NPRE + self.pitch.name
         oname = OPRE + str(self.pitch.octave)
-        tname = f'{TPRE}{self.dur}'
-        iname = IPRE+self.inst
-        return [nname,oname,tname,iname]
+        if instrument:
+            iname = IPRE+self.inst
+            return [nname,oname,tname,iname]
+        return [nname,oname,tname]
     
-    def short_dur(self):
+    # duration format is tX for note duration, Return nothing if continued note
+    def duration_repr(self, short=True, instrument=False):
         if self.dur == VALTCONT: return []
-        nname = NPRE + self.pitch.nameWithOctave
         tname = f'{TPRE}{self.dur}'
-        return [nname,tname]
+        if short: 
+            nname = NPRE + self.pitch.nameWithOctave
+            return [nname, tname]
+        nname = NPRE + self.pitch.name
+        oname = OPRE + str(self.pitch.octave)
+        if instrument:
+            iname = IPRE+self.inst
+            return [nname,oname,tname,iname]
+        return [nname,oname,tname]
     
 #     def joined_repr(self):
 #         # returns something like 'nG:o2:ts:i1'
@@ -111,21 +109,20 @@ class NoteEnc():
 
 ##### ENCODING ######
 
-def midi2seq(midi_file, encode_duration=False):
+def midi2seq(midi_file):
     "Converts midi file to string representation for language model"
     stream = file2stream(midi_file) # 1.
     s_arr = stream2chordarr(stream) # 2.
     return chordarr2seq(s_arr) # 3.
 
 # master encoder
-def midi2str(midi_file, encode_duration=False, note_func=None):
+def midi2str(midi_file, note_func, continuous=False):
     "Converts midi file to string representation for language model"
 #     stream = file2stream(midi_file) # 1.
 #     s_arr = stream2chordarr(stream, encode_duration) # 2.
 #     seq = chordarr2seq(s_arr) # 3.
     seq = midi2seq(midi_file)
-    if encode_duration: return seq2str_duration(seq, note_func=note_func)
-    return seq2str(seq, note_func=note_func) # 4.
+    return seq2str(seq, note_func=note_func, continuous=continuous)
 
 # 2.
 def stream2chordarr(s, note_range=127, sample_freq=4):
@@ -209,14 +206,13 @@ def timestep2seq(timestep):
     return sorted_keys
 
 # 4.
-def seq2str(seq, note_func, is_binary):
-    if is_binary: return seq2str_binary(seq, note_func)
+def seq2str(seq, note_func, continuous):
+    if continuous: return seq2str_continuous(seq, note_func)
     else: return seq2str_duration(seq, note_func)
     
-def seq2str_binary(seq, note_func=None, separate_measures=False):
+def seq2str_continuous(seq, note_func=None, separate_measures=False):
     "Note function returns a list of note components for spearation"
     result = []
-    if note_func is None: note_func = lambda n: n.long_bin()
     for idx,timestep in enumerate(seq):
         if separate_measures and idx and idx%4 == 0:
             result.append(MEND)
@@ -230,7 +226,6 @@ def seq2str_binary(seq, note_func=None, separate_measures=False):
 def seq2str_duration(seq, note_func=None):
     "Note function returns a list of note components for spearation"
     result = []
-    if note_func is None: note_func = lambda n: n.long_dur()
     wait_count = 0
     for idx,timestep in enumerate(seq):
         flat_time = [i for n in timestep for i in note_func(n)]
@@ -305,12 +300,12 @@ def partarr2stream(part, duration, stream=None):
     stream.append(music21.tempo.MetronomeMark(number=120))
     stream.append(music21.key.KeySignature(0))
     if part.sum() > 0: part_append_duration_notes(part, duration, stream) # notes already have duration calcualted
-    else: part_append_binary_notes(part, duration, stream) # notes are either start or continued 
+    else: part_append_continuous_notes(part, duration, stream) # notes are either start or continued 
 
     return stream
 
 # 3b
-def part_append_binary_notes(part, duration, stream):
+def part_append_continuous_notes(part, duration, stream):
     starts = part == VALTSTART
     durations = calc_note_durations(part)
     for tidx,t in enumerate(starts):
