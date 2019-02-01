@@ -4,6 +4,7 @@ import music21
 import numpy as np
 from midi_data import file2stream
 from fastai.text.data import BOS
+import scipy.sparse
 
 # Encoding process
 # 1. midi -> music21.Stream
@@ -62,7 +63,7 @@ class NoteEnc():
         return [nname,oname,tname,iname]
     
     def short_bin(self):
-        nname = NPRE + note.pitch.nameWithOctave
+        nname = NPRE + self.pitch.nameWithOctave
         dur = self.dur if self.dur == VALTCONT else VALTSTART
         tname = f'{TPRE}{self.dur}'
         return [nname,tname]
@@ -78,7 +79,7 @@ class NoteEnc():
     
     def short_dur(self):
         if self.dur == VALTCONT: return []
-        nname = NPRE + note.pitch.nameWithOctave
+        nname = NPRE + self.pitch.nameWithOctave
         tname = f'{TPRE}{self.dur}'
         return [nname,tname]
     
@@ -208,7 +209,11 @@ def timestep2seq(timestep):
     return sorted_keys
 
 # 4.
-def seq2str(seq, note_func=None, separate_measures=True):
+def seq2str(seq, note_func, is_binary):
+    if is_binary: return seq2str_binary(seq, note_func)
+    else: return seq2str_duration(seq, note_func)
+    
+def seq2str_binary(seq, note_func=None, separate_measures=False):
     "Note function returns a list of note components for spearation"
     result = []
     if note_func is None: note_func = lambda n: n.long_bin()
@@ -342,3 +347,13 @@ def part_append_duration_notes(part, duration, stream=None):
         chord = music21.chord.Chord(notes)
         stream.insert(tidx*duration.quarterLength, chord)
     return stream
+
+# saving
+def save_chordarr(out_file, chordarr):
+    sparse_matrix = scipy.sparse.csc_matrix(chordarr.reshape(chordarr.shape[0], -1))
+    scipy.sparse.save_npz(out_file, sparse_matrix)
+    
+def load_chordarr(file):
+    sparse_matrix = scipy.sparse.load_npz(file)
+    np_arr = np.array(sparse_matrix.todense())
+    return np_arr.reshape((np_arr.shape[0], -1, 127))
