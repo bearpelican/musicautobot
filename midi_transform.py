@@ -25,10 +25,12 @@ def transform_midi(midi_file, out_file, cutoff=6, transpose=True, offset=None):
     music_file = compress_midi_file(midi_file, cutoff=cutoff) # remove non note tracks and standardize instruments
     if music_file is None: return
     if offset is not None: music_file = transpose_midi_file(music_file, offset) # transpose to keyc if offset passed
+    # (AS) do our own track partitioning. music21 doesn't always parse correctly
     s_out = music21.midi.translate.midiFileToStream(music_file) # create music21 stream
     s_comb = music21.instrument.partitionByInstrument(s_out) # combine same track instruments to single part
     if transpose and offset is None: 
-        key = s_comb.analyze('key')
+        print('Inferring offset')
+        key = s_comb.flat.analyze('key')
         halfsteps = keyc_offset(key.tonic.name, key.mode)
         s_comb = s_comb.transpose(halfsteps)
     return s_comb.write('midi', fp=out_file)

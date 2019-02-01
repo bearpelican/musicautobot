@@ -3,7 +3,6 @@ from pathlib import Path
 import music21
 import numpy as np
 from midi_data import file2stream
-from fastai.text.data import BOS
 
 # Encoding process
 # 1. midi -> music21.Stream
@@ -30,10 +29,11 @@ NPRE = 'n' # note value encoding prefix
 OPRE = 'o' # octave encoding prefix
 IPRE = 'i' # instrument encoding prefix
 
-TPRE = 't' # note type encoding prefix - negative means duration encoded
-VALTSTART = -1 # numpy value for TSTART
-VALTCONT = -2 # numpy value for TCONT
-
+TPRE = 't' # note type encoding prefix
+VALTSTART = 1 # numpy value for TSTART
+VALTCONT = 2 # numpy value for TCONT
+TSTART = f'{TPRE}{VALTSTART}' # note start/strike encoding
+TCONT = f'{TPRE}{VALTCONT}' # note continue encoding
 
 NOTE_SEP = ':' # separator for note components. No longer using
 
@@ -42,17 +42,17 @@ TIMESIG = '4/4' # default time signature
 
 RENOTE = re.compile('[A-Z][#-b]?\d')
 class NoteEnc():
-    # dur = note start/continue, note = midi value, inst = instrument
-    def __init__(self, note, dur, inst=None):
-        assert(dur != 0)
-        self.note,self.dur,self.inst = note,int(dur),inst
+    # tie = note start/continue, note = midi value, inst = instrument
+    def __init__(self, note, tie, inst=None):
+        assert(tie > 0)
+        self.note,self.tie,self.inst = note,int(tie),inst
         if self.inst is not None: self.inst = str(self.inst)
         self.pitch = music21.pitch.Pitch(self.note)
         
     def long_comp(self):
         nname = NPRE + self.pitch.name
         oname = OPRE + str(self.pitch.octave)
-        tname = f'{TPRE}{self.dur}' # ts=note start, tc=note continue
+        tname = TSTART if self.tie == VALTSTART else TCONT # ts=note start, tc=note continue
         iname = IPRE+self.inst
         return [nname,oname,tname,iname]
         
@@ -62,7 +62,7 @@ class NoteEnc():
     
     def __repr__(self):
         kname = self.pitch.nameWithOctave
-        tname = f'{TPRE}{self.dur}' # ts=note start, tc=note continue
+        tname = TSTART if self.tie == VALTSTART else TCONT # ts=note start, tc=note continue
         return kname+tname
     
     def ival(self): # instrument number value
@@ -78,30 +78,28 @@ class NoteEnc():
         if NPRE not in kv: return None
         note = kv[NPRE]
         if OPRE in kv: note += kv[OPRE]
-        dur = int(kv[TPRE])
+        tie = int(kv[TPRE])
         assert(re.fullmatch(RENOTE, note))
-        return NoteEnc(note=note, dur=dur, inst=kv.get(IPRE))
+        return NoteEnc(note=note, tie=tie, inst=kv.get(IPRE))
 
 ##### ENCODING ######
 
-def midi2seq(midi_file, encode_duration=False):
+def midi2seq(midi_file):
     "Converts midi file to string representation for language model"
     stream = file2stream(midi_file) # 1.
     s_arr = stream2chordarr(stream) # 2.
     return chordarr2seq(s_arr) # 3.
 
 # master encoder
-def midi2str(midi_file, encode_duration=False, note_func=None):
+def midi2str(midi_file):
     "Converts midi file to string representation for language model"
-#     stream = file2stream(midi_file) # 1.
-#     s_arr = stream2chordarr(stream, encode_duration) # 2.
-#     seq = chordarr2seq(s_arr) # 3.
-    seq = midi2seq(midi_file, encode_duration)
-    if encode_duration: return seq2str_duration(seq, note_func=note_func)
-    return seq2str(seq, note_func=note_func) # 4.
+    stream = file2stream(midi_file) # 1.
+    s_arr = stream2chordarr(stream) # 2.
+    seq = chordarr2seq(s_arr) # 3.
+    return seq2str(seq) # 4.
 
 # 2.
-def stream2chordarr(s, note_range=127, sample_freq=4, encode_duration):
+def stream2chordarr(s, note_range=127, sample_freq=4):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
@@ -132,11 +130,8 @@ def stream2chordarr(s, note_range=127, sample_freq=4, encode_duration):
     for n in notes:
         if n is None: continue
         pitch,offset,duration,inst = n
-        if encode_duration: # duration encoding
-            score_arr[offset, inst, pitch] = duration
-        else: # binary note encoding
-            score_arr[offset, inst, pitch] = VALTSTART                 # Strike note
-            score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
+        score_arr[offset, inst, pitch] = VALTSTART                 # Strike note
+        score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
     return score_arr
 
 # 3a.
@@ -164,24 +159,7 @@ def seq2str(seq, note_func=None, separate_measures=True):
         result.extend(flat_time)
         result.append(TSEP)
     return ' '.join(result)
-
-# 4.alt
-def seq2str_duration(seq, note_func=None):
-    "Note function returns a list of note components for spearation"
-    result = []
-    if note_func is None: note_func = lambda n: n.long_comp()
-    wait_count = 0
-    for idx,timestep in enumerate(seq):
-        flat_time = [i for n in timestep for i in note_func(n)]
-        if len(flat_time) == 0:
-            wait_count += 1
-        else:
-            result.append(TSEP)
-            result.append(f'{TPRE}{wait_count}')
-            result.extend(flat_time)
-            wait_count = 0
-    return ' '.join(result)
-
+        
 def trim_seq_rests(seq):
     start_idx = 0
     for idx,t in enumerate(seq):
@@ -223,19 +201,8 @@ def str2stream(seq_str):
 
 # 1.
 def str2seq(seq_str):
-    seq_str = seq_str.replace(f'{MSTART} ', '').replace(f'{MEND} ', '').replace(f'{BOS} ', '')
-    timesteps = seq_str.split(f'{TSEP} ')
-    
-    seq = []
-    for t in timesteps:
-        tsplit = t.split(' ')
-        if tsplit and TPRE in tsplit[0]:
-            duration = int(tsplit[0][1:])
-            for i in range(duration):
-                seq.append([])
-            tsplit = tsplit[1:]
-        seq.append(steps2chordarr(tsplit))
-    return seq
+    timesteps = seq_str.split(TSEP)
+    return [steps2chordarr(t.split(' ')) for t in timesteps]
 
 # 1b.
 def steps2chordarr(tarr):
@@ -255,7 +222,7 @@ def seq2numpy(seq, note_range=127):
     score_arr = np.zeros((len(seq), num_instruments, note_range))
     for idx,ts in enumerate(seq):
         for note in ts:
-            score_arr[idx,note.ival(),note.pitch.midi] = note.dur
+            score_arr[idx,note.ival(),note.pitch.midi] = note.tie
     return score_arr
 
 # 3.
@@ -268,21 +235,14 @@ def chordarr2stream(arr, sample_freq=4):
     return stream
 
 # 3b.
-def partarr2stream(part, duration, stream=None):
+def partarr2stream(part, duration, stream=None, inst=None):
     "convert instrument part to music21 chords"
     if stream is None: stream = music21.stream.Stream()
     stream.append(music21.instrument.Piano())
     stream.append(music21.meter.TimeSignature(TIMESIG))
     stream.append(music21.tempo.MetronomeMark(number=120))
     stream.append(music21.key.KeySignature(0))
-    if part.sum() > 0: part_append_duration_notes(part, duration, stream) # notes already have duration calcualted
-    else: part_append_binary_notes(part, duration, stream) # notes are either start or continued 
-
-    return stream
-
-# 3b
-def part_append_binary_notes(part, duration, stream):
-    starts = part == VALTSTART
+    starts = part == 1
     durations = calc_note_durations(part)
     for tidx,t in enumerate(starts):
         note_idxs = t.nonzero()[0]
@@ -295,7 +255,8 @@ def part_append_binary_notes(part, duration, stream):
             notes.append(note)
         chord = music21.chord.Chord(notes)
         stream.insert(tidx*duration.quarterLength, chord)
-        
+    return stream
+    
 # 3c.
 def calc_note_durations(part):
     "calculate midi note durations from TCONT notes"
@@ -303,18 +264,3 @@ def calc_note_durations(part):
     for i in reversed(range(cnotes.shape[0]-1)):
         cnotes[i] += cnotes[i+1]*cnotes[i]
     return cnotes
-
-# 3alt.
-def part_append_duration_notes(part, duration, stream=None):
-    "convert instrument part to music21 chords"
-    for tidx,t in enumerate(part):
-        note_idxs = t.nonzero()[0]
-        if len(note_idxs) == 0: continue
-        notes = []
-        for nidx in note_idxs:
-            note = music21.note.Note(nidx)
-            note.duration = music21.duration.Duration(part[tidx,nidx]*duration.quarterLength)
-            notes.append(note)
-        chord = music21.chord.Chord(notes)
-        stream.insert(tidx*duration.quarterLength, chord)
-    return stream

@@ -67,7 +67,7 @@ class LMNumericalizeProcessor(PreProcessor):
         ds.vocab = self.vocab
         print("Numericalizing")
         n_cpus = num_cpus()
-        parts = partition_by_cores(ds.items, n_cpus)
+        parts = partition_by_cores(ds.items, n_cpus*10)
         vocabs = [ds.vocab.stoi.copy() for i in range(len(parts))]
         with ProcessPoolExecutor(n_cpus) as e:
             items = sum(e.map(numericalize, zip(vocabs, parts)), [])
