@@ -33,7 +33,8 @@ def transform_midi(midi_file, out_file, cutoff=6, transpose=True, offset=None):
         key = s_comb.flat.analyze('key')
         halfsteps = keyc_offset(key.tonic.name, key.mode)
         s_comb = s_comb.transpose(halfsteps)
-    return s_comb.write('midi', fp=out_file)
+    s_comb.write('midi', fp=out_file)
+    return s_comb
 
 def compress_midi_file(fp, cutoff=6, unsup_types=set([Track.UNDEF, Track.PERC])):
     music_file = file2mf(fp)

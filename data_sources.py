@@ -7,6 +7,7 @@ from concurrent.futures import ProcessPoolExecutor
 from fastprogress.fastprogress import master_bar, progress_bar
 import json
 import music21
+from pathlib import Path
 
 def get_stream_attr(s):
     "Pull stream metadata from midi file"
@@ -49,13 +50,22 @@ def process_parallel(func, arr, total=None, max_workers=None, timeout=None):
 
 def parse_songs(data):
     "Extract stream attributes"
-    fp = data.get('file_path')
+    fp = Path(data.get('file_path'))
     metadata = data.get('metadata', {})
     attr = {}
     try: 
         stream = music21.converter.parse(fp)
 #         is_small_file = fp.stat().st_size/1000 < 200 # (AS) this may not matter. For some reason ecomp files take a long time to parse
         attr = get_stream_attr(stream)
+    
+        if fp.suffix == '.mxl': 
+            new_fp = Path(str(fp.with_suffix('.mid')).replace('midi_sources', 'midi_sources_fromxml'))
+            new_fp.parent.mkdir(parents=True, exist_ok=True)
+            if not new_fp.exists():
+                stream.write('midi', new_fp)
+            fp = new_fp
+            attr['midi'] = str(fp)
+        
     except Exception as e: print('Midi Exeption:', fp, e)
     return str(fp), {**metadata, **attr}
 

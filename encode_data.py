@@ -160,7 +160,7 @@ def stream2chordarr(s, note_range=127, sample_freq=4):
         score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
     return score_arr
 
-def compress_chordarr(arr):
+def compress_chordarr(chordarr):
     return _shorten_chordarr_rests(_trim_chordarr_rests(chordarr))
 
 def _trim_chordarr_rests(arr, max_rests=16):
