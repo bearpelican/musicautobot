@@ -8,24 +8,30 @@ from fastprogress.fastprogress import master_bar, progress_bar
 import json
 import music21
 
-def get_stream_attr(s, infer_key=True):
+def get_stream_attr(s):
     "Pull stream metadata from midi file"
     instruments = [i.instrumentName for i in list(s.getInstruments(recurse=True)) if i.instrumentName]
-    metronome = list(filter(lambda x: isinstance(x, music21.tempo.MetronomeMark), s.flat))[0]
-    bpm = metronome.getQuarterBPM()
+    
+    bpm = None
+    metronome = list(filter(lambda x: isinstance(x, music21.tempo.MetronomeMark), s.flat))
+    if len(metronome):
+        bpm = metronome[0].getQuarterBPM()
     s_flat = s.flat
     time_sig = s_flat.timeSignature.ratioString if hasattr(s_flat.timeSignature, 'ratioString') else None
-    if infer_key:
-        key = s_flat.analyze('key')
-        offset = keyc_offset(key.tonic.name, key.mode)
-        inferred_key = f'{key.tonic.name} {key.mode}'
-    else:
-        offset,inferred_key = None,None
+    key = s_flat.analyze('key')
+    offset = keyc_offset(key.tonic.name, key.mode)
+    inferred_key = f'{key.tonic.name} {key.mode}'
+
+    seconds = None
+    try: seconds = s_flat.seconds
+    except Exception as e: pass
+        
     return {
         'instruments': instruments,
         'bpm': bpm,
         'inferred_key': inferred_key,
-        'seconds': s_flat.seconds,
+        'seconds': seconds,
+        'quarter_length': f'{s_flat.duration.quarterLength}',
         'time_signature': time_sig,
         'inferred_offset': offset
     }
@@ -49,7 +55,7 @@ def parse_songs(data):
     try: 
         stream = music21.converter.parse(fp)
 #         is_small_file = fp.stat().st_size/1000 < 200 # (AS) this may not matter. For some reason ecomp files take a long time to parse
-        attr = get_stream_attr(stream, infer_key=True)
+        attr = get_stream_attr(stream)
     except Exception as e: print('Midi Exeption:', fp, e)
     return str(fp), {**metadata, **attr}
 
