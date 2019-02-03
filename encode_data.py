@@ -288,6 +288,9 @@ def seq2chordarr(seq, note_range=127):
 def chordarr2stream(arr, sample_freq=4):
     duration = music21.duration.Duration(1. / sample_freq)
     stream = music21.stream.Stream()
+    stream.append(music21.meter.TimeSignature(TIMESIG))
+    stream.append(music21.tempo.MetronomeMark(number=120))
+    stream.append(music21.key.KeySignature(0))
     for inst in range(arr.shape[1]):
         p = partarr2stream(arr[:,inst,:], duration, stream=music21.stream.Part())
         stream.append(p)
@@ -298,9 +301,6 @@ def partarr2stream(part, duration, stream=None):
     "convert instrument part to music21 chords"
     if stream is None: stream = music21.stream.Stream()
     stream.append(music21.instrument.Piano())
-    stream.append(music21.meter.TimeSignature(TIMESIG))
-    stream.append(music21.tempo.MetronomeMark(number=120))
-    stream.append(music21.key.KeySignature(0))
     if np.any(part > 0): part_append_duration_notes(part, duration, stream) # notes already have duration calcualted
     else: part_append_continuous_notes(part, duration, stream) # notes are either start or continued 
 
