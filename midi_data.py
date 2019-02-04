@@ -12,7 +12,7 @@ def load_json(path):
     return json.load(open(path, 'r'))
 
 ### Display
-if True:
+if Path('/usr/bin/lilypond').exists():
     from IPython.display import Image
     import os
     # Might get an error server cannot use x11 display

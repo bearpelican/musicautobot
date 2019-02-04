@@ -32,7 +32,7 @@ import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss
 
-from file_utils import cached_path
+# from file_utils import cached_path
 
 logger = logging.getLogger(__name__)
 
