@@ -31,7 +31,7 @@ path = Path(args.path)
 data = TextLMDataBunch.load(path, cache_name=args.cache, bs=bs, bptt=bptt)
 data.valid_ds.x.processor[0] = TokenizeProcessor(tokenizer=MusicTokenizer())
 
-learn = language_model_learner(data, drop_mult=1, clip=.2, bptt=bptt).distributed(args.local_rank)
+learn = language_model_learner(data, drop_mult=1, clip=.5, bptt=bptt).distributed(args.local_rank)
 if args.load:
     load_path = Path(args.path)/args.load_cache/learn.model_dir/f'{args.loadname}.pth'
     if device is None: device = data.device

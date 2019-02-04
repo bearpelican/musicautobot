@@ -40,7 +40,7 @@ config.separate_embed = True
 model = gpt.OpenAIGPTLMHeadModel(config).cuda()
 model.reset = lambda: None
 
-learn = LanguageLearner(data, model, bptt, clip=1).distributed(args.local_rank)
+learn = LanguageLearner(data, model, bptt, clip=0.5).distributed(args.local_rank)
 if args.load:
     load_path = Path(args.path)/args.load_cache/learn.model_dir/f'{args.loadname}.pth'
     if device is None: device = data.device
@@ -48,5 +48,5 @@ if args.load:
     get_model(learn.model).load_state_dict(state, strict=True)
 learn.callbacks = []
 
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=25, moms=(0.7,0.5))
+learn.fit_one_cycle(args.epochs, args.lr, pct_start=0.5, div_factor=25, moms=(0.7,0.5))
 if args.local_rank == 0: learn.save(f'{args.cache}_{args.save}')
