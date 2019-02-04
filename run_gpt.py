@@ -10,7 +10,6 @@ parser.add_argument('--cache', type=str, default='tmp_clc')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument("--local_rank", type=int)
 parser.add_argument('--load', type=str, default=None)
-parser.add_argument('--load_cache', type=str, default=None)
 parser.add_argument("--batch_size", type=int, default=8)
 parser.add_argument("--bptt", type=int, default=500)
 parser.add_argument('--half', action='store_true', help='Use half precision')
@@ -42,10 +41,10 @@ model.reset = lambda: None
 
 learn = LanguageLearner(data, model, bptt, clip=0.5).distributed(args.local_rank)
 if args.load:
-    load_path = Path(args.path)/args.load_cache/learn.model_dir/f'{args.loadname}.pth'
-    if device is None: device = data.device
-    state = torch.load(load_path, map_location=device)
-    get_model(learn.model).load_state_dict(state, strict=True)
+    load_path = Path(args.path)/args.load
+    state = torch.load(load_path, map_location='cpu')
+    get_model(learn.model).load_state_dict(state['model'], strict=True)
+    learn.model.cuda()
 learn.callbacks = []
 
 learn.fit_one_cycle(args.epochs, args.lr, pct_start=0.5, div_factor=25, moms=(0.7,0.5))
