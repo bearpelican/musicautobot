@@ -5,6 +5,7 @@ import numpy as np
 from midi_data import file2stream
 from fastai.text.data import BOS
 import scipy.sparse
+from collections import defaultdict
 
 # Encoding process
 # 1. midi -> music21.Stream
@@ -133,7 +134,7 @@ def stream2chordarr(s, note_range=127, sample_freq=4):
     maxTimeStep = int(s.flat.duration.quarterLength * sample_freq)+1
     
     # (AS) TODO: need to order by instruments most played and filter out percussion or include the channel
-    inst2idx = {inst.id:idx for idx,inst in enumerate(s.flat.getInstruments())}
+    inst2idx = defaultdict(int, {inst.id:idx for idx,inst in enumerate(s.flat.getInstruments())})
     score_arr = np.zeros((maxTimeStep, len(inst2idx), note_range))
 
     notes=[]
