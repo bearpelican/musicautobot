@@ -39,7 +39,7 @@ config.separate_embed = True
 model = gpt.OpenAIGPTLMHeadModel(config).cuda()
 model.reset = lambda: None
 
-learn = LanguageLearner(data, model, bptt, clip=0.5).distributed(args.local_rank)
+learn = LanguageLearner(data, model, bptt, clip=0.4).distributed(args.local_rank)
 if args.load:
     load_path = Path(args.path)/args.load
     state = torch.load(load_path, map_location='cpu')
@@ -48,4 +48,7 @@ if args.load:
 learn.callbacks = []
 
 learn.fit_one_cycle(args.epochs, args.lr, pct_start=0.5, div_factor=25, moms=(0.7,0.5))
-if args.local_rank == 0: learn.save(f'{args.save}')
+if args.local_rank == 0:
+    save_path = Path(args.path)/learn.model_dir/args.save
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    learn.save(f'{args.save}')
