@@ -8,6 +8,7 @@ from fastprogress.fastprogress import master_bar, progress_bar
 import json
 import music21
 from pathlib import Path
+from functools import partial
 
 def get_stream_attr(s):
     "Pull stream metadata from midi file"
@@ -48,10 +49,27 @@ def process_parallel(func, arr, total=None, max_workers=None, timeout=None):
             results[k] = v
     return results
 
-def parse_songs(data):
+def transform_csv_row(idxrow, transform_func, base_path, source_dir, out_dir, out_extension):
+    idx,row = idxrow
+    file = row[source_dir]
+    
+    if not isinstance(file, str): return idx,None
+    file = Path(base_path)/file
+    if not file.exists(): return idx, None
+    
+    out_file = Path(str(file).replace(f'/{source_dir}/', f'/{out_dir}/')).with_suffix(out_extension)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    if out_file.exists(): return idx,str(out_file.relative_to(base_path))
+    try: transform_func(file, out_file, row)
+    except Exception as e:
+        print('Error converting midi to sequence', e)
+        return idx,None
+    return idx,str(out_file.relative_to(base_path))
+
+def parse_songs(metadata, base_path):
     "Extract stream attributes"
-    fp = Path(data.get('file_path'))
-    metadata = data.get('metadata', {})
+    midi_path = metadata.get('midi', metadata.get('mxl', None))
+    fp = Path(base_path)/midi_path
     attr = {}
     try: 
         stream = music21.converter.parse(fp)
@@ -59,25 +77,24 @@ def parse_songs(data):
         attr = get_stream_attr(stream)
     
         if fp.suffix == '.mxl': 
-            new_fp = Path(str(fp.with_suffix('.mid')).replace('midi_sources', 'midi_sources_fromxml'))
+            new_fp = Path(str(fp.with_suffix('.mid')).replace('midi_sources', 'midi_sources/from_mxl'))
             new_fp.parent.mkdir(parents=True, exist_ok=True)
-            if not new_fp.exists():
-                stream.write('midi', new_fp)
-            fp = new_fp
-            attr['midi'] = str(fp)
+            if not new_fp.exists(): stream.write('midi', new_fp)
+            attr['midi'] = str(new_fp.relative_to(base_path))
         
     except Exception as e: print('Midi Exeption:', fp, e)
-    return str(fp), {**metadata, **attr}
+    return midi_path, {**metadata, **attr}
 
-def parse_midi_dir(files, out_path, meta_func, chunk_size=None, recurse=True, key_func=str):
+def parse_midi_dir(files, out_path, base_path, meta_func, chunk_size=None, recurse=True):
     "Iterate through midi_source dir and map file to metadata"
     file2metadata = load_json(out_path)
     if file2metadata is None: file2metadata = {}
         
-    files = [meta_func(fp) for fp in files if key_func(fp) not in file2metadata]
+    files = [meta_func(fp) for fp in files if str(fp.relative_to(base_path)) not in file2metadata]
     
     def process_files(arr):
-        parsed = process_parallel(parse_songs, arr)
+        parse_func = partial(parse_songs, base_path=base_path)
+        parsed = process_parallel(parse_func, arr)
         file2metadata.update(parsed)
         json.dump(file2metadata, open(out_path, 'w'))
         
