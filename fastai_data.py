@@ -44,7 +44,7 @@ def vocab_create_parallel(tokens:Tokens, max_vocab:int, min_freq:int) -> 'Vocab'
     print("Creating vocabulary")
     gc.collect()
     with ProcessPoolExecutor(n_cpus) as e:
-        freq = sum(e.map(count_tokens, partition_by_cores(tokens, n_cpus)), Counter())
+        freq = sum(e.map(count_tokens, partition_by_cores(tokens, n_cpus*10)), Counter())
         
     print("Counting done")
     itos = [o for o,c in freq.most_common(max_vocab) if c > min_freq]
@@ -62,8 +62,8 @@ class LMNumericalizeProcessor(PreProcessor):
 
     def process_one(self,item): return np.array(self.vocab.numericalize(item), dtype=np.int64)
     def process(self, ds):
-#         if self.vocab is None: self.vocab = vocab_create_parallel(ds.items, self.max_vocab, self.min_freq)
-        if self.vocab is None: self.vocab = Vocab.create(ds.items, self.max_vocab, self.min_freq)
+        if self.vocab is None: self.vocab = vocab_create_parallel(ds.items, self.max_vocab, self.min_freq)
+#         if self.vocab is None: self.vocab = Vocab.create(ds.items, self.max_vocab, self.min_freq)
         ds.vocab = self.vocab
         print("Numericalizing")
         n_cpus = num_cpus()
