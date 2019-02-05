@@ -5,11 +5,11 @@ import gpt
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='data/midi/midi_transcribe_v2_longdur/')
+parser.add_argument('--path', type=str, default='data/midi/midi_transcribe_v3_shortdur/')
 parser.add_argument('--cache', type=str, default='tmp_clc')
 parser.add_argument('--save', type=str, default='first_run')
-parser.add_argument("--local_rank", type=int)
 parser.add_argument('--load', type=str, default=None)
+parser.add_argument("--local_rank", type=int)
 parser.add_argument("--batch_size", type=int, default=8)
 parser.add_argument("--bptt", type=int, default=500)
 parser.add_argument('--half', action='store_true', help='Use half precision')
@@ -48,4 +48,4 @@ if args.load:
 learn.callbacks = []
 
 learn.fit_one_cycle(args.epochs, args.lr, pct_start=0.5, div_factor=25, moms=(0.7,0.5))
-if args.local_rank == 0: learn.save(f'{args.cache}_{args.save}')
+if args.local_rank == 0: learn.save(f'{args.save}')
