@@ -56,7 +56,11 @@ if args.load:
     state = torch.load(load_path, map_location='cpu')
     get_model(learn.model).load_state_dict(state['model'], strict=True)
     learn.model.cuda()
+if args.save:
+    save_path = Path(args.path)/learn.model_dir/args.save
+    save_path.parent.mkdir(parents=True, exist_ok=True)
 learn.callbacks = [TXLTrainer(learn)]
+if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 learn.fit_one_cycle(args.epochs, args.lr, pct_start=0.5, div_factor=25, moms=(0.7,0.5))
 if args.local_rank == 0:
