@@ -12,10 +12,10 @@ class Track(Enum):
     
 type2inst = {
     # use print_music21_instruments() to see supported types
-#     Track.MELODY: 79, # Ocarina
+    Track.INFO: 0, # Ocarina
     Track.MELODY: 0, # Ocarina
     Track.STRING: 24, # Guitar
-    Track.PIANO: 0 # Piano
+    Track.PIANO: 1 # Piano
 }
 
 INFO_TYPES = set(['TIME_SIGNATURE'])
@@ -90,7 +90,7 @@ def is_info_track(t, idx):
     is_ch0 = idx == 0
     is_info = has_event_type(t, INFO_TYPES)
 #     if is_info and t.hasNotes(): raise Exception('Error: found track with notes and track info')
-    if is_ch0 ^ is_info: raise Exception('Error: info channel is not channel 0')
+#     if is_ch0 ^ is_info: raise Exception('Error: info channel is not channel 0')
     return is_info
 
 def is_melody(t, fp=''):

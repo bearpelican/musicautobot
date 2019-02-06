@@ -49,9 +49,10 @@ def process_parallel(func, arr, total=None, max_workers=None, timeout=None):
             results[k] = v
     return results
 
-def transform_csv_row(idxrow, transform_func, base_path, source_dir, out_dir, out_extension):
+def transform_csv_row(idxrow, transform_func, base_path, source_dir, out_dir, out_extension, source_col=None):
     idx,row = idxrow
-    file = row[source_dir]
+    if source_col is not None: file = row[source_col]
+    else: file = row[source_dir]
     
     if not isinstance(file, str): return idx,None
     file = Path(base_path)/file
