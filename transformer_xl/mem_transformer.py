@@ -13,6 +13,12 @@ import torch.nn.functional as F
 from .proj_adaptive_softmax import ProjectedAdaptiveLogSoftmax
 from .log_uniform_sampler import LogUniformSampler, sample_logits
 
+try:
+    from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
+except ImportError:
+    print("Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex.")
+    from torch.nn import LayerNorm
+
 class PositionalEmbedding(nn.Module):
     def __init__(self, demb):
         super(PositionalEmbedding, self).__init__()
@@ -47,7 +53,7 @@ class PositionwiseFF(nn.Module):
             nn.Dropout(dropout),
         )
 
-        self.layer_norm = nn.LayerNorm(d_model)
+        self.layer_norm = LayerNorm(d_model)
 
         self.pre_lnorm = pre_lnorm
 
@@ -84,7 +90,7 @@ class MultiHeadAttn(nn.Module):
         self.dropatt = nn.Dropout(dropatt)
         self.o_net = nn.Linear(n_head * d_head, d_model, bias=False)
 
-        self.layer_norm = nn.LayerNorm(d_model)
+        self.layer_norm = LayerNorm(d_model)
 
         self.scale = 1 / (d_head ** 0.5)
 
@@ -157,7 +163,7 @@ class RelMultiHeadAttn(nn.Module):
         self.dropatt = nn.Dropout(dropatt)
         self.o_net = nn.Linear(n_head * d_head, d_model, bias=False)
 
-        self.layer_norm = nn.LayerNorm(d_model)
+        self.layer_norm = LayerNorm(d_model)
 
         self.scale = 1 / (d_head ** 0.5)
 
@@ -605,12 +611,14 @@ class MemTransformerLM(nn.Module):
         self.mem_len = mem_len
         self.ext_len = ext_len
 
-    def init_mems(self):
+    def init_mems(self, data):
         if self.mem_len > 0:
             mems = []
             param = next(self.parameters())
             for i in range(self.n_layer+1):
-                empty = torch.empty(0, dtype=param.dtype, device=param.device)
+                empty = torch.zeros(self.mem_len, data.size(1), self.d_model,
+                    dtype=param.dtype, device=param.device)
+#                 empty = torch.empty(0, dtype=param.dtype, device=param.device)
                 mems.append(empty)
 
             return mems
@@ -736,7 +744,7 @@ class MemTransformerLM(nn.Module):
         return core_out, new_mems
 
     def forward(self, data, mems):
-        if not mems: mems = self.init_mems()
+        if not mems: mems = self.init_mems(data)
         return self._forward(data, mems=mems)
         
 #     def forward(self, data, target, mems):
