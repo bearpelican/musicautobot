@@ -13,8 +13,8 @@ import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 from torch.nn.parameter import Parameter
 
-from bert import BertLayerNorm as LayerNorm
-# from file_utils import cached_path
+from .bert import BertLayerNorm as LayerNorm
+# from .file_utils import cached_path
 
 logger = logging.getLogger(__name__)
 

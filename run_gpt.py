@@ -1,7 +1,7 @@
 from fastai.text import *
 from fastai.distributed import *
 from fastai_data import *
-import gpt
+from gpt import gpt
 
 import argparse
 parser = argparse.ArgumentParser()
