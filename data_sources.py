@@ -57,7 +57,8 @@ def transform_csv_row(idxrow, transform_func, base_path, source_dir, out_dir, ou
     file = Path(base_path)/file
     if not file.exists(): return idx, None
     
-    out_file = Path(str(file).replace(f'/{source_dir}/', f'/{out_dir}/')).with_suffix(out_extension)
+    out_file = Path(str(file).replace(f'/{source_dir}/', f'/{out_dir}/'))
+    if out_extension is not None: out_file = out_file.with_suffix(out_extension)
     out_file.parent.mkdir(parents=True, exist_ok=True)
     if out_file.exists(): return idx,str(out_file.relative_to(base_path))
     try: transform_func(file, out_file, row)
