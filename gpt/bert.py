@@ -152,6 +152,7 @@ class BertConfig(object):
 
 try:
     from apex.normalization.fused_layer_norm import FusedLayerNorm as BertLayerNorm
+#     raise ImportError('Disabling apex for fp16 testing for now')
 except ImportError:
     print("Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex.")
     class BertLayerNorm(nn.Module):

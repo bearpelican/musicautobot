@@ -173,7 +173,8 @@ class Attention(nn.Module):
         # w = w * self.b + -1e9 * (1 - self.b)  # TF implem method: mask_attn_weights
         # XD: self.b may be larger than w, so we need to crop it
         b = self.b[:, :, :w.size(-2), :w.size(-1)]
-        w = w * b + -1e9 * (1 - b)
+        eps = -5e4 if w.dtype == torch.float16 else -1e9 # -1e9 out of half precision range
+        w = w * b + eps * (1 - b)
 
         w = nn.Softmax(dim=-1)(w)
         w = self.attn_dropout(w)
@@ -431,7 +432,6 @@ class OpenAIGPTPreTrainedModel(nn.Module):
             # Clean up temp dir
             shutil.rmtree(tempdir)
         return model
-
 
 class OpenAIGPTModel(OpenAIGPTPreTrainedModel):
     """OpenAI GPT model ("Improving Language Understanding by Generative Pre-Training").
