@@ -33,12 +33,15 @@ data.valid_ds.x.processor[0] = TokenizeProcessor(tokenizer=MusicTokenizer())
 
 learn = language_model_learner(data, drop_mult=1, clip=0.5, bptt=bptt).distributed(args.local_rank)
 if args.load:
-if args.load:
     load_path = Path(args.path)/args.load
     state = torch.load(load_path, map_location='cpu')
     get_model(learn.model).load_state_dict(state['model'], strict=True)
     learn.model.cuda()
+if args.save:
+    save_path = Path(args.path)/learn.model_dir/args.save
+    save_path.parent.mkdir(parents=True, exist_ok=True)
 learn.unfreeze()
+if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=25, moms=(0.7,0.5))
 if args.local_rank == 0: learn.save(f'{args.save}')
