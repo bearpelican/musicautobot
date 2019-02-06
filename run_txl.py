@@ -1,5 +1,6 @@
 from fastai.text import *
 from fastai.callbacks.tracker import *
+from fastai.callbacks.rnn import RNNTrainer
 from fastai.distributed import *
 from fastai_data import *
 from transformer_xl import default_txl
@@ -51,7 +52,7 @@ class TXLTrainer(LearnerCallback):
         out, self.mems = last_output
         return out
 
-learn = LanguageLearner(data, model, bptt, clip=0.4).distributed(args.local_rank)
+learn = LanguageLearner(data, model, bptt, clip=0.4)
 if args.load:
     load_path = Path(args.path)/args.load
     state = torch.load(load_path, map_location='cpu')
@@ -60,8 +61,10 @@ if args.load:
 if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
-learn.callbacks = [TXLTrainer(learn)]
+learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
+learn.callbacks.append(TXLTrainer(learn))
 if args.half: learn = learn.to_fp16(loss_scale=1024*10)
+learn = learn.distributed(args.local_rank)
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=25, moms=(0.7,0.5))
