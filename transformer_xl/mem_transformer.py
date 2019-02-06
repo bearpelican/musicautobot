@@ -557,28 +557,28 @@ class MemTransformerLM(nn.Module):
 
         self.sample_softmax = sample_softmax
         # use sampled softmax
-        if sample_softmax > 0:
-            self.out_layer = nn.Linear(d_model, n_token)
-            if tie_weight:
-                self.out_layer.weight = self.word_emb.weight
-            self.tie_weight = tie_weight
-            self.sampler = LogUniformSampler(n_token, sample_softmax)
+#         if sample_softmax > 0:
+#             self.out_layer = nn.Linear(d_model, n_token)
+#             if tie_weight:
+#                 self.out_layer.weight = self.word_emb.weight
+#             self.tie_weight = tie_weight
+#             self.sampler = LogUniformSampler(n_token, sample_softmax)
 
-        # use adaptive softmax (including standard softmax)
-        else:
-            self.crit = ProjectedAdaptiveLogSoftmax(n_token, d_embed, d_model, 
-                                                    cutoffs, div_val=div_val)
+#         # use adaptive softmax (including standard softmax)
+#         else:
+#             self.crit = ProjectedAdaptiveLogSoftmax(n_token, d_embed, d_model, 
+#                                                     cutoffs, div_val=div_val)
 
-            if tie_weight:
-                for i in range(len(self.crit.out_layers)):
-                    self.crit.out_layers[i].weight = self.word_emb.emb_layers[i].weight
+#             if tie_weight:
+#                 for i in range(len(self.crit.out_layers)):
+#                     self.crit.out_layers[i].weight = self.word_emb.emb_layers[i].weight
 
-            if tie_projs:
-                for i, tie_proj in enumerate(tie_projs):
-                    if tie_proj and div_val == 1 and d_model != d_embed:
-                        self.crit.out_projs[i] = self.word_emb.emb_projs[0]
-                    elif tie_proj and div_val != 1:
-                        self.crit.out_projs[i] = self.word_emb.emb_projs[i]
+#             if tie_projs:
+#                 for i, tie_proj in enumerate(tie_projs):
+#                     if tie_proj and div_val == 1 and d_model != d_embed:
+#                         self.crit.out_projs[i] = self.word_emb.emb_projs[0]
+#                     elif tie_proj and div_val != 1:
+#                         self.crit.out_projs[i] = self.word_emb.emb_projs[i]
 
         self.same_length = same_length
         self.clamp_len = clamp_len
