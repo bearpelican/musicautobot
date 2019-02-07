@@ -52,7 +52,8 @@ class TXLTrainer(LearnerCallback):
         out, self.mems = last_output
         return out
 
-learn = LanguageLearner(data, model, bptt, clip=0.4)
+full_clip = None if args.half else 0.3
+learn = LanguageLearner(data, model, bptt, clip=full_clip)
 if args.load:
     load_path = Path(args.path)/args.load
     state = torch.load(load_path, map_location='cpu')
@@ -63,10 +64,10 @@ if args.save:
     save_path.parent.mkdir(parents=True, exist_ok=True)
 learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
 learn.callbacks.append(TXLTrainer(learn))
-if args.half: learn = learn.to_fp16(loss_scale=1024*10)
+if args.half: learn = learn.to_fp16(clip=.4)
 learn = learn.distributed(args.local_rank)
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=25, moms=(0.7,0.5))
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=30, moms=(0.7,0.5))
 
 if args.local_rank == 0: learn.save(f'{args.save}')
