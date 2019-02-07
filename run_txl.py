@@ -65,7 +65,7 @@ if args.save:
 learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
 learn.callbacks.append(TXLTrainer(learn))
 if args.half: learn = learn.to_fp16(clip=.4)
-learn = learn.distributed(args.local_rank)
+learn = learn.distributed(args.local_rank, drop_last=True)
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=30, moms=(0.7,0.5))

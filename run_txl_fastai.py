@@ -46,7 +46,7 @@ if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
 if args.half: learn = learn.to_fp16(clip=.4)
-learn = learn.distributed(args.local_rank)
+learn = learn.distributed(args.local_rank, drop_last=True)
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=25, moms=(0.7,0.5))
