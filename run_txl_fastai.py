@@ -11,6 +11,7 @@ parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
 parser.add_argument("--local_rank", type=int)
 parser.add_argument("--batch_size", type=int, default=8)
+parser.add_argument("--mem_len", type=int, default=512)
 parser.add_argument("--bptt", type=int, default=512)
 parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
@@ -35,7 +36,7 @@ vocab = data.train_ds.vocab
 vocab_size = len(vocab.itos)
 
 tfmerXL_lm_config['ctx_len'] = 512
-tfmerXL_lm_config['mem_len'] = 512
+tfmerXL_lm_config['mem_len'] = args.mem_len
 
 full_clip = None if args.half else 0.3
 learn = language_model_learner(data, TransformerXL, clip=full_clip)
@@ -49,7 +50,7 @@ if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
 if args.half: learn = learn.to_fp16(clip=.4)
-learn = learn.distributed(args.local_rank, drop_last=True)
+learn = learn.distributed(args.local_rank, drop_last=True, shuffle=False)
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=25, moms=(0.7,0.5))
