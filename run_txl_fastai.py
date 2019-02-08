@@ -11,7 +11,7 @@ parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
 parser.add_argument("--local_rank", type=int)
 parser.add_argument("--batch_size", type=int, default=8)
-parser.add_argument("--bptt", type=int, default=500)
+parser.add_argument("--bptt", type=int, default=512)
 parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
 parser.add_argument('--epochs', type=int, default=5, help='num epochs')
@@ -33,6 +33,9 @@ data.valid_ds.x.processor[0] = TokenizeProcessor(tokenizer=MusicTokenizer())
 
 vocab = data.train_ds.vocab
 vocab_size = len(vocab.itos)
+
+tfmerXL_lm_config['ctx_len'] = 512
+tfmerXL_lm_config['mem_len'] = 512
 
 full_clip = None if args.half else 0.3
 learn = language_model_learner(data, TransformerXL, clip=full_clip)
