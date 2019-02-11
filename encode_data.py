@@ -26,6 +26,7 @@ from collections import defaultdict
 
 
 TSEP = '||' # beat/timestep end encoding
+
 MSTART = '|s|' # measure start encoding
 MEND = '|e|' # measure end encoding
 NPRE = 'n' # note value encoding prefix
@@ -35,7 +36,6 @@ IPRE = 'i' # instrument encoding prefix
 TPRE = 't' # note type encoding prefix - negative means duration encoded
 VALTSTART = -1 # numpy value for TSTART
 VALTCONT = -2 # numpy value for TCONT
-
 
 NOTE_SEP = ':' # separator for note components. No longer using
 
@@ -126,7 +126,7 @@ def midi2str(midi_file, note_func, continuous=False):
     return seq2str(seq, note_func=note_func, continuous=continuous)
 
 # 2.
-def stream2chordarr(s, note_range=127, sample_freq=4):
+def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
@@ -153,10 +153,11 @@ def stream2chordarr(s, note_range=127, sample_freq=4):
         pitchesInChord=c.pitches
         for p in pitchesInChord:
             notes.append(note_data(p, c))
-
-    for n in notes:
+    notes_sorted = sorted(notes, key=lambda x:[1])
+    for n in notes_sorted:
         if n is None: continue
         pitch,offset,duration,inst = n
+        if max_dur is not None and duration > max_dur: duration = max_dur
         score_arr[offset, inst, pitch] = duration
         score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
     return score_arr
@@ -258,14 +259,13 @@ def str2seq(seq_str):
         tsplit = t.split(' ')
         if tsplit and TPRE in tsplit[0]:
             duration = int(tsplit[0][1:])
-            for i in range(duration):
-                seq.append([])
+            for i in range(duration): seq.append([])
             tsplit = tsplit[1:]
-        seq.append(steps2chordarr(tsplit))
+        seq.append(steps2seq(tsplit))
     return seq
 
 # 1b.
-def steps2chordarr(tarr):
+def steps2seq(tarr):
     idxs = [idx for idx,s in enumerate(tarr) if s and s[0] == NPRE]
     notes = []
     for a in np.split(tarr, idxs):

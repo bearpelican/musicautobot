@@ -64,7 +64,7 @@ def transform_csv_row(idxrow, transform_func, base_path, source_dir, out_dir, ou
     if out_file.exists(): return idx,str(out_file.relative_to(base_path))
     try: transform_func(file, out_file, row)
     except Exception as e:
-        print('Error converting midi to sequence', e)
+        print('Error converting midi to sequence', e, file)
         return idx,None
     return idx,str(out_file.relative_to(base_path))
 
