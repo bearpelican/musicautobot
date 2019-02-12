@@ -38,18 +38,18 @@ vocab_size = len(vocab.itos)
 tfmerXL_lm_config['ctx_len'] = 512
 tfmerXL_lm_config['mem_len'] = args.mem_len
 
-full_clip = None if args.half else 0.3
+full_clip = None if args.half else 0.25
 learn = language_model_learner(data, TransformerXL, clip=full_clip)
 
 if args.load:
     load_path = Path(args.path)/args.load
     state = torch.load(load_path, map_location='cpu')
-    get_model(learn.model).load_state_dict(state['model'], strict=True)
+    get_model(learn.model).load_state_dict(state['model'], strict=False)
     learn.model.cuda()
 if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
-if args.half: learn = learn.to_fp16(clip=.4)
+if args.half: learn = learn.to_fp16(clip=0.25, dynamic=True)
 learn = learn.distributed(args.local_rank, drop_last=True, shuffle=False)
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 learn.callbacks.append(EarlyStoppingCallback(learn))
