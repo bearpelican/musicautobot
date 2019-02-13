@@ -44,10 +44,11 @@ def play_midi(midi_file, wav_file=None):
     wav_file = midi2wav(midi_file, wav_file)
     return Audio(str(wav_file))
 
-def print_stream_durations(stream):
+def print_stream_durations(stream, threshold=None):
     for m in stream.flat:
         if isinstance(m, (music21.chord.Chord, music21.note.Note)):
-            print(m.duration.quarterLength, m.offset, m)
+            if threshold is None or m.duration.quarterLength > threshold:
+                print(m.duration.quarterLength, m.offset, m)
             
 ### Midi transpose
 

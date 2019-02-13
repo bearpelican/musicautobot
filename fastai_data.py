@@ -107,6 +107,7 @@ class LMDataBunch(DataBunch):
                         ItemList(valid_ids, path=path, processor=[]))
         src = src.label_const(label_cls=LMLabelList)
         if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
+        src.x._bunch = LMDataBunch
         return src.databunch(**kwargs)
     
     def save(self, cache_name:PathOrStr='tmp'):
