@@ -1,5 +1,10 @@
 from fastai.text import *
+from numbers import Integral
+from encode_data import npenc2seq
 
+TO_SEQ = False
+NO_INST = True
+    
 class MusicTokenizer():
     def __init__(self):
         super().__init__()
@@ -77,12 +82,13 @@ class LMNumericalizeProcessor(PreProcessor):
         
         
 ## For npenc dataset
+
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
         return np.load(item) if isinstance(item, Path) else item
     
-class LMDataBunch(DataBunch):
+class LMNPDataBunch(DataBunch):
     "Create a `TextDataBunch` suitable for training a language model."
     @classmethod
     def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
@@ -91,7 +97,7 @@ class LMDataBunch(DataBunch):
         "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
         datasets = cls._init_ds(train_ds, valid_ds, test_ds)
         val_bs = ifnone(val_bs, bs)
-        datasets = [LMPreloader(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards) 
+        datasets = [LMNPPreloader(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards) 
                     for i,ds in enumerate(datasets)]
         val_bs = bs
         dls = [DataLoader(d, b, shuffle=False) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]
@@ -103,11 +109,10 @@ class LMDataBunch(DataBunch):
                  valid_lbls:Collection[Union[int,float]]=None, classes:Collection[Any]=None,
                  processor:PreProcessor=None, **kwargs) -> DataBunch:
         "Create a `TextDataBunch` from ids, labels and a `vocab`. `kwargs` are passed to the dataloader creation."
-        src = ItemLists(path, ItemList(train_ids, path=path, processor=[]),
-                        ItemList(valid_ids, path=path, processor=[]))
+        src = ItemLists(path, LMNPItemList(train_ids, path=path, processor=[]),
+                        LMNPItemList(valid_ids, path=path, processor=[]))
         src = src.label_const(label_cls=LMLabelList)
         if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
-        src.x._bunch = LMDataBunch
         return src.databunch(**kwargs)
     
     def save(self, cache_name:PathOrStr='tmp'):
@@ -131,8 +136,24 @@ class LMDataBunch(DataBunch):
         classes = loadtxt_str(cache_path/'classes.txt') if os.path.isfile(cache_path/'classes.txt') else None
         return cls.from_ids(path, train_ids, valid_ids, test_ids, train_lbls, valid_lbls, classes, processor, **kwargs)
 
+class LMNPItemList(ItemList):
+    _bunch = LMNPDataBunch
+    def get(self, i)->Any:
+        tfmd = self.items[i] + 1
+        if NO_INST: return tfmd[:,:3]
+        return tfmd
+    
+    def reconstruct(self, t:Tensor):
+        if TO_SEQ: return npenc2seq((t-1))
+        return t-1
+    
+    def __getitem__(self,idxs:int)->Any:
+        idxs = try_int(idxs)
+        if isinstance(idxs, Integral): return self.get(idxs)
+        else: return self.new(self.items[idxs], xtra=index_row(self.xtra, idxs))
+        
 
-class LMPreloader(Callback):
+class LMNPPreloader(Callback):
     "Transforms the tokens in `dataset` to a stream of contiguous batches for language modelling."
     
     class CircularIndex():
@@ -150,7 +171,7 @@ class LMPreloader(Callback):
 
     def __len__(self): 
         if self.ite_len is None:
-            if self.lengths is None: self.lengths = np.array([len(item) for item in self.dataset.x.items])
+            if self.lengths is None: self.lengths = np.array([len(item) for item in self.dataset.x])
             self.totalToks = self.lengths.sum()
             self.ite_len   = self.bs*int( math.ceil( self.totalToks/(self.bptt*self.bs) )) if self.item is None else 1
         return self.ite_len
@@ -160,8 +181,8 @@ class LMPreloader(Callback):
     def allocate_buffers(self):
         "Create the ragged array that will be filled when we ask for items."
         if self.ite_len is None: len(self)
-        self.idx   = LMPreloader.CircularIndex(len(self.dataset.x.items), not self.backwards)
-        self.batch = np.zeros((self.bs, self.bptt+1, self.dataset.x.items[0].shape[1]), dtype=np.int64)
+        self.idx   = LMNPPreloader.CircularIndex(len(self.dataset.x), not self.backwards)
+        self.batch = np.zeros((self.bs, self.bptt+1, self.dataset.x[0].shape[1]), dtype=np.int64)
         self.batch_x, self.batch_y = self.batch[:,0:self.bptt], self.batch[:,1:self.bptt+1] 
         #ro: index of the text we're at inside our datasets for the various batches
         self.ro    = np.zeros(self.bs, dtype=np.int64)
@@ -192,7 +213,7 @@ class LMPreloader(Callback):
         if j==0:
             if self.item is not None: return self.dataset[0]
             if self.idx is None: self.on_epoch_begin()
-        self.ro[j],self.ri[j] = self.fill_row(not self.backwards, self.dataset.x.items, self.idx, self.batch[j], 
+        self.ro[j],self.ri[j] = self.fill_row(not self.backwards, self.dataset.x, self.idx, self.batch[j], 
                                               self.ro[j], self.ri[j], overlap=1, lengths=self.lengths)
         return self.batch_x[j], self.batch_y[j]
 

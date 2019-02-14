@@ -355,3 +355,51 @@ def load_chordarr(file):
     sparse_matrix = scipy.sparse.load_npz(file)
     np_arr = np.array(sparse_matrix.todense())
     return np_arr.reshape((np_arr.shape[0], -1, 127))
+
+
+
+# npenc functions
+
+VALTSEP = 12
+VALTBOS = 13
+PADDING_IDX = -1
+
+# 4.
+def npenc_func(n, inst=False):
+    if inst: return [n.pitch.pitchClass, n.pitch.octave, n.dur, n.inst]
+    return [n.pitch.pitchClass, n.pitch.octave, n.dur]
+
+def seq2npenc(seq, enc_func=npenc_func):
+    "Note function returns a list of note components for spearation"
+    result = [[VALTBOS, PADDING_IDX, PADDING_IDX, PADDING_IDX]]
+    wait_count = 0
+    for idx,timestep in enumerate(seq):
+        flat_time = [enc_func(n) for n in timestep if n.pitch.octave and n.dur > 0]
+        if len(flat_time) == 0:
+            wait_count += 1
+        else:
+            # pitch, octave, duration, instrument
+            result.append([VALTSEP, PADDING_IDX, wait_count, PADDING_IDX])
+            result.extend(flat_time)
+            wait_count = 0
+    return np.array(result, dtype=int)
+
+def npdec_func(step):
+    n,o,d = step[:3]
+    i = step[3] if len(step) == 4 else None
+    return NoteEnc(n+((o+1)*12),d,i)
+    
+def npenc2seq(npenc, dec_func=npdec_func):
+    seq = []
+    tstep = []
+    for x in npenc:
+        n = x[0]
+        if n == VALTBOS: continue
+        if n == VALTSEP: 
+            if len(tstep) > 0: seq.append(tstep)
+            tstep = []
+            for i in range(d): seq.append([])
+        else:
+            tstep.append(dec_func(x))
+    if len(tstep) > 0: seq.append(tstep)
+    return seq
