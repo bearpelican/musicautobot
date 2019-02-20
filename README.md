@@ -10,16 +10,23 @@ After installation, create our midi environment:
 #### Musescore
 If you want to be able to show scores in a jupyter notebook, install musescore:  
 
-MacOS:
+MacOS:  
 Download here: https://musescore.org/en/download  
 You may need to set music21 environment path in jupyter notebook:  
-`music21.environment.set('musicxmlPath', '/Applications/MuseScore 3.app/Contents/MacOS/mscore')`
-`music21.environment.set('musescoreDirectPNGPath', '/Applications/MuseScore 3.app/Contents/MacOS/mscore')`
+```python
+music21.environment.set('musicxmlPath', '/Applications/MuseScore 3.app/Contents/MacOS/mscore')
+music21.environment.set('musescoreDirectPNGPath', '/Applications/MuseScore 3.app/Contents/MacOS/mscore')
+```
 
-Ubuntu:
-`sudo apt-get install musescore`
-`music21.environment.set('musicxmlPath', '/usr/bin/musescore')`
-`music21.environment.set('musescoreDirectPNGPath', '/usr/bin/musescore')`
+Ubuntu:  
+`sudo apt-get install musescore`  
+```python
+music21.environment.set('musicxmlPath', '/usr/bin/musescore')
+music21.environment.set('musescoreDirectPNGPath', '/usr/bin/musescore')
+
+os.environ['QT_QPA_PLATFORM']='offscreen'
+os.environ['QT_QPA_FONTDIR']='/usr/share/fonts'
+```
 
 
 ## Installation
