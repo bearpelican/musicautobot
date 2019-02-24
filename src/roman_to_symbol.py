@@ -493,7 +493,7 @@ def proc_roman_to_symbol(raw, is_key=True, save_path=None, name='tab', save_type
 
 
 
-def hchord_parser(chord, mode, key_offset):
+def hchord_parser(chord, mode, key_offset, reset_to_base=True):
     if chord['sd'] == 'rest': return None
 
     # extract basic info
@@ -586,6 +586,11 @@ def hchord_parser(chord, mode, key_offset):
 
     # key shifting of the symbol
     data = chord_key_shifting(data, key_offset)
+    
+    # After offset, let's reset the chord to be the lowest possible offset on new scale
+    if reset_to_base:
+        reset_base = data['root'] - data['bass']
+        data = chord_key_shifting(data, reset_base)
 
     # set chord name
     data['symbol'] = chord_to_string(data)
