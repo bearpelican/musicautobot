@@ -280,7 +280,7 @@ def chord_parser(chord, mode, key_offset):
 
     # determine the mode
     borrowed = is_int(borrowed)
-    chord_key = MODE_TO_KEY[int(mode)]if borrowed is None else borrowed
+    chord_key = MODE_TO_KEY[int(mode)] if borrowed is None else borrowed
     chord_key = 6 if chord_key > 6 else chord_key
     chord_key = -6 if chord_key < -6 else chord_key
 
@@ -493,18 +493,18 @@ def proc_roman_to_symbol(raw, is_key=True, save_path=None, name='tab', save_type
 
 
 
-def hchord_parser(chord, mode, key_offset, reset_to_base=True):
+def hchord_parser(chord, mode, key_offset):
     if chord['sd'] == 'rest': return None
 
     # extract basic info
     sd = int(chord['sd']) - 1     # root
     fb = chord['fb']              # tension & inversion
     sec = chord['sec']            # secondary chord
-    borrowed = chord['borrowed']  # borrowed mode
+    borrowed = chord.get('borrowed', None)  # borrowed mode
 
     # determine the mode
     borrowed = is_int(borrowed)
-    chord_key = MODE_TO_KEY[int(mode)]if borrowed is None else borrowed
+    chord_key = MODE_TO_KEY[int(mode)] if borrowed is None else borrowed
     chord_key = 6 if chord_key > 6 else chord_key
     chord_key = -6 if chord_key < -6 else chord_key
 
@@ -540,7 +540,7 @@ def hchord_parser(chord, mode, key_offset, reset_to_base=True):
     comp_vec = comp_to_compvec(comp)
 
     # sus (omit 3)
-    sus = chord['sus']
+    sus = chord.get('sus', None)
     comp_vec = set_sus(comp_vec, scale, sd, sus)
 
     # emb (add/omit)
@@ -586,11 +586,6 @@ def hchord_parser(chord, mode, key_offset, reset_to_base=True):
 
     # key shifting of the symbol
     data = chord_key_shifting(data, key_offset)
-    
-    # After offset, let's reset the chord to be the lowest possible offset on new scale
-    if reset_to_base:
-        reset_base = data['root'] - data['bass']
-        data = chord_key_shifting(data, reset_base)
 
     # set chord name
     data['symbol'] = chord_to_string(data)
