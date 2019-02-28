@@ -311,6 +311,7 @@ def chord_parser(chord, mode, key_offset):
 
     # add shift from secondary chords
     comp = (comp + sec_offset)
+    scale = [s+sec_offset for s in scale] # (AS) Need to shift scale upwards for sus and emb
 
     # set compvec (for sus/add/omit)
     comp_vec = comp_to_compvec(comp)
@@ -535,6 +536,7 @@ def hchord_parser(chord, mode, key_offset):
 
     # add shift from secondary chords
     comp = (comp + sec_offset)
+    scale = [s+sec_offset for s in scale] # (AS) Need to shift scale upwards for sus and emb
 
     # set compvec (for sus/add/omit)
     comp_vec = comp_to_compvec(comp)
@@ -552,7 +554,7 @@ def hchord_parser(chord, mode, key_offset):
         alter_info = []
 
     # alter (won't change the quality)
-    alter_info = alter_info if len(alter_info) else chord['alternate']
+    alter_info = alter_info if len(alter_info) else chord.get('alternate', None)
     comp_vec, alter_map = set_alter(comp_vec, alter_info)
 
     # set inversion (won't change the root, but bass)

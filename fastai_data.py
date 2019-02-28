@@ -4,6 +4,8 @@ from encode_data import npenc2seq
 
 TO_SEQ = False
 NO_INST = True
+Y_OFFSET=4
+VAL_OFFSET=0
     
 class MusicTokenizer():
     def __init__(self):
@@ -139,13 +141,13 @@ class LMNPDataBunch(DataBunch):
 class LMNPItemList(ItemList):
     _bunch = LMNPDataBunch
     def get(self, i)->Any:
-        tfmd = self.items[i] + 1
-        if NO_INST: return tfmd[:,:3]
+        tfmd = self.items[i] + VAL_OFFSET
+#         if NO_INST: return tfmd[:,:3]
         return tfmd
     
     def reconstruct(self, t:Tensor):
-        if TO_SEQ: return npenc2seq((t-1))
-        return t-1
+#         if TO_SEQ: return npenc2seq((t-1))
+        return t-VAL_OFFSET
     
     def __getitem__(self,idxs:int)->Any:
         idxs = try_int(idxs)
@@ -182,8 +184,8 @@ class LMNPPreloader(Callback):
         "Create the ragged array that will be filled when we ask for items."
         if self.ite_len is None: len(self)
         self.idx   = LMNPPreloader.CircularIndex(len(self.dataset.x), not self.backwards)
-        self.batch = np.zeros((self.bs, self.bptt+1, self.dataset.x[0].shape[1]), dtype=np.int64)
-        self.batch_x, self.batch_y = self.batch[:,0:self.bptt], self.batch[:,1:self.bptt+1] 
+        self.batch = np.zeros((self.bs, self.bptt+Y_OFFSET, self.dataset.x[0].shape[1]), dtype=np.int64)
+        self.batch_x, self.batch_y = self.batch[:,0:self.bptt], self.batch[:,Y_OFFSET:self.bptt+Y_OFFSET] 
         #ro: index of the text we're at inside our datasets for the various batches
         self.ro    = np.zeros(self.bs, dtype=np.int64)
         #ri: index of the token we're at inside our current text for the various batches
