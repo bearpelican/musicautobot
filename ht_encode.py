@@ -121,7 +121,8 @@ class HPitch(Base):
         return self.pitch + 12 * (self.octave+base_octave)
     
     def __repr__(self):
-        return f'sd={self.sd()}:oct={self.octave}'
+#         return f'sd={self.sd()}:oct={self.octave}'
+        return f'{self.sd()}'
     
     @classmethod
     def parse_abs_pitch(cls, abs_pitch, base_octave=0):
@@ -146,7 +147,7 @@ class HNote(Base):
         return self.beat.end_time()
     
     def __repr__(self):
-        return f'B({self.beat}) P({self.pitch})'
+        return f'{self.pitch}'
     
     @classmethod
     def parse(cls, d, mode, key_offset):
@@ -194,7 +195,7 @@ class HChord(Base):
         return c, float(self.beat.abs)
     
     def __repr__(self):
-        return f'B({self.beat}) C([{self.pitches}])'# + ' Comp:' + str(self.composition)
+        return f'[{self.pitches}])'# + ' Comp:' + str(self.composition)
 
     @classmethod
     def parse(cls, d, mode, key_offset, reset_to_base=True, remove_emb=False, remove_large=True):
