@@ -366,7 +366,7 @@ def enc_song(song):
     bos_row[:,[iN,iC1]] = config.bos_idx
     enc_all = np.concatenate((bos_row, cat))
     enc_off = enc_all + config.enc_offset
-    assert((enc_off >= 0).any())
+    assert((enc_off >= 0).all())
     return enc_off
 
 
