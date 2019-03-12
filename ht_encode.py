@@ -10,6 +10,7 @@ from src.tab_parser import *
 
 # sustain=True, sep_octave=True, sus_idx=2, hit_idx=1
 config_opts = dict(note_octave=5, chord_octave=3,
+                   sort_invert=False, # sort pitches by inversion order
                    continuous=True,
                    throw_err=False,
                    sus_idx=1, hit_idx=0,
@@ -152,7 +153,7 @@ class HNote(Base):
     @classmethod
     def parse(cls, d, mode, key_offset):
         parsed = roman_to_symbol.hnote_parser(d, mode, key_offset)
-        pitch = HPitch.parse_abs_pitch(parsed['pitch'], base_octave=config.note_octave) # pitch can be negative so offset octae
+        pitch = HPitch.parse_abs_pitch(parsed['pitch'], base_octave=config.note_octave) # pitch can be negative so offset octave
         beat = HBeat.parse_note(d)
         return cls(beat=beat, pitch=pitch) 
 
@@ -171,7 +172,7 @@ def shift_octave(parsed):
     lowest = min(parsed['composition'])
     if lowest >= 12:
         parsed = parsed.copy()
-        parsed = roman_to_symbol.chord_key_shifting(parsed, -12)
+        parsed = roman_to_symbol.chord_key_shifting(parsed, -(lowest//12 * 12))
         # reset chord name
         new_s = roman_to_symbol.chord_to_string(parsed)
         parsed['symbol'] = new_s
@@ -179,10 +180,14 @@ def shift_octave(parsed):
 
 @dataclass
 class HChord(Base):
-    def __init__(self, beat:HBeat, pitches:List[HPitch], 
+    def __init__(self, beat:HBeat, pitches:List[HPitch], inv:int,
                  composition:List[int]=None, symbol:str=None, quality:str=None, metadata=None, **kwargs):
         self.beat = beat
         self.pitches = pitches
+        min_octave = min([p.octave for p in pitches])
+        if min_octave > 0:
+            for p in self.pitches: p.octave = p.octave - min_octave
+        self.inv = inv
         self.composition, self.symbol, self.quality = composition, symbol, quality
         self.metadata = None
         
@@ -209,7 +214,8 @@ class HChord(Base):
         parsed['composition'] = parsed['composition'].astype(int).tolist()
         
         beat = HBeat.parse_chord(d)
-        pitches = [HPitch.parse_abs_pitch(p, base_octave=config.chord_octave) for p in sorted(parsed['composition'])] # first pitch = base note
+        if config.sort_invert: pitches = [HPitch.parse_abs_pitch(p) for p in sorted(parsed['composition'])] # first pitch = base note
+        pitches = [HPitch.parse_abs_pitch(p) for p in parsed['composition']] # first pitch = base note
         
         return cls(beat=beat, pitches=pitches, metadata=parsed, **parsed)
 
@@ -248,6 +254,7 @@ class HPart(Base):
         n_last = self.notes[-1].end_time() if self.notes else 0
         return max(c_last, n_last)
     
+    # Note: first chord not played - https://github.com/rism-ch/verovio/issues/995
     def to_m21(self)->music21.stream.Stream:
         mc = music21.stream.Part()
         mn = music21.stream.Part()
@@ -293,8 +300,8 @@ class HSong(Base):
             pn.append(mn)
             pc.append(mc)
             
-        s.insert(0, pn)
-        s.insert(0, pc)
+        s.insert(0.0, pn)
+        s.insert(0.0, pc)
 
 #         s.flat.makeNotation(inPlace=True)
         s = s.transpose(0) # hack to get accidentals right. Above method does not work
@@ -306,9 +313,10 @@ class HSong(Base):
     
     
     
-ENC_IDXS = [0,1,2,3,4,5,6,7,8,9]
-iN,iNO,iND,iC1,iC2,iC3,iC4,iCD,iB,iM = ENC_IDXS
+ENC_IDXS = [0,1,2,3,4,5,6,7,8,9,10]
+iB,iM,iN,iNO,iND,iC1,iC2,iC3,iC4,iCD,iCI = ENC_IDXS
 CIDXS = [iC1,iC2,iC3,iC4]
+CIDX_ALL = CIDXS + [iCD,iCI]
 NIDX_ALL = [iN,iNO,iND]
 BIDX_ALL = [iB,iM]
 
@@ -352,19 +360,24 @@ def enc_part(part):
             for idx, p in zip(CIDXS,c.pitches):
                 sequence[int(start):int(end),idx] = p.pitch
             sequence[int(start):int(end),iCD] = config.sus_idx
+            sequence[int(start):int(end),iCI] = c.inv
             sequence[int(start),iCD] = config.hit_idx
         else:
             for idx, p in zip(CIDXS,c.pitches):
                 sequence[int(start),idx] = p.pitch
+            sequence[int(start),iCI] = c.inv
             sequence[int(start),iCD] = duration
     return sequence
 
-def enc_song(song):
+def enc_song(song, step_size=1):
     eps = [enc_part(p) for p in song.parts]
     cat = np.concatenate(eps)
-    bos_row = np.full((1, cat.shape[-1]), fill_value=config.pad_idx)
-    bos_row[:,[iN,iC1]] = config.bos_idx
+    if step_size > 1: cat = cat.reshape(-1, step_size, cat.shape[-1])
+        
+    bos_row = np.full(((1,) + cat.shape[1:]), fill_value=config.pad_idx)
+    bos_row[..., [iN,iC1]] = config.bos_idx
     enc_all = np.concatenate((bos_row, cat))
+    
     enc_off = enc_all + config.enc_offset
     assert((enc_off >= 0).all())
     return enc_off
@@ -401,12 +414,14 @@ def dec_chord(ts, beat_abs):
     octave = 0
     pitches = []
     pvals = ts[CIDXS]
+    inv = ts[iCI] if len(ts) > iCI else 0
     for idx,p in enumerate(pvals):
+        if is_padding(p): break
         if (idx > 0) and (p < pvals[idx-1]): 
             octave += 1
-        if is_padding(p): continue
         pitches.append(HPitch(pitch=int(p), octave=octave))
-    chord = HChord(pitches=pitches, beat=beat)
+    for p in pitches[:inv]: p.octave += 1 # invert pitches
+    chord = HChord(pitches=pitches, beat=beat, inv=inv)
     return chord
 
 def dec_part_durations(part):
@@ -458,8 +473,9 @@ def dec_part(part):
 
 def dec_arr(arr):
     arr = arr-config.enc_offset
-    if any(arr[0] == config.bos_idx):
+    if (arr[0] == config.bos_idx).any():
         arr = arr[1:]
+    arr = arr.reshape(-1, arr.shape[-1]) # reshape after bos - since timesteps could be blocks of 16
     dp = dec_part(arr)
     return HSong(parts=[dp], metadata=HMetadata('decoded'))
 

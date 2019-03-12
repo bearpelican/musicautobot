@@ -494,7 +494,7 @@ def proc_roman_to_symbol(raw, is_key=True, save_path=None, name='tab', save_type
 
 
 
-def hchord_parser(chord, mode, key_offset):
+def hchord_parser(chord, mode, key_offset, invert=True):
     if chord['sd'] == 'rest': return None
 
     # extract basic info
@@ -559,7 +559,7 @@ def hchord_parser(chord, mode, key_offset):
 
     # set inversion (won't change the root, but bass)
     inv = get_num_inversion(fb)
-    comp_vec = set_inversion(comp_vec, inv)
+    if invert: comp_vec = set_inversion(comp_vec, inv) # (AS) skip inversion
 
     # set result
     comp = compvec_to_comp(comp_vec)
