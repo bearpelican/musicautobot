@@ -210,7 +210,6 @@ def set_alter(comp_vec, input_):
             op = -1
         else:
             raise ValueError('Unknown acc in alter: %s' % input_)
-        print(alt_event)
 
         # set idx of vec
         if note == '5':

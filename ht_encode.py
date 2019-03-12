@@ -233,6 +233,7 @@ def default_stream(cls=music21.stream.Score, ts='4/4', bpm=120, ks=0):
 class HPart(Base):
     notes: List[HNote]
     chords: List[HChord]
+    num_measure: float
         
     @classmethod
     def parse(cls, d, metadata):
@@ -242,7 +243,7 @@ class HPart(Base):
         cs = [HChord.parse(c, mode, key_offset) for c in d.get('chords', []) if c['sd'] != 'rest']
         ns = sorted(ns, key=lambda n: n.end_time())
         cs = sorted(cs, key=lambda c: c.end_time())
-        return cls(notes=ns, chords=cs)
+        return cls(notes=ns, chords=cs, num_measure=d['num_measure'])
     
     def __repr__(self):
         chords = '[Chords]:\n' + '\n'.join([str(c) for c in self.chords])
@@ -250,9 +251,10 @@ class HPart(Base):
         return chords + '\n\n' + notes
     
     def duration(self):
-        c_last = self.chords[-1].end_time() if self.chords else 0
-        n_last = self.notes[-1].end_time() if self.notes else 0
-        return max(c_last, n_last)
+        return self.num_measure * config.bim
+#         c_last = self.chords[-1].end_time() if self.chords else 0
+#         n_last = self.notes[-1].end_time() if self.notes else 0
+#         return max(c_last, n_last)
     
     # Note: first chord not played - https://github.com/rism-ch/verovio/issues/995
     def to_m21(self)->music21.stream.Stream:
@@ -295,10 +297,12 @@ class HSong(Base):
         pc = music21.stream.Part()
         pn = music21.stream.Part()
         
+        offset = 0.0
         for p in self.parts:
             mn, mc = p.to_m21()
-            pn.append(mn)
-            pc.append(mc)
+            pn.insert(offset, mn)
+            pc.insert(offset, mc)
+            offset = p.duration() # fixes mismatched chord/note lengths
             
         s.insert(0.0, pn)
         s.insert(0.0, pc)
@@ -469,7 +473,7 @@ def dec_part(part):
     notes = [dec_note(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[iN])]
     chords = [dec_chord(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[iC1])]
     
-    return HPart(notes=notes, chords=chords)
+    return HPart(notes=notes, chords=chords, num_measure=part.shape[0]/config.bim)
 
 def dec_arr(arr):
     arr = arr-config.enc_offset
