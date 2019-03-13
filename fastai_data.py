@@ -4,7 +4,7 @@ from encode_data import npenc2seq
 
 TO_SEQ = False
 NO_INST = True
-Y_OFFSET=4
+Y_OFFSET=1
 VAL_OFFSET=0
     
 class MusicTokenizer():
@@ -184,7 +184,7 @@ class LMNPPreloader(Callback):
         "Create the ragged array that will be filled when we ask for items."
         if self.ite_len is None: len(self)
         self.idx   = LMNPPreloader.CircularIndex(len(self.dataset.x), not self.backwards)
-        self.batch = np.zeros((self.bs, self.bptt+Y_OFFSET, self.dataset.x[0].shape[1]), dtype=np.int64)
+        self.batch = np.zeros((self.bs, self.bptt+Y_OFFSET) + self.dataset.x[0].shape[1:], dtype=np.int64)
         self.batch_x, self.batch_y = self.batch[:,0:self.bptt], self.batch[:,Y_OFFSET:self.bptt+Y_OFFSET] 
         #ro: index of the text we're at inside our datasets for the various batches
         self.ro    = np.zeros(self.bs, dtype=np.int64)
@@ -217,7 +217,7 @@ class LMNPPreloader(Callback):
             if self.idx is None: self.on_epoch_begin()
         self.ro[j],self.ri[j] = self.fill_row(not self.backwards, self.dataset.x, self.idx, self.batch[j], 
                                               self.ro[j], self.ri[j], overlap=1, lengths=self.lengths)
-        return self.batch_x[j], self.batch_y[j]
+        return self.batch_x[j], self.batch_y[j][...,2:] # remove first 2 positional encodings
 
     def fill_row(self, forward, items, idx, row, ro, ri, overlap,lengths):
         "Fill the row with tokens from the ragged array. --OBS-- overlap != 1 has not been implemented"

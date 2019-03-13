@@ -323,6 +323,7 @@ CIDXS = [iC1,iC2,iC3,iC4]
 CIDX_ALL = CIDXS + [iCD,iCI]
 NIDX_ALL = [iN,iNO,iND]
 BIDX_ALL = [iB,iM]
+IGN_IDXS = [iND,iCD]
 
 
 
@@ -339,7 +340,7 @@ def enc_part(part):
     '(pitch x octave x dur) x (c1,c2,c3,c4,dur) x (bar_position x beat_pos)'
     max_len = int(part.duration()*config.freq)
     sequence = np.full((max_len, len(ENC_IDXS)), fill_value=config.pad_idx, dtype=int)
-    sequence[:,[iN,iC1]] = config.none_idx
+    sequence[:,IGN_IDXS] = config.none_idx
     
     # beat_pos
     bim = config.bim # beats_in_measure = 4
@@ -379,7 +380,7 @@ def enc_song(song, step_size=1):
     if step_size > 1: cat = cat.reshape(-1, step_size, cat.shape[-1])
         
     bos_row = np.full(((1,) + cat.shape[1:]), fill_value=config.pad_idx)
-    bos_row[..., [iN,iC1]] = config.bos_idx
+    bos_row[...,IGN_IDXS] = config.bos_idx
     enc_all = np.concatenate((bos_row, cat))
     
     enc_off = enc_all + config.enc_offset
@@ -470,8 +471,8 @@ def dec_part_durations(part):
 def dec_part(part):
     '(pitch x octave x dur) x (c1,c2,c3,c4,dur) x (bar_position x beat_pos)'
     if config.continuous: part = dec_part_durations(part)
-    notes = [dec_note(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[iN])]
-    chords = [dec_chord(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[iC1])]
+    notes = [dec_note(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[IGN_IDXS[0]])]
+    chords = [dec_chord(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[IGN_IDXS[1]])]
     
     return HPart(notes=notes, chords=chords, num_measure=part.shape[0]/config.bim)
 
