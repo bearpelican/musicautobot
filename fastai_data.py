@@ -1,10 +1,12 @@
 from fastai.text import *
 from numbers import Integral
 from encode_data import npenc2seq
+from ht_encode import enc_config, BIDX_ALL
 
 TO_SEQ = False
 NO_INST = True
 Y_OFFSET=1
+Y_SHIFT=len(BIDX_ALL)
 VAL_OFFSET=0
     
 class MusicTokenizer():
@@ -217,7 +219,7 @@ class LMNPPreloader(Callback):
             if self.idx is None: self.on_epoch_begin()
         self.ro[j],self.ri[j] = self.fill_row(not self.backwards, self.dataset.x, self.idx, self.batch[j], 
                                               self.ro[j], self.ri[j], overlap=1, lengths=self.lengths)
-        return self.batch_x[j], self.batch_y[j][...,2:] # remove first 2 positional encodings
+        return self.batch_x[j], self.batch_y[j][...,Y_SHIFT:] # remove first 2 positional encodings
 
     def fill_row(self, forward, items, idx, row, ro, ri, overlap,lengths):
         "Fill the row with tokens from the ragged array. --OBS-- overlap != 1 has not been implemented"

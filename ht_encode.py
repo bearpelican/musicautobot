@@ -8,6 +8,18 @@ from collections import Counter, defaultdict
 from src.roman_to_symbol import *
 from src.tab_parser import *
 
+    
+# ENC_IDXS = [0,1,2,3,4,5,6,7,8,9,10]
+# iB,iM,iN,iNO,iND,iC1,iC2,iC3,iC4,iCD,iCI = ENC_IDXS
+# BIDX_ALL = [iB,iM]
+ENC_IDXS = [0,1,2,3,4,5,6,7,8]
+iN,iNO,iND,iC1,iC2,iC3,iC4,iCD,iCI = ENC_IDXS
+BIDX_ALL = []
+CIDXS = [iC1,iC2,iC3,iC4]
+CIDX_ALL = CIDXS + [iCD,iCI]
+NIDX_ALL = [iN,iNO,iND]
+DUR_IDXS = [iND,iCD]
+
 # sustain=True, sep_octave=True, sus_idx=2, hit_idx=1
 config_opts = dict(note_octave=5, chord_octave=3,
                    sort_invert=False, # sort pitches by inversion order
@@ -18,10 +30,10 @@ config_opts = dict(note_octave=5, chord_octave=3,
                    bos_idx=-1, pad_idx=-3, none_idx=-2, enc_offset=3)
 
 # none_idx is a rest - checked by cross_entropy, pad_idx is not countd in loss
-class Config(object):
+class EncConfig(object):
     def __init__(self, d): self.__dict__ = d
         
-config = Config(config_opts)
+enc_config = EncConfig(config_opts)
 
 MODE_TO_KEYOFFSET = {
     '1': 0,
@@ -109,8 +121,8 @@ class HBeat(Base):
 @dataclass
 class HPitch(Base):
     def __init__(self, pitch:int, octave:int, **kwargs):
-        if config.throw_err: assert(pitch >= 0)
-        if config.throw_err and octave: assert(octave >= 0)
+        if enc_config.throw_err: assert(pitch >= 0)
+        if enc_config.throw_err and octave: assert(octave >= 0)
         self.pitch = pitch
         self.octave = octave
     
@@ -140,7 +152,7 @@ class HNote(Base):
         
     def to_m21(self)->music21.note.Note:
         p = self.pitch.abs()
-#         p = self.pitch.abs(base_octave=config.note_octave)
+#         p = self.pitch.abs(base_octave=enc_config.note_octave)
         n = music21.note.Note(p, quarterLength=self.beat.duration)
         return n, self.beat.abs
     
@@ -153,7 +165,7 @@ class HNote(Base):
     @classmethod
     def parse(cls, d, mode, key_offset):
         parsed = roman_to_symbol.hnote_parser(d, mode, key_offset)
-        pitch = HPitch.parse_abs_pitch(parsed['pitch'], base_octave=config.note_octave) # pitch can be negative so offset octave
+        pitch = HPitch.parse_abs_pitch(parsed['pitch'], base_octave=enc_config.note_octave) # pitch can be negative so offset octave
         beat = HBeat.parse_note(d)
         return cls(beat=beat, pitch=pitch) 
 
@@ -195,7 +207,7 @@ class HChord(Base):
         return self.beat.end_time()
         
     def to_m21(self)->music21.chord.Chord:
-        notes = [p.abs(base_octave=config.chord_octave) for p in self.pitches]
+        notes = [p.abs(base_octave=enc_config.chord_octave) for p in self.pitches]
         c = music21.chord.Chord(notes, quarterLength=self.beat.duration)
         return c, float(self.beat.abs)
     
@@ -214,7 +226,7 @@ class HChord(Base):
         parsed['composition'] = parsed['composition'].astype(int).tolist()
         
         beat = HBeat.parse_chord(d)
-        if config.sort_invert: pitches = [HPitch.parse_abs_pitch(p) for p in sorted(parsed['composition'])] # first pitch = base note
+        if enc_config.sort_invert: pitches = [HPitch.parse_abs_pitch(p) for p in sorted(parsed['composition'])] # first pitch = base note
         pitches = [HPitch.parse_abs_pitch(p) for p in parsed['composition']] # first pitch = base note
         
         return cls(beat=beat, pitches=pitches, metadata=parsed, **parsed)
@@ -251,7 +263,7 @@ class HPart(Base):
         return chords + '\n\n' + notes
     
     def duration(self):
-        return self.num_measure * config.bim
+        return self.num_measure * enc_config.bim
 #         c_last = self.chords[-1].end_time() if self.chords else 0
 #         n_last = self.notes[-1].end_time() if self.notes else 0
 #         return max(c_last, n_last)
@@ -315,21 +327,9 @@ class HSong(Base):
     
     
     
-    
-    
-ENC_IDXS = [0,1,2,3,4,5,6,7,8,9,10]
-iB,iM,iN,iNO,iND,iC1,iC2,iC3,iC4,iCD,iCI = ENC_IDXS
-CIDXS = [iC1,iC2,iC3,iC4]
-CIDX_ALL = CIDXS + [iCD,iCI]
-NIDX_ALL = [iN,iNO,iND]
-BIDX_ALL = [iB,iM]
-IGN_IDXS = [iND,iCD]
-
-
-
 def enc_beat(beat):
-    start = round(beat.abs * config.freq, 6) # float conversion error
-    duration = round(beat.duration * config.freq, 6)
+    start = round(beat.abs * enc_config.freq, 6) # float conversion error
+    duration = round(beat.duration * enc_config.freq, 6)
     end = start+duration
 
     assert(start.is_integer() and duration.is_integer())
@@ -338,24 +338,26 @@ def enc_beat(beat):
 def enc_part(part):
 #     '(pitch x octave x sustain) x (chord_sd x base x suspend, sustain) x (bar_position x beat_pos)'
     '(pitch x octave x dur) x (c1,c2,c3,c4,dur) x (bar_position x beat_pos)'
-    max_len = int(part.duration()*config.freq)
-    sequence = np.full((max_len, len(ENC_IDXS)), fill_value=config.pad_idx, dtype=int)
-    sequence[:,IGN_IDXS] = config.none_idx
+    max_len = int(part.duration()*enc_config.freq)
+    sequence = np.full((max_len, len(ENC_IDXS)), fill_value=enc_config.pad_idx, dtype=int)
+    sequence[:,DUR_IDXS] = enc_config.none_idx
     
-    # beat_pos
-    bim = config.bim # beats_in_measure = 4
-    sequence[:, iB] = np.tile(np.arange(bim).repeat(config.freq), int(part.duration())//bim+1)[:sequence.shape[0]]
-    # bar_pos
-    sequence[:, iM] = np.arange(part.duration()//bim+1).repeat(config.freq*bim)[:sequence.shape[0]]
+    if BIDX_ALL:
+        # beat_pos
+        bim = enc_config.bim # beats_in_measure = 4
+        sequence[:, iB] = np.tile(np.arange(bim).repeat(enc_config.freq), int(part.duration())//bim+1)[:sequence.shape[0]]
+        
+        # bar_pos
+        sequence[:, iM] = np.arange(part.duration()//bim+1).repeat(enc_config.freq*bim)[:sequence.shape[0]]
     
-    continuous = config.continuous
+    continuous = enc_config.continuous
     for n in part.notes:
         start, end, duration = enc_beat(n.beat)
 #         end = end if continuous else start
-#         duration = config.sus_idx if continuous else duration
+#         duration = enc_config.sus_idx if continuous else duration
         if continuous:
-            sequence[int(start):int(end),NIDX_ALL] = n.pitch.pitch, n.pitch.octave, config.sus_idx
-            sequence[int(start),iND] = config.hit_idx
+            sequence[int(start):int(end),NIDX_ALL] = n.pitch.pitch, n.pitch.octave, enc_config.sus_idx
+            sequence[int(start),iND] = enc_config.hit_idx
         else:
             sequence[int(start),NIDX_ALL] = n.pitch.pitch, n.pitch.octave, duration
         
@@ -364,9 +366,9 @@ def enc_part(part):
         if continuous:
             for idx, p in zip(CIDXS,c.pitches):
                 sequence[int(start):int(end),idx] = p.pitch
-            sequence[int(start):int(end),iCD] = config.sus_idx
+            sequence[int(start):int(end),iCD] = enc_config.sus_idx
             sequence[int(start):int(end),iCI] = c.inv
-            sequence[int(start),iCD] = config.hit_idx
+            sequence[int(start),iCD] = enc_config.hit_idx
         else:
             for idx, p in zip(CIDXS,c.pitches):
                 sequence[int(start),idx] = p.pitch
@@ -379,11 +381,11 @@ def enc_song(song, step_size=1):
     cat = np.concatenate(eps)
     if step_size > 1: cat = cat.reshape(-1, step_size, cat.shape[-1])
         
-    bos_row = np.full(((1,) + cat.shape[1:]), fill_value=config.pad_idx)
-    bos_row[...,IGN_IDXS] = config.bos_idx
+    bos_row = np.full(((1,) + cat.shape[1:]), fill_value=enc_config.pad_idx)
+    bos_row[...,DUR_IDXS] = enc_config.bos_idx
     enc_all = np.concatenate((bos_row, cat))
     
-    enc_off = enc_all + config.enc_offset
+    enc_off = enc_all + enc_config.enc_offset
     assert((enc_off >= 0).all())
     return enc_off
 
@@ -393,11 +395,11 @@ def enc_song(song, step_size=1):
 #### DECODE
 
 def dec_beat(duration, beat_abs, ts):
-    if (ts.shape[0] == len(ENC_IDXS)):
+    if (ts.shape[0] == len(ENC_IDXS) and BIDX_ALL):
         rel,measure = ts[BIDX_ALL]+1 # +1 as hook is offset by 1
     else:
         rel,measure = None, None 
-    return HBeat(abs=beat_abs/config.freq, duration=duration/config.freq, 
+    return HBeat(abs=beat_abs/enc_config.freq, duration=duration/enc_config.freq, 
                  rel=rel, measure=measure)
     
 def dec_note(ts, beat_abs):
@@ -410,7 +412,7 @@ def dec_note(ts, beat_abs):
 
 def is_padding(val): 
     return val < 0
-#     return val in [config.pad_idx, config.bos_idx, config.none_idx]
+#     return val in [enc_config.pad_idx, enc_config.bos_idx, enc_config.none_idx]
 
 def dec_chord(ts, beat_abs):
     
@@ -421,7 +423,7 @@ def dec_chord(ts, beat_abs):
     pvals = ts[CIDXS]
     inv = ts[iCI] if len(ts) > iCI else 0
     for idx,p in enumerate(pvals):
-        if is_padding(p): break
+        if is_padding(p): continue
         if (idx > 0) and (p < pvals[idx-1]): 
             octave += 1
         pitches.append(HPitch(pitch=int(p), octave=octave))
@@ -434,35 +436,35 @@ def dec_part_durations(part):
     plen = part.shape[0]
     part = part.copy()
     for i in range(plen):
-        if part[i][iND]==config.sus_idx:
+        if part[i][iND]==enc_config.sus_idx:
             print('Broken encoding. Sustained note with out a hit. Removing all')
-            part[i][NIDX_ALL] = config.pad_idx
-        if part[i][iND]==config.hit_idx:
+            part[i][NIDX_ALL] = enc_config.pad_idx
+        if part[i][iND]==enc_config.hit_idx:
             duration = 1
             for j in range(i+1,plen):
-                is_sus = part[j][iND]==config.sus_idx
+                is_sus = part[j][iND]==enc_config.sus_idx
                 same_note = (part[i][[iN,iNO]]==part[j][[iN,iNO]]).all()
                 if is_sus and same_note:
                     duration+=1
-                    part[j][NIDX_ALL] = config.pad_idx
+                    part[j][NIDX_ALL] = enc_config.pad_idx
                 else:
                     break
             part[i][iND] = duration
     
     for i in range(plen):
-        if part[i][iCD]==config.sus_idx:
+        if part[i][iCD]==enc_config.sus_idx:
             print('Broken encoding. Sustained chord with out a hit')
-            part[i][iCD] = config.pad_idx
-            part[i][CIDXS] = config.pad_idx
-        if part[i][iCD]==config.hit_idx:
+            part[i][iCD] = enc_config.pad_idx
+            part[i][CIDXS] = enc_config.pad_idx
+        if part[i][iCD]==enc_config.hit_idx:
             duration = 1
             for j in range(i+1,plen):
-                is_sus = part[j][iCD]==config.sus_idx
+                is_sus = part[j][iCD]==enc_config.sus_idx
                 same_chord = (part[i][CIDXS] == part[j][CIDXS]).all()
                 if is_sus and same_chord:
                     duration+=1
-                    part[j][CIDXS] = config.pad_idx
-                    part[j][iCD] = config.pad_idx
+                    part[j][CIDXS] = enc_config.pad_idx
+                    part[j][iCD] = enc_config.pad_idx
                 else:
                     break
             part[i][iCD] = duration
@@ -470,15 +472,15 @@ def dec_part_durations(part):
 
 def dec_part(part):
     '(pitch x octave x dur) x (c1,c2,c3,c4,dur) x (bar_position x beat_pos)'
-    if config.continuous: part = dec_part_durations(part)
-    notes = [dec_note(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[IGN_IDXS[0]])]
-    chords = [dec_chord(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[IGN_IDXS[1]])]
+    if enc_config.continuous: part = dec_part_durations(part)
+    notes = [dec_note(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[DUR_IDXS[0]])]
+    chords = [dec_chord(ts,idx) for idx,ts in enumerate(part) if not is_padding(ts[DUR_IDXS[1]])]
     
-    return HPart(notes=notes, chords=chords, num_measure=part.shape[0]/config.bim)
+    return HPart(notes=notes, chords=chords, num_measure=part.shape[0]/enc_config.bim)
 
 def dec_arr(arr):
-    arr = arr-config.enc_offset
-    if (arr[0] == config.bos_idx).any():
+    arr = arr-enc_config.enc_offset
+    if (arr[0] == enc_config.bos_idx).any():
         arr = arr[1:]
     arr = arr.reshape(-1, arr.shape[-1]) # reshape after bos - since timesteps could be blocks of 16
     dp = dec_part(arr)
