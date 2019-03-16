@@ -209,6 +209,7 @@ class HChord(Base):
     def to_m21(self)->music21.chord.Chord:
         notes = [p.abs(base_octave=enc_config.chord_octave) for p in self.pitches]
         c = music21.chord.Chord(notes, quarterLength=self.beat.duration)
+        c.volume = music21.volume.Volume(velocity=50)
         return c, float(self.beat.abs)
     
     def __repr__(self):
