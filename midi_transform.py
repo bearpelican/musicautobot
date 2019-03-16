@@ -39,7 +39,8 @@ def transform_midi(midi_file, out_file, cutoff=6, transpose=True, offset=None):
 def compress_midi_file(fp, cutoff=6, unsup_types=set([Track.UNDEF, Track.PERC])):
     music_file = file2mf(fp)
     supported_tracks = []
-    for idx,t in enumerate(music_file.tracks):
+    noteworthy_first = sorted(music_file.tracks, key=lambda x: len(x.events), reverse=True)
+    for idx,t in enumerate(noteworthy_first):
         track_type = get_track_type(t,idx,fp)
         if len(supported_tracks) >= cutoff: continue
         if track_type in unsup_types: continue
