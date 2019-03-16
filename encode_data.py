@@ -370,8 +370,8 @@ def npenc_func(n, inst=False):
     return [n.pitch.pitchClass, n.pitch.octave, n.dur]
 
 def seq2npenc(seq, enc_func=npenc_func):
-    "Note function returns a list of note components for spearation"
-    result = [[VALTBOS, PADDING_IDX, PADDING_IDX, PADDING_IDX]]
+    "Note function returns a list of note components for separation"
+    result = [[VALTBOS, PADDING_IDX, PADDING_IDX]]
     wait_count = 0
     for idx,timestep in enumerate(seq):
         flat_time = [enc_func(n) for n in timestep if n.pitch.octave and n.dur > 0]
@@ -379,7 +379,7 @@ def seq2npenc(seq, enc_func=npenc_func):
             wait_count += 1
         else:
             # pitch, octave, duration, instrument
-            result.append([VALTSEP, PADDING_IDX, wait_count, PADDING_IDX])
+            result.append([VALTSEP, PADDING_IDX, wait_count])
             result.extend(flat_time)
             wait_count = 0
     return np.array(result, dtype=int)
