@@ -414,6 +414,9 @@ def npenc2seq(npenc, dec_func=npdec_func):
             tstep = []
             for i in range(d): seq.append([])
         else:
+            if d == 0: 
+                print('Note with 0 duration. continuing')
+                continue
             tstep.append(dec_func(x))
     if len(tstep) > 0: seq.append(tstep)
     return seq
