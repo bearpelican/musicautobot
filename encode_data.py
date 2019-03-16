@@ -153,7 +153,7 @@ def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None):
         pitchesInChord=c.pitches
         for p in pitchesInChord:
             notes.append(note_data(p, c))
-    notes_sorted = sorted(notes, key=lambda x:[1])
+    notes_sorted = sorted(notes, key=lambda x: x[1]) # sorting notes by offset so we don't overwrite
     for n in notes_sorted:
         if n is None: continue
         pitch,offset,duration,inst = n
@@ -206,7 +206,7 @@ def chordarr2seq(score_arr):
 def timestep2seq(timestep):
     # int x pitch
     notes = [NoteEnc(n,timestep[i,n],i) for i,n in zip(*timestep.nonzero())]
-    sorted_keys = sorted(notes, key=lambda x: x.pitch)
+    sorted_keys = sorted(notes, key=lambda x: x.pitch, reverse=True)
     return sorted_keys
 
 # 4.
@@ -295,6 +295,7 @@ def chordarr2stream(arr, sample_freq=4):
     for inst in range(arr.shape[1]):
         p = partarr2stream(arr[:,inst,:], duration, stream=music21.stream.Part())
         stream.append(p)
+    stream = stream.transpose(0)
     return stream
 
 # 3b.
@@ -360,40 +361,53 @@ def load_chordarr(file):
 
 # npenc functions
 
-VALTSEP = 12
-VALTBOS = 13
-PADDING_IDX = -1
+VALTSEP = -2
+VALTBOS = -1
+PADDING_IDX = -3
+ENC_OFFSET = 3
 
 # 4.
-def npenc_func(n, inst=False):
-    if inst: return [n.pitch.pitchClass, n.pitch.octave, n.dur, n.inst]
-    return [n.pitch.pitchClass, n.pitch.octave, n.dur]
+def npenc_func(n, num_comps):
+    if num_comps == 2: return [n.pitch.midi, n.dur]
+    elif num_comps in [3, 4]:
+        octave = n.pitch.octave
+        if octave is None: octave = -1
+        return [n.pitch.pitchClass, n.dur, octave+1, n.inst][:num_comps]
+    raise ValueError('Unhandled number of components')
 
-def seq2npenc(seq, enc_func=npenc_func):
+def pad_array(arr, fill_value, final_length):
+    if isinstance(arr, np.ndarray): arr = arr.tolist()
+    padding = [fill_value] * max(0, final_length - len(arr))
+    return arr+padding
+
+def seq2npenc(seq, num_comps=2):
     "Note function returns a list of note components for separation"
-    result = [[VALTBOS, PADDING_IDX, PADDING_IDX]]
+    
+    ts_bos = pad_array([VALTBOS], PADDING_IDX, num_comps)
+    result = [ts_bos]
     wait_count = 0
     for idx,timestep in enumerate(seq):
-        flat_time = [enc_func(n) for n in timestep if n.pitch.octave and n.dur > 0]
+        flat_time = [npenc_func(n, num_comps) for n in timestep if n.pitch.octave and n.dur > 0]
         if len(flat_time) == 0:
             wait_count += 1
         else:
             # pitch, octave, duration, instrument
-            result.append([VALTSEP, PADDING_IDX, wait_count])
+            ts_sep = pad_array([VALTSEP, wait_count], PADDING_IDX, num_comps)
+            result.append(ts_sep)
             result.extend(flat_time)
             wait_count = 0
-    return np.array(result, dtype=int)
+    return np.array(result, dtype=int) + ENC_OFFSET
 
 def npdec_func(step):
-    n,o,d = step[:3]
-    i = step[3] if len(step) == 4 else None
-    return NoteEnc(n+((o+1)*12),d,i)
+    n,d,o,i = pad_array(step, 0, final_length=4)
+    return NoteEnc(n+o*12,d,i)
     
 def npenc2seq(npenc, dec_func=npdec_func):
     seq = []
     tstep = []
+    npenc = npenc.copy() - ENC_OFFSET
     for x in npenc:
-        n = x[0]
+        n,d = x[:2]
         if n == VALTBOS: continue
         if n == VALTSEP: 
             if len(tstep) > 0: seq.append(tstep)
