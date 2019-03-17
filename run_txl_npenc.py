@@ -293,7 +293,7 @@ if args.save:
 if args.half: learn = learn.to_fp16(clip=0.25, dynamic=True)
 learn = learn.to_distributed(args.local_rank, drop_last=True, shuffle=False)
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
-learn.callbacks.append(EarlyStoppingCallback(learn))
+# learn.callbacks.append(EarlyStoppingCallback(learn))
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=25, moms=(0.7,0.5))
 
