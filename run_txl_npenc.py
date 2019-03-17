@@ -273,14 +273,12 @@ class LMNPLoss(nn.Module):
 def lmnp_accuracy(inputs:Tensor, target:Tensor)->Rank0Tensor:
     "Compute accuracy with `targs` when `input` is bs * n_classes."
     inputs = [i.argmax(dim=-1).unsqueeze(dim=-1) for i in inputs]
-    input_cat = torch.cat(inputs, dim=-1)
-    target = target.view(input_cat.shape)
+    input = torch.cat(inputs, dim=-1)
+    target = target.view(input.shape)
     
-        
-    input_cat,target = input_cat.cpu().numpy(), target.cpu().numpy()
-    acc = (input_cat==target).astype(float)
+    acc = (input==target).float().cpu().numpy()
     acc[target==PAD_IDX] = np.nan
-    return torch.tensor(np.nanmean(acc))
+    return torch.tensor(np.nanmean(acc), device=target.device)
 
 learn = language_model_learner(data, config, clip=full_clip, loss_func=LMNPLoss(), metrics=[lmnp_accuracy])
 
