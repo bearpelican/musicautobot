@@ -15,7 +15,6 @@ import torch.nn as nn
 from encode_data import *
 import fastai_data
 fastai_data.Y_OFFSET=1
-# fastai_data.VAL_OFFSET=1
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -280,7 +279,37 @@ def lmnp_accuracy(inputs:Tensor, target:Tensor)->Rank0Tensor:
     acc[target==PAD_IDX] = np.nan
     return torch.tensor(np.nanmean(acc), device=target.device)
 
+class LMNPBatchTransform(LearnerCallback):
+    "`Callback` that handles multiplying the learning rate by `mult_lr` for the critic."
+    def __init__(self, learn:Learner):
+        super().__init__(learn)
+        self.epoch = None
+        self.rng = None
+        self.step_transpose = 0
+        
+    def on_epoch_begin(self, epoch, **kwargs): 
+        if epoch % 10 == 0:
+            self.step_transpose = 0
+            return
+        self.epoch = epoch
+        self.rng = np.random.RandomState(epoch)
+        self.step_transpose = self.rng.randint(0,25)-12
+        print('Transposing:', self.step_transpose)
+#         self.step_transpose = np.random.randint(0,12)-5
+        
+    def transpose(self, t):
+        t = t.clone()
+        notes = t[...,0]
+        notes[notes >= ENC_OFFSET] += self.step_transpose
+        return t
+        
+    def on_batch_begin(self, last_input, last_target, train, **kwargs):
+        "accumulate samples and batches"
+        if not train: return
+        return {'last_input': self.transpose(last_input), 'last_target': self.transpose(last_target)}  
+
 learn = language_model_learner(data, config, clip=full_clip, loss_func=LMNPLoss(), metrics=[lmnp_accuracy])
+learn.callbacks.append(LMNPBatchTransform(learn))
 
 if args.load:
     load_path = Path(args.path)/args.load
