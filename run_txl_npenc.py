@@ -73,8 +73,8 @@ idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
 config = tfmerXL_lm_config
 config['emb_map'] = EMB_MAP
 config['idx_map'] = idx2embidx
-# config['mask_type'] = MaskType.RandomWindow
-config['mask_type'] = MaskType.Sequential
+config['mask_type'] = MaskType.RandomWindow
+# config['mask_type'] = MaskType.Sequential
 
 total_embs = sum([v[-1] for k,v in idx2embidx.items()])
 config['d_model'] = total_embs * N_BAR
@@ -155,7 +155,7 @@ class TransformerDec(nn.Module):
         return res, raw_outputs, outputs
 
 def rand_window_mask(x_len,m_len,device):
-    win_size,k = (np.random.randint(0,16)+1,0) if m_len > 0 else (1,1)
+    win_size,k = (np.random.randint(0,4)+1,0) if m_len > 0 else (1,1)
     mem_mask = np.zeros((x_len,m_len))
     tri_mask = np.triu(np.ones((x_len//win_size+1,x_len//win_size+1)),k=k)
     window_mask = tri_mask.repeat(win_size,axis=0).repeat(win_size,axis=1)[:x_len,:x_len]
@@ -208,13 +208,14 @@ class LMNPTransformerXL(nn.Module):
         bs,x_len = inp.shape[:2]
         m_len = self.hidden[0].size(1) if hasattr(self, 'hidden') and len(self.hidden[0].size()) > 1 else 0
         seq_len = m_len + x_len
-        
+
+        is_eval = not self.training
         if self.mask_type.value == MaskType.NoMask.value: 
             self.mask = None
+        elif is_eval or self.mask_type.value == MaskType.Sequential.value: 
+            self.mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=1+m_len).byte()[None,None]
         elif self.mask_type.value == MaskType.RandomWindow.value: 
             self.mask = rand_window_mask(x_len,m_len,x.device)
-        elif self.mask_type.value == MaskType.Sequential.value: 
-            self.mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=1+m_len).byte()[None,None]
         else: 
             raise ValueError('Unhandled mask type:', self.mask_type)
         #[None,:,:None] for einsum implementation of attention
@@ -292,7 +293,7 @@ class LMNPBatchTransform(LearnerCallback):
 #            self.step_transpose = 0
 #            return
         self.epoch = epoch
-        self.rng = np.random.RandomState(epoch+42)
+        self.rng = np.random.RandomState(epoch+66)
 #        self.step_transpose = self.rng.randint(0,24)-12
         self.step_transpose = self.rng.randint(0,12)-5
         print('Transposing to:', self.step_transpose)
