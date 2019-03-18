@@ -293,9 +293,9 @@ class LMNPBatchTransform(LearnerCallback):
             return
         self.epoch = epoch
         self.rng = np.random.RandomState(epoch)
-        self.step_transpose = self.rng.randint(0,25)-12
-        print('Transposing:', self.step_transpose)
-#         self.step_transpose = np.random.randint(0,12)-5
+        self.step_transpose = self.rng.randint(0,24)-12
+#         self.step_transpose = self.rng.randint(0,12)-5
+        print('Transposing to:', self.step_transpose)
         
     def transpose(self, t):
         t = t.clone()
