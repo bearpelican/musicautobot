@@ -288,13 +288,13 @@ class LMNPBatchTransform(LearnerCallback):
         self.step_transpose = 0
         
     def on_epoch_begin(self, epoch, **kwargs): 
-        if epoch % 10 == 0:
-            self.step_transpose = 0
-            return
+#        if epoch % 10 == 0:
+#            self.step_transpose = 0
+#            return
         self.epoch = epoch
-        self.rng = np.random.RandomState(epoch)
-        self.step_transpose = self.rng.randint(0,24)-12
-#         self.step_transpose = self.rng.randint(0,12)-5
+        self.rng = np.random.RandomState(epoch+42)
+#        self.step_transpose = self.rng.randint(0,24)-12
+        self.step_transpose = self.rng.randint(0,12)-5
         print('Transposing to:', self.step_transpose)
         
     def transpose(self, t):
