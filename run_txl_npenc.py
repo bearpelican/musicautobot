@@ -18,7 +18,7 @@ fastai_data.Y_OFFSET=1
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='data/midi/v8/midi_encode/np/shortdur_2c/')
+parser.add_argument('--path', type=str, default='data/midi/v9/midi_encode/np/shortdur/')
 parser.add_argument('--cache', type=str, default='tmp/dmp')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
@@ -30,6 +30,8 @@ parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
 parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+parser.add_argument('--rand_transpose', action='store_true', help='Transpose data augmentation')
+parser.add_argument('--rand_window', action='store_true', help='Random window size')
 args = parser.parse_args()
 
 if args.local_rank != 0:
@@ -73,8 +75,7 @@ idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
 config = tfmerXL_lm_config
 config['emb_map'] = EMB_MAP
 config['idx_map'] = idx2embidx
-config['mask_type'] = MaskType.RandomWindow
-# config['mask_type'] = MaskType.Sequential
+config['mask_type'] = MaskType.RandomWindow if args.rand_window else MaskType.Sequential
 
 total_embs = sum([v[-1] for k,v in idx2embidx.items()])
 config['d_model'] = total_embs * N_BAR
@@ -155,7 +156,7 @@ class TransformerDec(nn.Module):
         return res, raw_outputs, outputs
 
 def rand_window_mask(x_len,m_len,device):
-    win_size,k = (np.random.randint(0,4)+1,0) if m_len > 0 else (1,1)
+    win_size,k = (np.random.randint(0,3)+1,0) if (m_len > 0 and (np.random.randint(0,3) == 0)) else (1,1)
     mem_mask = np.zeros((x_len,m_len))
     tri_mask = np.triu(np.ones((x_len//win_size+1,x_len//win_size+1)),k=k)
     window_mask = tri_mask.repeat(win_size,axis=0).repeat(win_size,axis=1)[:x_len,:x_len]
@@ -289,13 +290,13 @@ class LMNPBatchTransform(LearnerCallback):
         self.step_transpose = 0
         
     def on_epoch_begin(self, epoch, **kwargs): 
-#        if epoch % 10 == 0:
-#            self.step_transpose = 0
-#            return
+        if epoch % 10 == 0:
+            self.step_transpose = 0
+            return
         self.epoch = epoch
         self.rng = np.random.RandomState(epoch+66)
-#        self.step_transpose = self.rng.randint(0,24)-12
-        self.step_transpose = self.rng.randint(0,12)-5
+        self.step_transpose = self.rng.randint(0,24)-12
+#        self.step_transpose = self.rng.randint(0,12)-5
         print('Transposing to:', self.step_transpose)
         
     def transpose(self, t):
@@ -310,7 +311,7 @@ class LMNPBatchTransform(LearnerCallback):
         return {'last_input': self.transpose(last_input), 'last_target': self.transpose(last_target)}  
 
 learn = language_model_learner(data, config, clip=full_clip, loss_func=LMNPLoss(), metrics=[lmnp_accuracy])
-learn.callbacks.append(LMNPBatchTransform(learn))
+if args.rand_transpose: learn.callbacks.append(LMNPBatchTransform(learn))
 
 if args.load:
     load_path = Path(args.path)/args.load
