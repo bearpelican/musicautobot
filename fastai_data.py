@@ -109,11 +109,13 @@ class LMNPDataBunch(DataBunch):
     def from_ids(cls, path:PathOrStr, train_ids:Collection[Collection[int]], valid_ids:Collection[Collection[int]],
                  test_ids:Collection[Collection[int]]=None, train_lbls:Collection[Union[int,float]]=None,
                  valid_lbls:Collection[Union[int,float]]=None, classes:Collection[Any]=None,
-                 processor:PreProcessor=None, **kwargs) -> DataBunch:
+                 processor:PreProcessor=None,
+                 train_tfms=None, valid_tfms=None,
+                 **kwargs) -> DataBunch:
         "Create a `TextDataBunch` from ids, labels and a `vocab`. `kwargs` are passed to the dataloader creation."
-        src = ItemLists(path, LMNPItemList(train_ids, path=path, processor=[]),
-                        LMNPItemList(valid_ids, path=path, processor=[]))
-        src = src.label_const(label_cls=LMLabelList)
+        src = ItemLists(path, LMNPItemList(train_ids, path=path, processor=[], tfms=train_tfms),
+                        LMNPItemList(valid_ids, path=path, processor=[], tfms=valid_tfms))
+        src = src.label_const(label_cls=EmptyLabelList)
         if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
         return src.databunch(**kwargs)
     
@@ -140,20 +142,16 @@ class LMNPDataBunch(DataBunch):
 
 class LMNPItemList(ItemList):
     _bunch = LMNPDataBunch
-    def get(self, i)->Any:
-        tfmd = self.items[i] + VAL_OFFSET
-#         if NO_INST: return tfmd[:,:3]
-        return tfmd
     
-    def reconstruct(self, t:Tensor):
-#         if TO_SEQ: return npenc2seq((t-1))
-        return t-VAL_OFFSET
-    
-    def __getitem__(self,idxs:int)->Any:
-        idxs = try_int(idxs)
-        if isinstance(idxs, Integral): return self.get(idxs)
-        else: return self.new(self.items[idxs], xtra=index_row(self.xtra, idxs))
+    def __init__(self, *args, tfms=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tfms = tfms or []
         
+    def get(self, i)->Any:
+        item = self.items[i]
+        if self.tfms is None: return item
+        for tfm in self.tfms: item = tfm(item)
+        return item
 
 class LMNPPreloader(Callback):
     "Transforms the tokens in `dataset` to a stream of contiguous batches for language modelling."

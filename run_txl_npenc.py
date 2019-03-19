@@ -23,7 +23,7 @@ parser.add_argument('--cache', type=str, default='tmp/dmp')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
 parser.add_argument("--local_rank", type=int)
-parser.add_argument("--batch_size", type=int, default=16)
+parser.add_argument("--batch_size", type=int, default=12)
 parser.add_argument("--mem_len", type=int, default=512)
 parser.add_argument("--bptt", type=int, default=512)
 parser.add_argument('--half', action='store_true', help='Use half precision')
@@ -41,10 +41,19 @@ if args.local_rank != 0:
 torch.cuda.set_device(args.local_rank)
 torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
+def rand_transpose(t, p=0.5):
+    t = t.copy()
+    notes = t[...,0]
+    if np.random.rand() < p:
+        notes[notes >= ENC_OFFSET] += np.random.randint(0,24)-12
+#         notes[notes >= ENC_OFFSET] += np.random.randint(0,12)-5
+    return t
+
 bs=args.batch_size
 bptt=args.bptt
 path = Path(args.path)
-data = LMNPDataBunch.load(path, bs=bs, bptt=bptt, cache_name=args.cache)
+train_tfms = [rand_transpose] if args.rand_transpose else None
+data = LMNPDataBunch.load(path, bs=bs, bptt=bptt, cache_name=args.cache, train_tfms=train_tfms)
 
 MaskType = Enum('MaskType', 'NoMask Sequential RandomWindow Bert')
 
@@ -155,8 +164,11 @@ class TransformerDec(nn.Module):
             res.append(dec(output))
         return res, raw_outputs, outputs
 
-def rand_window_mask(x_len,m_len,device):
-    win_size,k = (np.random.randint(0,3)+1,0) if (m_len > 0 and (np.random.randint(0,4) == 0)) else (1,1)
+def rand_window_mask(x_len,m_len,device,p=0.2,is_eval=False):
+    if is_eval or m_len == 0 or np.random.rand() >= p: 
+        win_size,k = (1,1)
+    else: win_size,k = (np.random.randint(0,3)+1,0)
+        
     mem_mask = np.zeros((x_len,m_len))
     tri_mask = np.triu(np.ones((x_len//win_size+1,x_len//win_size+1)),k=k)
     window_mask = tri_mask.repeat(win_size,axis=0).repeat(win_size,axis=1)[:x_len,:x_len]
@@ -210,15 +222,15 @@ class LMNPTransformerXL(nn.Module):
         m_len = self.hidden[0].size(1) if hasattr(self, 'hidden') and len(self.hidden[0].size()) > 1 else 0
         seq_len = m_len + x_len
 
-        is_eval = not self.training
         if self.mask_type.value == MaskType.NoMask.value: 
             self.mask = None
-        elif is_eval or self.mask_type.value == MaskType.Sequential.value: 
+        elif self.mask_type.value == MaskType.Sequential.value: 
             self.mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=1+m_len).byte()[None,None]
         elif self.mask_type.value == MaskType.RandomWindow.value: 
-            self.mask = rand_window_mask(x_len,m_len,x.device)
+            self.mask = rand_window_mask(x_len,m_len,x.device,is_eval=not self.training)
         else: 
             raise ValueError('Unhandled mask type:', self.mask_type)
+            
         #[None,:,:None] for einsum implementation of attention
         hids = []
         pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=inp.dtype)
@@ -281,37 +293,7 @@ def lmnp_accuracy(inputs:Tensor, target:Tensor)->Rank0Tensor:
     acc[target==PAD_IDX] = np.nan
     return torch.tensor(np.nanmean(acc), device=target.device)
 
-class LMNPBatchTransform(LearnerCallback):
-    "`Callback` that handles multiplying the learning rate by `mult_lr` for the critic."
-    def __init__(self, learn:Learner):
-        super().__init__(learn)
-        self.epoch = None
-        self.rng = None
-        self.step_transpose = 0
-        
-    def on_epoch_begin(self, epoch, **kwargs): 
-        if epoch % 10 == 0:
-            self.step_transpose = 0
-            return
-        self.epoch = epoch
-        self.rng = np.random.RandomState(epoch+66)
-        self.step_transpose = self.rng.randint(0,24)-12
-#        self.step_transpose = self.rng.randint(0,12)-5
-        print('Transposing to:', self.step_transpose)
-        
-    def transpose(self, t):
-        t = t.clone()
-        notes = t[...,0]
-        notes[notes >= ENC_OFFSET] += self.step_transpose
-        return t
-        
-    def on_batch_begin(self, last_input, last_target, train, **kwargs):
-        "accumulate samples and batches"
-        if not train: return
-        return {'last_input': self.transpose(last_input), 'last_target': self.transpose(last_target)}  
-
 learn = language_model_learner(data, config, clip=full_clip, loss_func=LMNPLoss(), metrics=[lmnp_accuracy])
-if args.rand_transpose: learn.callbacks.append(LMNPBatchTransform(learn))
 
 if args.load:
     load_path = Path(args.path)/args.load
