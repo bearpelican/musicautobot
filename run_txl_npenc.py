@@ -25,7 +25,7 @@ parser.add_argument('--load', type=str, default=None)
 parser.add_argument("--local_rank", type=int)
 parser.add_argument("--batch_size", type=int, default=16)
 parser.add_argument("--mem_len", type=int, default=512)
-parser.add_argument("--bptt", type=int, default=256)
+parser.add_argument("--bptt", type=int, default=512)
 parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
 parser.add_argument('--epochs', type=int, default=5, help='num epochs')
@@ -83,11 +83,11 @@ config['mem_len'] = args.mem_len
 # config['d_inner'] = 1024 * N_BAR
 # config['d_inner'] = config['d_model'] * 4
 
-config['resid_p'] = 0.2
-config['attn_p'] = 0.2
-config['ff_p'] = 0.2
-config['embed_p'] = 0.2
-config['output_p'] = 0.2
+config['resid_p'] = 0.1
+config['attn_p'] = 0.1 # attention dropout
+config['ff_p'] = 0.1
+config['embed_p'] = 0.1 # embedding dropout
+config['output_p'] = 0.1 # decoder dropout (before final linear layer)
 
 
 full_clip = None if args.half else 0.25
@@ -156,7 +156,7 @@ class TransformerDec(nn.Module):
         return res, raw_outputs, outputs
 
 def rand_window_mask(x_len,m_len,device):
-    win_size,k = (np.random.randint(0,3)+1,0) if (m_len > 0 and (np.random.randint(0,3) == 0)) else (1,1)
+    win_size,k = (np.random.randint(0,3)+1,0) if (m_len > 0 and (np.random.randint(0,4) == 0)) else (1,1)
     mem_mask = np.zeros((x_len,m_len))
     tri_mask = np.triu(np.ones((x_len//win_size+1,x_len//win_size+1)),k=k)
     window_mask = tri_mask.repeat(win_size,axis=0).repeat(win_size,axis=1)[:x_len,:x_len]
