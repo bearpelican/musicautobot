@@ -32,6 +32,8 @@ parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--rand_transpose', action='store_true', help='Transpose data augmentation')
 parser.add_argument('--rand_window', action='store_true', help='Random window size')
+parser.add_argument('--gelu', action='store_true', help='Gelu activation')
+
 args = parser.parse_args()
 
 if args.local_rank != 0:
@@ -85,6 +87,7 @@ config = tfmerXL_lm_config
 config['emb_map'] = EMB_MAP
 config['idx_map'] = idx2embidx
 config['mask_type'] = MaskType.RandomWindow if args.rand_window else MaskType.Sequential
+config['act'] = Activation.GeLU if args.gelu else Activation.ReLU
 
 total_embs = sum([v[-1] for k,v in idx2embidx.items()])
 config['d_model'] = total_embs * N_BAR
