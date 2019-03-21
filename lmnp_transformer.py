@@ -236,7 +236,7 @@ class LMNPLearner(LanguageLearner):
             for idx,item in enumerate(outputs): #progress_bar(range(n_words), leave=False):
                 res = item[0][-1]
                 min_p,temperature = min_ps[idx], temperatures[idx]
-                if idx == 0: print('Items over p:', (res >= min_p).float().sum(), res.shape)
+#                 if idx == 0: print('Items over p:', (res >= min_p).float().sum(), res.shape)
                 if (res >= min_p).float().sum() == 0:
                     warn(f"There is no item with probability >= {min_p}, try a lower value.")
                 else: res[res < min_p] = 0.

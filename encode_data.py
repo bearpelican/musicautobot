@@ -361,6 +361,11 @@ def load_chordarr(file):
 
 # npenc functions
 
+def npenc2stream(arr):
+    seq = npenc2seq(np.array(arr))
+    chordarr = seq2chordarr(seq)
+    return chordarr2stream(chordarr)
+
 VALTSEP = -2
 VALTBOS = -1
 PADDING_IDX = -3
