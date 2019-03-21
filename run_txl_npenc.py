@@ -1,20 +1,14 @@
-from fastai.text import *
-from fastai.callbacks.tracker import *
-from fastai.distributed import *
-from fastai_data import *
-
 import music21
-from enum import Enum
 import torch
-from fastai.text.models.awd_lstm import *
-from fastai.text.models.transformer import *
-from fastai_data import *
-import numpy as np
-import torch.nn as nn
 
-from encode_data import *
-import fastai_data
-fastai_data.Y_OFFSET=1
+from fastai.distributed import *
+from fastai.text.models.transformer import *
+
+import numpy as np
+
+from fastai_data import *
+from lmnp_transformer import *
+from encode_data import VALTSEP, VALTBOS, PADDING_IDX, ENC_OFFSET
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -43,57 +37,33 @@ if args.local_rank != 0:
 torch.cuda.set_device(args.local_rank)
 torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
-def rand_transpose(t, p=0.5):
-    t = t.copy()
-    notes = t[...,0]
-    if np.random.rand() < p:
-        notes[notes >= ENC_OFFSET] += np.random.randint(0,24)-12
-#         notes[notes >= ENC_OFFSET] += np.random.randint(0,12)-5
-    return t
-
 bs=args.batch_size
 bptt=args.bptt
 path = Path(args.path)
-train_tfms = [rand_transpose] if args.rand_transpose else None
+train_tfms = [partial(rand_transpose, enc_offset=ENC_OFFSET, rand_range=(0,12))] if args.rand_transpose else None
 data = LMNPDataBunch.load(path, bs=bs, bptt=bptt, cache_name=args.cache, train_tfms=train_tfms)
 
-MaskType = Enum('MaskType', 'NoMask Sequential RandomWindow Bert')
+VOCAB_SZ = create_vocab_sizes(path/'tmp/all')
 
-
-max_vocab_file = path/'tmp/all/max_vocab.npy'
-if max_vocab_file.exists():
-    VOCAB_SZ = np.load(max_vocab_file).tolist()
-else:
-    train_ids_file = path/'tmp/all/train_ids.npy'
-    all_ids = np.load(train_ids_file)
-    id_cat = np.concatenate(all_ids); id_cat.shape
-    ax = tuple(range(len(id_cat.shape)-1))
-    max_vocab = id_cat.max(axis=ax)+1
-    np.save(max_vocab_file, max_vocab)
-    VOCAB_SZ = max_vocab.tolist()
-
-PAD_IDX=PADDING_IDX+ENC_OFFSET
-N_BAR = 1
 N_COMPS = len(VOCAB_SZ)
 N_EMBS = 128
 EMB_IDXS = range(N_COMPS)
 EMB_DIM = [N_EMBS]*len(EMB_IDXS)
 EMB_MAP = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
-LOSS_WEIGHTS = [1,1,1]
-idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
 
+idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
+total_embs = sum([v[-1] for k,v in idx2embidx.items()])
 
 config = tfmerXL_lm_config
-config['emb_map'] = EMB_MAP
+config['emb_map'] = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
 config['idx_map'] = idx2embidx
+config['loss_weights'] = [1,1] # note,duration
+config['pad_idx'] = PADDING_IDX+ENC_OFFSET
 config['mask_type'] = MaskType.RandomWindow if args.rand_window else MaskType.Sequential
 config['act'] = Activation.GeLU if args.gelu else Activation.ReLU
 
-total_embs = sum([v[-1] for k,v in idx2embidx.items()])
-config['d_model'] = total_embs * N_BAR
+config['d_model'] = total_embs
 config['mem_len'] = args.mem_len
-# config['d_inner'] = 1024 * N_BAR
-# config['d_inner'] = config['d_model'] * 4
 
 config['resid_p'] = 0.1
 config['attn_p'] = 0.1 # attention dropout
@@ -101,202 +71,11 @@ config['ff_p'] = 0.1
 config['embed_p'] = 0.1 # embedding dropout
 config['output_p'] = 0.1 # decoder dropout (before final linear layer)
 
-
 full_clip = None if args.half else 0.25
 
-
-class TransformerEmbed(nn.Module):
-    def __init__(self, emb_map, idx_map, embed_p:float=0.1, **kwargs):
-        super().__init__()
-        # note, octave, duration, instrument
-        self.idx_map = idx_map
-        self.emb_map = emb_map
-        embeddings = []
-        for idx,in_d,out_d in emb_map:
-            embeddings.append(nn.Embedding(in_d, out_d, padding_idx=PAD_IDX))
-        self.embeddings = nn.ModuleList(embeddings)
-        self.drop_emb = nn.Dropout(embed_p)
-        
-    def forward(self, x):
-        # batch x bptt x (n,o,d,i)
-        embs = []
-        for i in range(x.shape[-1]):
-            emb_idx = self.idx_map[i][0]
-            embx = self.embeddings[emb_idx](x[...,i])
-            embs.append(embx)
-        emb = torch.stack(embs, dim=-2) # barlen x comp x emb
-#         emb = emb.permute(0,1,4,2,3) # for conv - emb x barlen x comp
-        return self.drop_emb(emb)
-
-class TXLLinearDecoder(nn.Module):
-    "To go on top of a RNNCore module and create a Language Model."
-    initrange=0.1
-
-    def __init__(self, tie_encoder:nn.Module=None, bias:bool=True, input_dim=None):
-        super().__init__()
-        n_hid,n_out = tie_encoder.embedding_dim, tie_encoder.num_embeddings
-        self.decoder = nn.Linear(n_hid, n_out, bias=bias)
-        self.decoder.weight.data.uniform_(-self.initrange, self.initrange)
-        if bias: self.decoder.bias.data.zero_()
-        if tie_encoder: self.decoder.weight = tie_encoder.weight
-            
-        if input_dim is not None and input_dim != n_hid:
-            self.decoder = nn.Sequential(nn.Linear(input_dim, n_hid), self.decoder)
-
-    def forward(self, input):
-        return self.decoder(input)
-
-class TransformerDec(nn.Module):
-    def __init__(self, txl_emb, idx_map, output_p=0.0, out_bias=True, d_model=None, **kwargs):
-        super().__init__()
-        self.output_dp = RNNDropout(output_p)
-        
-        decoders = []
-        for k,v in idx_map.items():
-            emb = txl_emb.embeddings[v[0]]
-            decoder = TXLLinearDecoder(tie_encoder=emb, bias=out_bias, input_dim=d_model)
-            decoders.append(decoder)
-            
-        self.decoders = nn.ModuleList(decoders)
-        
-    def forward(self, input):
-        raw_outputs, outputs = input
-        output = self.output_dp(outputs[-1])
-        res = []
-        for idx,dec in enumerate(self.decoders):
-            res.append(dec(output))
-        return res, raw_outputs, outputs
-
-def rand_window_mask(x_len,m_len,device,p=0.2,is_eval=False):
-    if is_eval or m_len == 0 or np.random.rand() >= p: 
-        win_size,k = (1,1)
-    else: win_size,k = (np.random.randint(0,3)+1,0)
-        
-    mem_mask = np.zeros((x_len,m_len))
-    tri_mask = np.triu(np.ones((x_len//win_size+1,x_len//win_size+1)),k=k)
-    window_mask = tri_mask.repeat(win_size,axis=0).repeat(win_size,axis=1)[:x_len,:x_len]
-    np_mask = np.concatenate((mem_mask, window_mask), axis=1)
-    mask = torch.tensor(np_mask, device=device).byte()[None,None]; mask
-    return mask
-
-
-class LMNPTransformerXL(nn.Module):
-    "TransformerXL model: https://arxiv.org/abs/1901.02860."
-    def __init__(self, encoder, ctx_len:int, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
-                 resid_p:float=0., attn_p:float=0., ff_p:float=0., embed_p:float=0., bias:bool=False, scale:bool=True,
-                 act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MultiHeadRelativeAttention,
-                 learned_pos_enc:bool=False, mask_type:MaskType=MaskType.Sequential, mem_len:int=0, **kwargs):
-        super().__init__()
-        self.encoder = encoder
-        self.pos_enc = nn.Embedding(ctx_len, d_model) if learned_pos_enc else PositionalEncoding(d_model)
-        self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
-        self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
-        self.mem_len,self.n_layers,self.d_model,self.mask_type = mem_len,n_layers,d_model,mask_type
-        self.init = False
-        self.layers = nn.ModuleList([DecoderLayer(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
-                      ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, 
-                      attn_cls=attn_cls) for k in range(n_layers)])
-    
-    def reset(self):
-        "Reset the internal memory."
-        self.hidden = [next(self.parameters()).data.new(0) for i in range(self.n_layers+1)]
-
-    def _update_mems(self, hids):
-        if not getattr(self, 'hidden', False): return None
-        assert len(hids) == len(self.hidden), 'len(hids) != len(self.hidden)'
-        with torch.no_grad():
-            for i in range(len(hids)):
-                cat = torch.cat([self.hidden[i], hids[i]], dim=1)
-                self.hidden[i] = cat[:,-self.mem_len:].detach()
-    
-    def select_hidden(self, idxs): self.hidden = [h[idxs] for h in self.hidden]
-    
-    def forward(self, x):
-        #The hidden state has to be initiliazed in the forward pass for nn.DataParallel
-        if self.mem_len > 0 and not self.init: 
-            self.reset()
-            self.init = True
-        inp = self.encoder(x)
-        if self.mask_type.value == MaskType.Bert.value:
-            inp = inp.reshape(inp.shape[0], -1, inp.shape[-1]) # bs,bptt,comp,emb -> bs,bptt*comp,emb
-        else:
-            inp = inp.reshape(*inp.shape[:2], -1) # bs,bptt,comp,emb -> bs,bptt,comp,emb
-        bs,x_len = inp.shape[:2]
-        m_len = self.hidden[0].size(1) if hasattr(self, 'hidden') and len(self.hidden[0].size()) > 1 else 0
-        seq_len = m_len + x_len
-
-        if self.mask_type.value == MaskType.NoMask.value: 
-            self.mask = None
-        elif self.mask_type.value == MaskType.Sequential.value: 
-            self.mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=1+m_len).byte()[None,None]
-        elif self.mask_type.value == MaskType.RandomWindow.value: 
-            self.mask = rand_window_mask(x_len,m_len,x.device,is_eval=not self.training)
-        else: 
-            raise ValueError('Unhandled mask type:', self.mask_type)
-            
-        #[None,:,:None] for einsum implementation of attention
-        hids = []
-        pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=inp.dtype)
-        pos_enc = self.pos_enc(pos)
-        hids.append(inp)
-        for i, layer in enumerate(self.layers):
-            mem = self.hidden[i] if self.mem_len > 0 else None
-            inp = layer(inp, r=pos_enc, u=self.u, v=self.v, mask=self.mask, mem=mem)
-            hids.append(inp)
-        core_out = inp[:,-x_len:]
-        if self.mem_len > 0 : self._update_mems(hids)
-        return (self.hidden if self.mem_len > 0 else [core_out]),[core_out]
-
-def get_language_model(config:dict=None, drop_mult:float=1.):
-    "Create a language model from `arch` and its `config`, maybe `pretrained`."
-    for k in config.keys(): 
-        if k.endswith('_p'): config[k] *= drop_mult
-    init = config.pop('init') if 'init' in config else None
-    
-    embed = TransformerEmbed(**config)
-    txl = LMNPTransformerXL(embed, **config)
-    decoder = TransformerDec(embed, **config)
-    model = SequentialRNN(txl, decoder)
-    
-    return model if init is None else model.apply(init)
-
-
-def language_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pretrained:bool=True,
-                           **learn_kwargs) -> 'LanguageLearner':
-    "Create a `Learner` with a language model from `data` and `arch`."
-    model = get_language_model(config=config, drop_mult=drop_mult)
-    learn = LanguageLearner(data, model, split_func=tfmer_lm_split, **learn_kwargs)
-    return learn
-
-class LMNPLoss(nn.Module):
-    "Same as `func`, but flattens input and target."
-    def __init__(self):
-        super().__init__()
-        self.fn = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
-        # not using func otherwise _loss_func_name2activ uses this attribute to get cross entropy loss
-
-    def __repr__(self): return f"numpyenc loss of {self.fn}"
-
-    def forward(self, inputs:Tensor, target:Tensor, **kwargs)->Rank0Tensor:
-        losses = []
-        for idx,input in enumerate(inputs):
-#             if idx in CIDX_ALL: continue
-            t = target[...,idx]
-            input = input.view(-1,input.shape[-1])
-            losses.append(self.fn(input, t.view(-1))*LOSS_WEIGHTS[idx])
-        return sum(losses)
-
-def lmnp_accuracy(inputs:Tensor, target:Tensor)->Rank0Tensor:
-    "Compute accuracy with `targs` when `input` is bs * n_classes."
-    inputs = [i.argmax(dim=-1).unsqueeze(dim=-1) for i in inputs]
-    input = torch.cat(inputs, dim=-1)
-    target = target.view(input.shape)
-    
-    acc = (input==target).float().cpu().numpy()
-    acc[target==PAD_IDX] = np.nan
-    return torch.tensor(np.nanmean(acc), device=target.device)
-
-learn = language_model_learner(data, config, clip=full_clip, loss_func=LMNPLoss(), metrics=[lmnp_accuracy])
+acc = partial(lmnp_accuracy, pad_idx=config['pad_idx'])
+loss_func = LMNPLoss(**config)
+learn = language_model_learner(data, config, clip=full_clip, loss_func=loss_func, metrics=[acc])
 
 if args.load:
     load_path = Path(args.path)/args.load

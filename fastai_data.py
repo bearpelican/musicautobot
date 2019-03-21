@@ -2,10 +2,7 @@ from fastai.text import *
 from numbers import Integral
 from encode_data import npenc2seq
 
-TO_SEQ = False
-NO_INST = True
 Y_OFFSET=1
-VAL_OFFSET=0
     
 class MusicTokenizer():
     def __init__(self):
@@ -84,6 +81,26 @@ class LMNumericalizeProcessor(PreProcessor):
         
         
 ## For npenc dataset
+
+def rand_transpose(t, enc_offset, rand_range=(0,24), p=0.5):
+    t = t.copy()
+    notes = t[...,0]
+    if np.random.rand() < p:
+        notes[notes >= enc_offset] += np.random.randint(*rand_range)-rand_range[1]//2
+    return t
+
+
+def create_vocab_sizes(cache_path):
+    max_vocab_file = cache_path/'max_vocab.npy'
+    if max_vocab_file.exists(): return np.load(max_vocab_file).tolist()
+    train_ids_file = max_vocab_file.with_name('train_ids.npy')
+    all_ids = np.load(train_ids_file)
+    id_cat = np.concatenate(all_ids); id_cat.shape
+    ax = tuple(range(len(id_cat.shape)-1))
+    max_vocab = id_cat.max(axis=ax)+1
+    if max_vocab[0] in [118, 120]: max_vocab[0] += 12 # to allow data augmentation
+    np.save(max_vocab_file, max_vocab)
+    return max_vocab.tolist()
 
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
