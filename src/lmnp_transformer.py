@@ -155,7 +155,8 @@ def get_language_model(config:dict=None, drop_mult:float=1.):
     "Create a language model from `arch` and its `config`, maybe `pretrained`."
     for k in config.keys(): 
         if k.endswith('_p'): config[k] *= drop_mult
-    init = config.pop('init') if 'init' in config else None
+#     init = config.pop('init') if 'init' in config else None
+    init = init_transformer # removing from config so we can pickle it
     
     embed = TransformerEmbed(**config)
     txl = LMNPTransformerXL(embed, **config)
