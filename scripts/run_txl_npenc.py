@@ -6,13 +6,15 @@ from fastai.text.models.transformer import *
 
 import numpy as np
 
+import sys
+sys.path.insert(0, '../src')
 from fastai_data import *
 from lmnp_transformer import *
 from encode_data import VALTSEP, VALTBOS, PADDING_IDX, ENC_OFFSET
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='data/midi/v9/midi_encode/np/shortdur/')
+parser.add_argument('--path', type=str, default='../data/midi/v9/midi_encode/np/shortdur/')
 parser.add_argument('--cache', type=str, default='tmp/dmp')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
