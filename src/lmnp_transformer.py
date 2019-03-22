@@ -5,6 +5,7 @@ import torch
 
 from fastai.text import *
 from fastai.text.models.transformer import *
+from fastai.text.models.transformer import init_transformer
 from fastai.callbacks.tracker import *
 
 MaskType = Enum('MaskType', 'NoMask Sequential RandomWindow Bert')

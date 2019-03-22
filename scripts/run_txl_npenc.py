@@ -61,6 +61,7 @@ config['emb_map'] = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
 config['idx_map'] = idx2embidx
 config['loss_weights'] = [1,1] # note,duration
 config['pad_idx'] = PADDING_IDX+ENC_OFFSET
+config['bos_idx'] = VALTBOS+ENC_OFFSET
 config['mask_type'] = MaskType.RandomWindow if args.rand_window else MaskType.Sequential
 config['act'] = Activation.GeLU if args.gelu else Activation.ReLU
 
@@ -75,9 +76,7 @@ config['output_p'] = 0.1 # decoder dropout (before final linear layer)
 
 full_clip = None if args.half else 0.25
 
-acc = partial(lmnp_accuracy, pad_idx=config['pad_idx'])
-loss_func = LMNPLoss(**config)
-learn = language_model_learner(data, config, clip=full_clip, loss_func=loss_func, metrics=[acc])
+learn = language_model_learner(data, config, clip=full_clip)
 
 if args.load:
     load_path = Path(args.path)/args.load
