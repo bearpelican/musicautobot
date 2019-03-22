@@ -1,12 +1,13 @@
+"Special encoding library for structured hooktheory xml files"
 import music21
-from src import roman_to_symbol
-from src import to_pianoroll
+from lead_datasheet import roman_to_symbol
+from lead_datasheet import to_pianoroll
 from collections import defaultdict
 from midi_data import keyc_offset
 import numpy as np
 from collections import Counter, defaultdict
-from src.roman_to_symbol import *
-from src.tab_parser import *
+from lead_datasheet.roman_to_symbol import *
+from lead_datasheet.tab_parser import *
 
     
 # ENC_IDXS = [0,1,2,3,4,5,6,7,8,9,10]

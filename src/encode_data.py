@@ -1,3 +1,5 @@
+"Encoding music21 streams -> numpy array -> text"
+
 import re
 from pathlib import Path
 import music21

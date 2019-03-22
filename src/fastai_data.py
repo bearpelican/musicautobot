@@ -1,3 +1,4 @@
+"Fast parallel databunch creation and special npencoding DataBunch"
 from fastai.text import *
 from numbers import Integral
 from encode_data import npenc2seq
