@@ -16,11 +16,11 @@ import uuid
 # path = Path('../../data/midi/v9/')/source_dir
 # out_path = Path('../../data/generated/')
 
-def get_config(path, cache_name='tmp/hook'):
+def get_config(vocab_path):
     bs=16
     bptt=256
     
-    VOCAB_SZ = create_vocab_sizes(path/'tmp/all')
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
     N_COMPS = len(VOCAB_SZ)
     N_EMBS = 128
     EMB_IDXS = range(N_COMPS)
@@ -54,18 +54,18 @@ def get_config(path, cache_name='tmp/hook'):
 
     config['bs'] = 16
     config['bptt'] = 256
-    config['path'] = path
-    config['cache_name'] = cache_name
+    # config['path'] = path
+    # config['cache_name'] = cache_name
     return config
 
 def load_data(path, cache_name, enc_offset, transpose_range, **kwargs):
     transpose_tfm = partial(rand_transpose, enc_offset=enc_offset, rand_range=transpose_range)
-    data = LMNPDataBunch.load(**kwargs, train_tfms=[transpose_tfm])
+    data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, train_tfms=[transpose_tfm])
     return data
 
-def load_learner(data, config, load_path):
+def load_learner(data, config, load_path=None):
     learn = language_model_learner(data, config, clip=0.25)
-    if 'load_path' in config:
+    if load_path:
         state = torch.load(load_path, map_location='cpu')
         get_model(learn.model).load_state_dict(state['model'], strict=False)
     return learn
