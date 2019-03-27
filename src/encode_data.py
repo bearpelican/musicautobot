@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 import music21
 import numpy as np
-from midi_data import file2stream
+from .midi_data import file2stream
 from fastai.text.data import BOS
 import scipy.sparse
 from collections import defaultdict
@@ -288,11 +288,11 @@ def seq2chordarr(seq, note_range=127):
     return score_arr
 
 # 3.
-def chordarr2stream(arr, sample_freq=4):
+def chordarr2stream(arr, sample_freq=4, bpm=120):
     duration = music21.duration.Duration(1. / sample_freq)
     stream = music21.stream.Stream()
     stream.append(music21.meter.TimeSignature(TIMESIG))
-    stream.append(music21.tempo.MetronomeMark(number=120))
+    stream.append(music21.tempo.MetronomeMark(number=bpm))
     stream.append(music21.key.KeySignature(0))
     for inst in range(arr.shape[1]):
         p = partarr2stream(arr[:,inst,:], duration, stream=music21.stream.Part())
@@ -363,10 +363,10 @@ def load_chordarr(file):
 
 # npenc functions
 
-def npenc2stream(arr):
+def npenc2stream(arr, bpm=120):
     seq = npenc2seq(np.array(arr))
     chordarr = seq2chordarr(seq)
-    return chordarr2stream(chordarr)
+    return chordarr2stream(chordarr, bpm=bpm)
 
 VALTSEP = -2
 VALTBOS = -1

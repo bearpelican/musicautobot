@@ -10,14 +10,13 @@ from .fastai_data import *
 from .lmnp_transformer import *
 from .encode_data import *
 
-
 import uuid
 
-source_dir = 'midi_encode/np/shortdur'
-path = Path('../../data/midi/v9/')/source_dir
+# source_dir = 'midi_encode/np/shortdur'
+# path = Path('../../data/midi/v9/')/source_dir
 # out_path = Path('../../data/generated/')
 
-def get_config(path, cache='tmp/hook'):
+def get_config(path, cache_name='tmp/hook'):
     bs=16
     bptt=256
     
@@ -42,6 +41,7 @@ def get_config(path, cache='tmp/hook'):
     config['transpose_range'] = (0,12)
     config['mask_type'] = MaskType.RandomWindow
     config['act'] = Activation.GeLU
+    # config['act'] = Activation.ReLU
 
     config['d_model'] = total_embs
     config['mem_len'] = 512
@@ -54,49 +54,66 @@ def get_config(path, cache='tmp/hook'):
 
     config['bs'] = 16
     config['bptt'] = 256
-    config['cache_name'] = 'tmp/hook'
     config['path'] = path
+    config['cache_name'] = cache_name
     return config
 
-def load_data(config):
-    transpose_tfm = partial(rand_transpose, enc_offset=config['enc_offset'], rand_range=config['transpose_range'])
-    data = LMNPDataBunch.load(**config, train_tfms=[transpose_tfm])
+def load_data(path, cache_name, enc_offset, transpose_range, **kwargs):
+    transpose_tfm = partial(rand_transpose, enc_offset=enc_offset, rand_range=transpose_range)
+    data = LMNPDataBunch.load(**kwargs, train_tfms=[transpose_tfm])
     return data
 
-def load_learner(data, config):
+def load_learner(data, config, load_path):
     learn = language_model_learner(data, config, clip=0.25)
     if 'load_path' in config:
-        state = torch.load(config['load_path'], map_location='cpu')
+        state = torch.load(load_path, map_location='cpu')
         get_model(learn.model).load_state_dict(state['model'], strict=False)
     return learn
 
 
 # Serving functions
 
-# import pandas as pd
-# def song_csv():
-#     if not (path/'midi_encode.pkl').exists():
-#         df = pd.read_csv(path/'midi_encode.csv')
-#         df.to_pickle(path/'midi_encode.pkl')
-#     else:
-#         df = pd.read_pickle(path/'midi_encode.pkl')
+import pandas as pd
+def get_htlist(path, source_dir, use_cache=True):
+    json_path = path/'htlist.json'
+    if use_cache and json_path.exists():
+        with open(json_path, 'r') as fp:
+            htlist = json.load(fp)
+    else:
+        df = pd.read_csv(path/'midi_encode.csv')
+        df = df.loc[df[source_dir].notna()] # make sure it exists
+        df = df.loc[df.source == 'hooktheory'] # hooktheory only
+        df = df.rename(index=str, columns={source_dir: 'numpy'}) # shortdur -> numpy
+        df = df.reindex(index=df.index[::-1]) # A's first
+        df = df.where((pd.notnull(df)), None) # nan values break json
+        #         df = df.set_index('numpy')
 
-#     df = df.loc[df[source_dir].notna()] # make sure it exists
-#     df = df.loc[df.source == 'hooktheory'] # hooktheory only
-#     # df.loc[df.artist.str.contains('garrix')]
-#     files = song_csv()[source_dir].values.tolist()
-#     return df, files
+        htlist = df.to_dict('records')
+        htlist = { s['numpy']:format_htsong(s) for s in htlist}
+        with open(json_path, 'w') as fp:
+            json.dump(htlist, fp)
 
-def search_files(files, keywords='country road'):
+    # df.loc[df.artist.str.contains('garrix')]
+    return htlist
+
+def format_htsong(s):
+    s = s.copy()
+    s['title'] = s['title'].title().replace('-', ' ')
+    s['artist'] = s['artist'].title().replace('-', ' ')
+    return s
+
+def search_htlist(htlist, keywords='country road', max_results=10):
     keywords = keywords.split(' ')
     def contains_keywords(f): return all([k in str(f) for k in keywords])
-    search = [f for f in files if contains_keywords(f)]
-    return search
+    res = []
+    for k,s in htlist.items():
+        if contains_keywords(k): res.append(s)
+        if len(res) >= max_results: break
+    return res
 
-def get_hooktheory_files(config):
-    files = get_files(config['path']/'hooktheory', extensions=['.npy'], recurse=True)
+def get_filelist(path):
+    files = get_files(path/'hooktheory', extensions=['.npy'], recurse=True)
     return files
-
 
 def stream2midifile(stream, np_path):
     return stream.write("midi", np_path.with_suffix('.mid'))
@@ -115,7 +132,7 @@ def generate_predictions(learn, midi_file=None, np_file=None, seed_len=60, n_wor
     
     return pred, seed, full
 
-def save_comps(out_path, pid, nptype='p'): # p = pred, f = full, s = seed
+def save_comps(out_path, pid, nptype='p', bpm=120): # p = pred, f = full, s = seed
     np_path = out_path/pid/f'pred.npy'
     npenc = np.load(np_path)
     
