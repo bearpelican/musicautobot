@@ -364,9 +364,17 @@ def load_chordarr(file):
 # npenc functions
 
 def npenc2stream(arr, bpm=120):
+    "Converts numpy encoding to music21 stream"
     seq = npenc2seq(np.array(arr))
     chordarr = seq2chordarr(seq)
     return chordarr2stream(chordarr, bpm=bpm)
+
+def midi2npenc(midi_file, num_comps=2):
+    "Converts midi file to numpy encoding for language model"
+    stream = file2stream(midi_file) # 1.
+    s_arr = stream2chordarr(stream) # 2.
+    seq = chordarr2seq(s_arr) # 3.
+    return seq2npenc(seq, num_comps=num_comps)
 
 VALTSEP = -2
 VALTBOS = -1

@@ -86,20 +86,19 @@ def get_htlist(path, source_dir, use_cache=True):
         df = df.rename(index=str, columns={source_dir: 'numpy'}) # shortdur -> numpy
         df = df.reindex(index=df.index[::-1]) # A's first
         df = df.where((pd.notnull(df)), None) # nan values break json
-        #         df = df.set_index('numpy')
 
-        htlist = df.to_dict('records')
-        htlist = { s['numpy']:format_htsong(s) for s in htlist}
+        htlist = df.to_dict('records') # row format
+        htlist = [format_htsong(s) for s in htlist] # normalize artist, title, create song ID
+        htlist = { s['sid']:s for s in htlist}
         with open(json_path, 'w') as fp:
             json.dump(htlist, fp)
-
-    # df.loc[df.artist.str.contains('garrix')]
     return htlist
 
 def format_htsong(s):
     s = s.copy()
     s['title'] = s['title'].title().replace('-', ' ')
     s['artist'] = s['artist'].title().replace('-', ' ')
+    s['sid'] = hash(s['midi'])
     return s
 
 def search_htlist(htlist, keywords='country road', max_results=10):
@@ -107,7 +106,7 @@ def search_htlist(htlist, keywords='country road', max_results=10):
     def contains_keywords(f): return all([k in str(f) for k in keywords])
     res = []
     for k,s in htlist.items():
-        if contains_keywords(k): res.append(s)
+        if contains_keywords(s['numpy']): res.append(s)
         if len(res) >= max_results: break
     return res
 
@@ -121,7 +120,7 @@ def stream2midifile(stream, np_path):
 def stream2scoreimg(stream, np_path):
     return stream.write('musicxml.png', np_path.with_suffix('.xml'))
 
-def generate_predictions(learn, midi_file=None, np_file=None, seed_len=60, n_words=340, 
+def predict_from_file(learn, midi_file=None, np_file=None, seed_len=60, n_words=340, 
                          temperatures=(1.5,0.9), min_ps=(1/128,0.0), **kwargs):
     file = np_file
     song_np = np.load(file)
@@ -132,8 +131,19 @@ def generate_predictions(learn, midi_file=None, np_file=None, seed_len=60, n_wor
     
     return pred, seed, full
 
-def save_comps(out_path, pid, nptype='p', bpm=120): # p = pred, f = full, s = seed
-    np_path = out_path/pid/f'pred.npy'
+# NOTE: looks like npenc does not include the separator. 
+# This means we don't have to remove the last (separator) step from the seed in order to keep predictions
+def predict_from_midi(learn, midi_path=None, n_words=340, 
+                      temperatures=(1.5,0.9), min_ps=(1/128,0.0), **kwargs):
+    seed_np = midi2npenc(midi_path)
+    xb = torch.tensor(seed_np)[None]
+    pred, seed = learn.predict(xb, n_words=n_words, temperatures=temperatures, min_ps=min_ps)
+    full = np.concatenate((seed,pred), axis=0)
+    
+    return pred, seed, full
+
+def save_comps(out_path, pid, nptype='pred', bpm=120): # p = pred, f = full, s = seed
+    np_path = out_path/pid/f'{nptype}.npy'
     npenc = np.load(np_path)
     
     stream = npenc2stream(npenc)
