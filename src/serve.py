@@ -135,18 +135,6 @@ def predict_from_file(learn, midi_file=None, np_file=None, seed_len=60, n_words=
 # This means we don't have to remove the last (separator) step from the seed in order to keep predictions
 def predict_from_midi(learn, midi=None, n_words=340, 
                       temperatures=(1.5,0.9), min_ps=(1/128,0.0), **kwargs):
-    # print(midi_path.read())
-    # print(dir(midi_path))
-    # with open('/tmp/t.mid', 'wb') as f:
-    #     f.write(bytearray(midi, 'utf-8'))
-    # with open('/tmp/t2.mid', 'w') as f:
-    #     f.write(midi_path)
-    # with open('/tmp/t4.mid', 'wb') as f:
-    #     f.write(midi_path.read())
-    # seed_np = midi2npenc('/tmp/t4.mid')
-    # midi_path.save('/tmp/t3.mid')
-    
-    # seed_np = midi2npenc(io.BytesIO(midi_path.read()))
     seed_np = midi2npenc(midi) # music21 can handle bytes directly
     xb = torch.tensor(seed_np)[None]
     pred, seed = learn.predict(xb, n_words=n_words, temperatures=temperatures, min_ps=min_ps)
