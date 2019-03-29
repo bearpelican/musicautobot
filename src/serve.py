@@ -98,7 +98,7 @@ def format_htsong(s):
     s = s.copy()
     s['title'] = s['title'].title().replace('-', ' ')
     s['artist'] = s['artist'].title().replace('-', ' ')
-    s['sid'] = hash(s['midi'])
+    s['sid'] = str(hash(s['midi']))
     return s
 
 def search_htlist(htlist, keywords='country road', max_results=10):
