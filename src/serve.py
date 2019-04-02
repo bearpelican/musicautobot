@@ -117,6 +117,9 @@ def get_filelist(path):
 def stream2midifile(stream, np_path):
     return stream.write("midi", np_path.with_suffix('.mid'))
     
+def stream2musicxml(stream, np_path):
+    return stream.write('musicxml', np_path.with_suffix('.xml'))
+    
 def stream2scoreimg(stream, np_path):
     return stream.write('musicxml.png', np_path.with_suffix('.xml'))
 
@@ -142,16 +145,15 @@ def predict_from_midi(learn, midi=None, n_words=340,
     
     return pred, seed, full
 
-def save_comps(out_path, pid, nptype='pred', bpm=120): # p = pred, f = full, s = seed
+def save_comps(out_path, pid, nptype='pred', bpm=120, types=('midi', 'musicxml', 'png')): # p = pred, f = full, s = seed
     np_path = out_path/pid/f'{nptype}.npy'
     npenc = np.load(np_path)
     
-    stream = npenc2stream(npenc)
+    stream = npenc2stream(npenc, bpm=bpm)
     
-    midi = stream2midifile(stream, np_path)
-    score = stream2scoreimg(stream, np_path)
-    
-    return Path(midi), Path(score)
+    if 'midi' in types: stream2midifile(stream, np_path)
+    if 'musicxml' in types: stream2musicxml(stream, np_path)
+    if 'png' in types: stream2scoreimg(stream, np_path)
 
 def save_preds(pred, seed, full, out_path):
     pid = str(uuid.uuid4())
