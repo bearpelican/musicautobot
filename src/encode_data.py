@@ -305,7 +305,7 @@ def partarr2stream(part, duration, stream=None):
     "convert instrument part to music21 chords"
     if stream is None: stream = music21.stream.Stream()
     stream.append(music21.instrument.Piano())
-    if np.any(part > 0): part_append_duration_notes(part, duration, stream) # notes already have duration calcualted
+    if np.any(part > 0): part_append_duration_notes(part, duration, stream) # notes already have duration calculated
     else: part_append_continuous_notes(part, duration, stream) # notes are either start or continued 
 
     return stream
@@ -323,8 +323,10 @@ def part_append_continuous_notes(part, duration, stream):
             tnext = durations[tidx+1,nidx] if tidx+1 < len(part) else 0
             note.duration = music21.duration.Duration((tnext+1)*duration.quarterLength)
             notes.append(note)
-        chord = music21.chord.Chord(notes)
-        stream.insert(tidx*duration.quarterLength, chord)
+        for g in group_notes_by_duration(notes):
+            chord = music21.chord.Chord(g)
+            stream.insert(tidx*duration.quarterLength, chord)
+    return stream
         
 # 3c.
 def calc_note_durations(part):
@@ -345,9 +347,18 @@ def part_append_duration_notes(part, duration, stream=None):
             note = music21.note.Note(nidx)
             note.duration = music21.duration.Duration(part[tidx,nidx]*duration.quarterLength)
             notes.append(note)
-        chord = music21.chord.Chord(notes)
-        stream.insert(tidx*duration.quarterLength, chord)
+        for g in group_notes_by_duration(notes):
+            chord = music21.chord.Chord(g)
+            stream.insert(tidx*duration.quarterLength, chord)
     return stream
+
+from itertools import groupby
+#  combining notes with different durations into a single chord may overwrite conflicting durations. Example: aylictal/still-waters-run-deep
+def group_notes_by_duration(notes):
+    "separate notes into chord groups"
+    keyfunc = lambda n: n.duration.quarterLength
+    notes = sorted(notes, key=keyfunc)
+    return [list(g) for k,g in groupby(notes, keyfunc)]
 
 # saving
 def save_chordarr(out_file, chordarr):
