@@ -114,26 +114,6 @@ def get_filelist(path):
     files = get_files(path/'hooktheory', extensions=['.npy'], recurse=True)
     return files
 
-def stream2midifile(stream, np_path):
-    return stream.write("midi", np_path.with_suffix('.mid'))
-    
-def stream2musicxml(stream, np_path):
-    return stream.write('musicxml', np_path.with_suffix('.xml'))
-    
-def stream2scoreimg(stream, np_path):
-    return stream.write('musicxml.png', np_path.with_suffix('.xml'))
-
-def predict_from_file(learn, midi_file=None, np_file=None, seed_len=60, n_words=340, 
-                         temperatures=(1.5,0.9), min_ps=(1/128,0.0), **kwargs):
-    file = np_file
-    song_np = np.load(file)
-    seed_np = np.load(file)[:seed_len]
-    xb = torch.tensor(seed_np)[None]
-    pred, seed = learn.predict(xb, n_words=n_words, temperatures=temperatures, min_ps=min_ps)
-    full = np.concatenate((seed,pred), axis=0)
-    
-    return pred, seed, full
-
 # NOTE: looks like npenc does not include the separator. 
 # This means we don't have to remove the last (separator) step from the seed in order to keep predictions
 def predict_from_midi(learn, midi=None, n_words=340, 
@@ -145,21 +125,41 @@ def predict_from_midi(learn, midi=None, n_words=340,
     
     return pred, seed, full
 
-def save_comps(out_path, pid, nptype='pred', bpm=120, types=('midi', 'musicxml', 'png')): # p = pred, f = full, s = seed
-    np_path = out_path/pid/f'{nptype}.npy'
-    npenc = np.load(np_path)
+# def predict_from_file(learn, midi_file=None, np_file=None, seed_len=60, n_words=340, 
+#                          temperatures=(1.5,0.9), min_ps=(1/128,0.0), **kwargs):
+#     file = np_file
+#     song_np = np.load(file)
+#     seed_np = np.load(file)[:seed_len]
+#     xb = torch.tensor(seed_np)[None]
+#     pred, seed = learn.predict(xb, n_words=n_words, temperatures=temperatures, min_ps=min_ps)
+#     full = np.concatenate((seed,pred), axis=0)
     
-    stream = npenc2stream(npenc, bpm=bpm)
-    
-    if 'midi' in types: stream2midifile(stream, np_path)
-    if 'musicxml' in types: stream2musicxml(stream, np_path)
-    if 'png' in types: stream2scoreimg(stream, np_path)
+#     return pred, seed, full
 
-def save_preds(pred, seed, full, out_path):
-    pid = str(uuid.uuid4())
-    path = out_path/pid
-    path.mkdir(parents=True, exist_ok=True)
-    np.save(path/f"pred.npy", pred)
-    np.save(path/f"seed.npy", seed)
-    np.save(path/f"full.npy", full)
-    return pid
+# def save_comps(out_path, pid, nptype='pred', bpm=120, types=('midi', 'musicxml', 'png')): # p = pred, f = full, s = seed
+#     np_path = out_path/pid/f'{nptype}.npy'
+#     npenc = np.load(np_path)
+    
+#     stream = npenc2stream(npenc, bpm=bpm)
+    
+#     if 'midi' in types: stream2midifile(stream, np_path)
+#     if 'musicxml' in types: stream2musicxml(stream, np_path)
+#     if 'png' in types: stream2scoreimg(stream, np_path)
+
+# def save_preds(pred, seed, full, out_path):
+#     pid = str(uuid.uuid4())
+#     path = out_path/pid
+#     path.mkdir(parents=True, exist_ok=True)
+#     np.save(path/f"pred.npy", pred)
+#     np.save(path/f"seed.npy", seed)
+#     np.save(path/f"full.npy", full)
+#     return pid
+
+# def stream2midifile(stream, np_path):
+#     return stream.write("midi", np_path.with_suffix('.mid'))
+    
+# def stream2musicxml(stream, np_path):
+#     return stream.write('musicxml', np_path.with_suffix('.xml'))
+    
+# def stream2scoreimg(stream, np_path):
+#     return stream.write('musicxml.png', np_path.with_suffix('.xml'))
