@@ -2,6 +2,7 @@
 data/
 models/
 tmp_out/
+data_serve/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
