@@ -3,6 +3,7 @@ data/
 models/
 tmp_out/
 data_serve/
+notebooks/data_collection/musescore/*.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

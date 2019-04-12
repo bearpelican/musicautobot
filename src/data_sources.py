@@ -2,7 +2,7 @@
 import csv
 import pandas as pd
 from fastai.data_block import get_files
-from midi_data import save_json, load_json, keyc_offset
+from src.midi_data import save_json, load_json, keyc_offset
 import concurrent
 from concurrent.futures import ProcessPoolExecutor
 from fastprogress.fastprogress import master_bar, progress_bar
