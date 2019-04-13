@@ -128,7 +128,7 @@ def midi2str(midi_file, note_func, continuous=False):
     return seq2str(seq, note_func=note_func, continuous=continuous)
 
 # 2.
-def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None):
+def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None, flat=True):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
@@ -143,6 +143,7 @@ def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None):
     noteFilter=music21.stream.filters.ClassFilter('Note')
     chordFilter=music21.stream.filters.ClassFilter('Chord')
     
+    if flat: s = s.flat # required when stream contains measures.
     def note_data(pitch, note):
         inst_id = note.activeSite.getInstrument().id
         iidx = inst2idx[inst_id]
@@ -192,7 +193,7 @@ def _shorten_chordarr_rests(arr, max_rests=32):
             if rest_count > max_rests+4:
                 old_count = rest_count
                 rest_count = rest_count % 4 + max_rests
-                print(f'Compressing rests: {old_count} -> {rest_count}')
+#                 print(f'Compressing rests: {old_count} -> {rest_count}')
             for i in range(rest_count): result.append(np.zeros(timestep.shape))
             rest_count = 0
             result.append(timestep)
