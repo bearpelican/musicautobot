@@ -72,10 +72,10 @@ class TransformerDec(nn.Module):
             res.append(dec(output))
         return res, raw_outputs, outputs
 
-def rand_window_mask(x_len,m_len,device,p=0.2,is_eval=False):
+def rand_window_mask(x_len,m_len,device,max_size=3,p=0.2,is_eval=False):
     if is_eval or m_len == 0 or np.random.rand() >= p: 
         win_size,k = (1,1)
-    else: win_size,k = (np.random.randint(0,3)+1,0)
+    else: win_size,k = (np.random.randint(0,max_size)+1,0)
         
     mem_mask = np.zeros((x_len,m_len))
     tri_mask = np.triu(np.ones((x_len//win_size+1,x_len//win_size+1)),k=k)
@@ -90,13 +90,13 @@ class LMNPTransformerXL(nn.Module):
     def __init__(self, encoder, ctx_len:int, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
                  resid_p:float=0., attn_p:float=0., ff_p:float=0., embed_p:float=0., bias:bool=False, scale:bool=True,
                  act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MultiHeadRelativeAttention,
-                 learned_pos_enc:bool=False, mask_type:MaskType=MaskType.Sequential, mem_len:int=0, **kwargs):
+                 learned_pos_enc:bool=False, mask_type:MaskType=MaskType.Sequential, mask_args=None, mem_len:int=0, **kwargs):
         super().__init__()
         self.encoder = encoder
         self.pos_enc = nn.Embedding(ctx_len, d_model) if learned_pos_enc else PositionalEncoding(d_model)
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
-        self.mem_len,self.n_layers,self.d_model,self.mask_type = mem_len,n_layers,d_model,mask_type
+        self.mem_len,self.n_layers,self.d_model,self.mask_type,self.mask_args = mem_len,n_layers,d_model,mask_type,mask_args
         self.init = False
         self.layers = nn.ModuleList([DecoderLayer(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
                       ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, 
@@ -135,7 +135,8 @@ class LMNPTransformerXL(nn.Module):
         elif self.mask_type.value == MaskType.Sequential.value: 
             self.mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=1+m_len).byte()[None,None]
         elif self.mask_type.value == MaskType.RandomWindow.value: 
-            self.mask = rand_window_mask(x_len,m_len,x.device,is_eval=not self.training)
+            mask_args = self.mask_args or {}
+            self.mask = rand_window_mask(x_len,m_len,x.device,is_eval=not self.training, **mask_args)
         else: 
             raise ValueError('Unhandled mask type:', self.mask_type)
             

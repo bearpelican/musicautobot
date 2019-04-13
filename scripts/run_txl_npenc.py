@@ -28,9 +28,7 @@ parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
 parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-parser.add_argument('--rand_transpose', action='store_true', help='Transpose data augmentation')
-parser.add_argument('--rand_window', action='store_true', help='Random window size')
-parser.add_argument('--gelu', action='store_true', help='Gelu activation')
+parser.add_argument('--large_model', action='store_true', help=' Large or small model config')
 
 args = parser.parse_args()
 
@@ -43,7 +41,10 @@ torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
 
 path = Path(args.path)
-config = v10_config(path/'tmp/all/')
+if args.large_model:
+    config = v10_large_config(path/'tmp/all/')
+else:
+    config = v10_config(path/'tmp/all/')
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size
 data = load_data(path=path, cache_name=args.cache, **config)
