@@ -1,3 +1,4 @@
+
 import music21
 import torch
 
@@ -7,14 +8,15 @@ from fastai.text.models.transformer import *
 import numpy as np
 
 import sys
-sys.path.insert(0, '../src')
-from fastai_data import *
-from lmnp_transformer import *
-from encode_data import VALTSEP, VALTBOS, PADDING_IDX, ENC_OFFSET
+sys.path.insert(0, '..')
+from src.fastai_data import *
+from src.lmnp_transformer import *
+from src.encode_data import VALTSEP, VALTBOS, PADDING_IDX, ENC_OFFSET
+from src.serve import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v9/midi_encode/np/shortdur/')
+parser.add_argument('--path', type=str, default='../data/midi/v10/midi_encode/')
 parser.add_argument('--cache', type=str, default='tmp/dmp')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
@@ -39,40 +41,10 @@ if args.local_rank != 0:
 torch.cuda.set_device(args.local_rank)
 torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
-bs=args.batch_size
-bptt=args.bptt
+
 path = Path(args.path)
-train_tfms = [partial(rand_transpose, enc_offset=ENC_OFFSET, rand_range=(0,12))] if args.rand_transpose else None
-data = LMNPDataBunch.load(path, bs=bs, bptt=bptt, cache_name=args.cache, train_tfms=train_tfms)
-
-VOCAB_SZ = create_vocab_sizes(path/'tmp/all')
-
-N_COMPS = len(VOCAB_SZ)
-N_EMBS = 128
-EMB_IDXS = range(N_COMPS)
-EMB_DIM = [N_EMBS]*len(EMB_IDXS)
-EMB_MAP = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
-
-idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
-total_embs = sum([v[-1] for k,v in idx2embidx.items()])
-
-config = tfmerXL_lm_config
-config['emb_map'] = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
-config['idx_map'] = idx2embidx
-config['loss_weights'] = [1,1] # note,duration
-config['pad_idx'] = PADDING_IDX+ENC_OFFSET
-config['bos_idx'] = VALTBOS+ENC_OFFSET
-config['mask_type'] = MaskType.RandomWindow if args.rand_window else MaskType.Sequential
-config['act'] = Activation.GeLU if args.gelu else Activation.ReLU
-
-config['d_model'] = total_embs
-config['mem_len'] = args.mem_len
-
-config['resid_p'] = 0.1
-config['attn_p'] = 0.1 # attention dropout
-config['ff_p'] = 0.1
-config['embed_p'] = 0.1 # embedding dropout
-config['output_p'] = 0.1 # decoder dropout (before final linear layer)
+config = v10_config(path/'tmp/all/')
+data = load_data(path=path, cache_name=args.cache, **config)
 
 full_clip = None if args.half else 0.25
 
@@ -87,7 +59,8 @@ if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
 if args.half: learn = learn.to_fp16(clip=0.25, dynamic=True)
-learn = learn.to_distributed(args.local_rank, drop_last=True, shuffle=False)
+# learn = learn.to_distributed(args.local_rank, drop_last=True, shuffle=False)
+learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 

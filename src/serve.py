@@ -58,6 +58,44 @@ def get_config(vocab_path):
     # config['cache_name'] = cache_name
     return config
 
+def v10_config(vocab_path):
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    N_COMPS = len(VOCAB_SZ)
+    N_EMBS = 128
+    EMB_IDXS = range(N_COMPS)
+    EMB_DIM = [N_EMBS]*len(EMB_IDXS)
+    EMB_MAP = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
+
+    idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
+    total_embs = sum([v[-1] for k,v in idx2embidx.items()])
+
+    config = tfmerXL_lm_config.copy()
+    config['emb_map'] = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
+    config['idx_map'] = idx2embidx
+    config['loss_weights'] = [1,1] # note,duration
+    config['pad_idx'] = PADDING_IDX+ENC_OFFSET
+    config['bos_idx'] = VALTBOS+ENC_OFFSET
+    config['enc_offset'] = ENC_OFFSET
+    config['transpose_range'] = (0,12)
+    config['mask_type'] = MaskType.RandomWindow
+    config['act'] = Activation.GeLU
+    # config['act'] = Activation.ReLU
+
+    config['d_model'] = total_embs
+    config['mem_len'] = 512
+    config['bs'] = 16
+    config['bptt'] = 256
+    
+    # larger model
+    config['n_heads'] = 12
+    config['d_head'] = 64
+#     config['d_inner'] = 3072
+
+    # config['path'] = path
+    # config['cache_name'] = cache_name
+    return config
+
+
 def load_data(path, cache_name, enc_offset, transpose_range, **kwargs):
     transpose_tfm = partial(rand_transpose, enc_offset=enc_offset, rand_range=transpose_range)
     data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, train_tfms=[transpose_tfm])
