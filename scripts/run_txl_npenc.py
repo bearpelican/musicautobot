@@ -44,6 +44,8 @@ torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
 path = Path(args.path)
 config = v10_config(path/'tmp/all/')
+config['bptt'] = args.bptt
+config['bs'] = args.batch_size
 data = load_data(path=path, cache_name=args.cache, **config)
 
 full_clip = None if args.half else 0.25
