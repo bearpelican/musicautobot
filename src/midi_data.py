@@ -75,6 +75,7 @@ def _transpose_raw_midi(mf, offset):
     return mf
 
 def file2stream(fp, use_parser=True):
+    if isinstance(fp, music21.midi.MidiFile): return music21.midi.translate.midiFileToStream(fp)
     if use_parser: return music21.converter.parse(fp)
     mf = file2mf(fp)
     return music21.midi.translate.midiFileToStream(mf)

@@ -1,7 +1,7 @@
 "Transform functions for raw midi files"
 from enum import Enum
 import music21
-from midi_data import file2mf, keyc_offset
+from src.midi_data import file2mf, keyc_offset
 
 class Track(Enum):
     INFO = 0
