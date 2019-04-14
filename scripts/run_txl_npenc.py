@@ -28,6 +28,7 @@ parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
 parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+parser.add_argument('--div_factor', type=int, default=25, help='learning rate div factor')
 parser.add_argument('--large_model', action='store_true', help=' Large or small model config')
 
 args = parser.parse_args()
@@ -67,6 +68,6 @@ learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=25, moms=(0.7,0.5))
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, moms=(0.7,0.5))
 
 if args.local_rank == 0: learn.save(f'{args.save}')
