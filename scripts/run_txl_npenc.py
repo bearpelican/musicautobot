@@ -30,6 +30,7 @@ parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--div_factor', type=int, default=25, help='learning rate div factor')
 parser.add_argument('--large_model', action='store_true', help=' Large or small model config')
+parser.add_argument('--save_every', action='store_true', help=' Save every epoch')
 
 args = parser.parse_args()
 
@@ -66,6 +67,7 @@ if args.half: learn = learn.to_fp16(clip=0.25, dynamic=True)
 # learn = learn.to_distributed(args.local_rank, drop_last=True, shuffle=False)
 learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
+if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, moms=(0.7,0.5))
