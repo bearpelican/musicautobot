@@ -106,6 +106,17 @@ def v10_single_config(vocab_path):
     config['single_stream'] = True
     return config
 
+def v10_large_single_config(vocab_path):
+    config = v10_large_config(vocab_path)
+    emb_size = 256
+    EMB_MAP = [(0, 262, emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
+    config['d_model'] = emb_size
+    config['single_stream'] = True
+    return config
+
 def v10_large_config(vocab_path):
     VOCAB_SZ = create_vocab_sizes(vocab_path)
     N_COMPS = len(VOCAB_SZ)

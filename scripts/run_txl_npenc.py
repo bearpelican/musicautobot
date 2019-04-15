@@ -44,7 +44,9 @@ torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
 
 path = Path(args.path)
-if args.large_model: config = v10_large_config(path/'tmp/all/')
+
+if args.large_model and args.single_stream: config = v10_large_single_config(path/'tmp/all/')
+elif args.large_model: config = v10_large_config(path/'tmp/all/')
 elif args.single_stream: config = v10_single_config(path/'tmp/all/')
 else: config = v10_config(path/'tmp/all/')
 
