@@ -224,7 +224,9 @@ class LMNPLearner(LanguageLearner):
         super().__init__(*args, **kwargs)
         self.bos_idx = bos_idx
     
-    def predict(self, xb, n_words:int=1, temperatures=(1.2,0.7), min_ps=(1/128,0.0), min_length=50):
+    def predict(self, xb, n_words:int=1, min_length=100,
+                temperatures=(1.4,0.5), min_ps=(1/128,0.0),
+                adaptive_ratio=(0.3,0.6,.1)):
         "Return the `n_words` that come after `text`."
         ds = self.data.single_dl.dataset
         self.model.reset()
@@ -232,6 +234,9 @@ class LMNPLearner(LanguageLearner):
         if xb.shape[0] > 1: xb = xb[0][None]
         seed = xb.cpu().numpy()
         yb = torch.ones_like(xb)
+
+        running_ps = [1, 1]
+
         timesteps = []
         for _ in progress_bar(range(n_words), leave=True):
             bar = []
@@ -239,17 +244,23 @@ class LMNPLearner(LanguageLearner):
             for idx,item in enumerate(outputs): #progress_bar(range(n_words), leave=False):
                 res = item[0][-1]
                 min_p,temperature = min_ps[idx], temperatures[idx]
-#                 if idx == 0: print('Items over p:', (res >= min_p).float().sum(), res.shape)
+    #                 if idx == 0: print('Items over p:', (res >= min_p).float().sum(), res.shape)
                 if (res >= min_p).float().sum() == 0:
                     warn(f"There is no item with probability >= {min_p}, try a lower value.")
                 else: res[res < min_p] = 0.
 
                 if len(timesteps) < min_length: res[self.bos_idx] = 0.
 
-                res.pow_(1 / temperature)
-                idx = torch.multinomial(res, 1)
+                res_temp = res.pow(1 / (temperature * running_ps[idx]))
+                mult_idx = torch.multinomial(res_temp, 1)
+
+                if adaptive_ratio is not None:
+                    mult_p = res[mult_idx].item() * adaptive_ratio[0]
+                    running_p = running_ps[idx] * adaptive_ratio[1]
+                    other_p = running_ps[(idx+1)%len(running_ps)] * adaptive_ratio[2]
+                    running_ps[idx] = mult_p + running_p + other_p
     #             val,idx = torch.topk(res, 1)
-                bar.append(idx.squeeze().to(xb.device))
+                bar.append(mult_idx.squeeze().to(xb.device))
             bar = torch.stack(bar, dim=-1)
             if self.bos_idx is not None and (bar==self.bos_idx).any(): 
                 print('Predicted BOS token. Returning prediction...')
@@ -259,3 +270,4 @@ class LMNPLearner(LanguageLearner):
 
         self.model[0].mask = True
         return timesteps, seed.squeeze()
+
