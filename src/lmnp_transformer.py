@@ -269,5 +269,5 @@ class LMNPLearner(LanguageLearner):
             xb = bar.clone().detach()[None,None] # don't use timesteps. use it's own memory instead
 
         self.model[0].mask = True
-        return timesteps, seed.squeeze()
+        return np.array(timesteps), seed.squeeze()
 

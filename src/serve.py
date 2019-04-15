@@ -95,6 +95,16 @@ def v10_config(vocab_path):
     # config['cache_name'] = cache_name
     return config
 
+def v10_single_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 256
+    EMB_MAP = [(0, 262, emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
+    config['d_model'] = emb_size
+    config['single_stream'] = True
+    return config
 
 def v10_large_config(vocab_path):
     VOCAB_SZ = create_vocab_sizes(vocab_path)
@@ -141,9 +151,13 @@ def v10_large_config(vocab_path):
     # config['cache_name'] = cache_name
     return config
 
-def load_data(path, cache_name, enc_offset, transpose_range, **kwargs):
+def load_data(path, cache_name, enc_offset, transpose_range, single_stream=False, **kwargs):
     transpose_tfm = partial(rand_transpose, enc_offset=enc_offset, rand_range=transpose_range)
-    data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, train_tfms=[transpose_tfm])
+    if single_stream:
+        data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
+                                  train_tfms=[transpose_tfm, to_single_stream], valid_tfms=[to_single_stream])
+    else:
+        data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, train_tfms=[transpose_tfm])
     return data
 
 def load_learner(data, config, load_path=None):

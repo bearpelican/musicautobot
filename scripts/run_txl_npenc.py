@@ -31,6 +31,7 @@ parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--div_factor', type=int, default=25, help='learning rate div factor')
 parser.add_argument('--large_model', action='store_true', help=' Large or small model config')
 parser.add_argument('--save_every', action='store_true', help=' Save every epoch')
+parser.add_argument('--single_stream', action='store_true', help=' Single stream encoding')
 
 args = parser.parse_args()
 
@@ -43,10 +44,10 @@ torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
 
 path = Path(args.path)
-if args.large_model:
-    config = v10_large_config(path/'tmp/all/')
-else:
-    config = v10_config(path/'tmp/all/')
+if args.large_model: config = v10_large_config(path/'tmp/all/')
+elif args.single_stream: config = v10_single_config(path/'tmp/all/')
+else: config = v10_config(path/'tmp/all/')
+
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size
 data = load_data(path=path, cache_name=args.cache, **config)

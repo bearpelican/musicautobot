@@ -90,6 +90,16 @@ def rand_transpose(t, enc_offset, rand_range=(0,24), p=0.5):
         notes[notes >= enc_offset] += np.random.randint(*rand_range)-rand_range[1]//2
     return t
 
+# single stream instead of note,dur
+def to_single_stream(t, offset=130):
+    t = t.copy()
+    t[:, 1] = t[:, 1] + offset
+    return t.reshape(-1, 1)
+
+def to_double_stream(t, offset=130):
+    t = t.copy().reshape(-1, 2)
+    t[:, 1] = t[:, 1] - offset
+    return t
 
 def create_vocab_sizes(cache_path):
     max_vocab_file = cache_path/'max_vocab.npy'
