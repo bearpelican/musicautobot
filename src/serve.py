@@ -95,6 +95,23 @@ def v10_config(vocab_path):
     # config['cache_name'] = cache_name
     return config
 
+
+def v10_small_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 64
+    EMB_MAP = [(0, 262, emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
+    config['d_model'] = emb_size
+    config['single_stream'] = True
+    config['d_inner'] = 512
+    config['n_heads'] = 16
+    config['n_layers'] = 14
+    config['d_head'] = 48
+
+    return config
+
 def v10_single_config(vocab_path):
     config = v10_config(vocab_path)
     emb_size = 256
