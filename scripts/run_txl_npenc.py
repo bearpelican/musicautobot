@@ -29,9 +29,8 @@ parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for ada
 parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--div_factor', type=int, default=25, help='learning rate div factor')
-parser.add_argument('--large_model', action='store_true', help=' Large or small model config')
-parser.add_argument('--save_every', action='store_true', help=' Save every epoch')
-parser.add_argument('--single_stream', action='store_true', help=' Single stream encoding')
+parser.add_argument('--save_every', action='store_true', help='Save every epoch')
+parser.add_argument('--config', type=str, help='serve.py config name')
 
 args = parser.parse_args()
 
@@ -45,10 +44,11 @@ torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
 path = Path(args.path)
 
-if args.large_model and args.single_stream: config = v10_large_single_config(path/'tmp/all/')
-elif args.large_model: config = v10_large_config(path/'tmp/all/')
-elif args.single_stream: config = v10_single_config(path/'tmp/all/')
-else: config = v10_config(path/'tmp/all/')
+from src import serve
+vocab_path = path/'tmp/all/'
+if args.config is None: config = v10_config(vocab_path)
+else:
+    config = getattr(serve, args.config)(vocab_path)
 
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size

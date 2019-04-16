@@ -11,16 +11,21 @@ from fastai.callbacks.tracker import *
 MaskType = Enum('MaskType', 'NoMask Sequential RandomWindow Bert')
 
 class TransformerEmbed(nn.Module):
-    def __init__(self, emb_map, idx_map, embed_p:float=0.1, pad_idx=None, **kwargs):
+    def __init__(self, emb_map, idx_map, embed_p:float=0.1, pad_idx=None, d_model=None, **kwargs):
         super().__init__()
         # note, octave, duration, instrument
         self.idx_map = idx_map
         self.emb_map = emb_map
         embeddings = []
+        emb_size = 0
         for idx,in_d,out_d in emb_map:
             embeddings.append(nn.Embedding(in_d, out_d, padding_idx=pad_idx))
+            emb_size += out_d
         self.embeddings = nn.ModuleList(embeddings)
         self.drop_emb = nn.Dropout(embed_p)
+        if d_model is not None and d_model != emb_size:
+            self.linear = nn.Linear(emb_size, d_model, bias=True)
+        else: self.linear = None
         
     def forward(self, x):
         # batch x bptt x (n,o,d,i)
@@ -31,7 +36,9 @@ class TransformerEmbed(nn.Module):
             embs.append(embx)
         emb = torch.stack(embs, dim=-2) # barlen x comp x emb
 #         emb = emb.permute(0,1,4,2,3) # for conv - emb x barlen x comp
-        return self.drop_emb(emb)
+        emb = self.drop_emb(emb)
+        if self.linear: return self.linear(emb)
+        return emb
 
 class TXLLinearDecoder(nn.Module):
     "To go on top of a RNNCore module and create a Language Model."
@@ -46,7 +53,7 @@ class TXLLinearDecoder(nn.Module):
         if tie_encoder: self.decoder.weight = tie_encoder.weight
             
         if input_dim is not None and input_dim != n_hid:
-            self.decoder = nn.Sequential(nn.Linear(input_dim, n_hid), self.decoder)
+            self.decoder = nn.Sequential(nn.Linear(input_dim, n_hid, bias=True), self.decoder)
 
     def forward(self, input):
         return self.decoder(input)

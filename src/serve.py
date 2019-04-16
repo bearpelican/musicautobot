@@ -106,10 +106,12 @@ def v10_small_config(vocab_path):
     config['d_model'] = emb_size
     config['single_stream'] = True
     config['d_inner'] = 512
-    config['n_heads'] = 16
-    config['n_layers'] = 14
+    config['n_heads'] = 6
+    config['n_layers'] = 12
+    config['d_model'] = 1024
     config['d_head'] = 48
-
+    config['transpose_range'] = (0,24)
+#    config['act'] = Activation.Swish
     return config
 
 def v10_single_config(vocab_path):
