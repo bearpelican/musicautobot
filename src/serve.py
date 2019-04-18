@@ -87,6 +87,20 @@ def v10_single_config(vocab_path):
     config['single_stream'] = True
     return config
 
+def v10_s2_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 64
+    EMB_MAP = [(0, 262, emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
+    config['d_model'] = emb_size
+    config['single_stream'] = True
+    config['d_model'] = 1024
+    config['d_inner'] = 512
+    config['learned_pos_enc'] = True
+    return config
+
 def v10_large_single_config(vocab_path):
     config = v10_small_config(vocab_path)
     
