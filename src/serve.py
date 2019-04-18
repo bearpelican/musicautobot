@@ -96,8 +96,12 @@ def v10_s2_config(vocab_path):
     config['idx_map'] = idx2embidx
     config['d_model'] = emb_size
     config['single_stream'] = True
-    config['d_model'] = 1024
-    config['d_inner'] = 512
+    config['d_model'] = 512
+    config['d_inner'] = 1024
+
+    config['attn_p'] = 0.2 # attention dropout
+    config['output_p'] = 0.2 # decoder dropout (before final linear layer)
+    
     config['learned_pos_enc'] = True
     return config
 

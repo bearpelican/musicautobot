@@ -73,6 +73,6 @@ if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'
 if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, moms=(0.7,0.5))
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor)
 
 if args.local_rank == 0: learn.save(f'{args.save}')
