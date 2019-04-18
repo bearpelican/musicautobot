@@ -183,7 +183,7 @@ def language_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.,
     acc = partial(lmnp_accuracy, pad_idx=config['pad_idx'])
     loss_func = LMNPLoss(**config)
     learn = LMNPLearner(data, model, split_func=tfmer_lm_split, 
-                        loss_func=loss_func, metrics=[acc], bos_idx=config['bos_idx'],
+                        loss_func=loss_func, metrics=[acc], bos_idx=config['bos_idx'], sep_idx=config['sep_idx'],
                         **learn_kwargs)
     return learn
 
@@ -231,8 +231,9 @@ class LMNPLearner(LanguageLearner):
         super().__init__(*args, **kwargs)
         self.bos_idx = bos_idx
         self.sep_idx = sep_idx
+        print('Sep_idx:', self.sep_idx)
     
-    def predict(self, xb, n_words:int=340, min_bars=12,
+    def predict(self, xb, n_words:int=340, min_bars=4,
                 temperatures=(1.4,0.5), min_ps=(1/128,0.0),
                 adaptive_ratio=(0.3,0.6,.1)):
         "Return the `n_words` that come after `text`."
@@ -246,7 +247,7 @@ class LMNPLearner(LanguageLearner):
         running_ps = [1, 1]
 
         timesteps = []
-        bar_count = 0
+        sep_count = 0
         for _ in progress_bar(range(n_words), leave=True):
             comps = []
             outputs = self.pred_batch(batch=(xb,yb))
@@ -258,7 +259,8 @@ class LMNPLearner(LanguageLearner):
                     warn(f"There is no item with probability >= {min_p}, try a lower value.")
                 else: res[res < min_p] = 0.
 
-                if bar_count <= min_bars: res[self.bos_idx] = 0.
+                # bar = 16 beats
+                if (sep_count // 16) <= min_bars: res[self.bos_idx] = 0.
 
                 res_temp = res.pow(1 / (temperature * running_ps[idx]))
                 mult_idx = torch.multinomial(res_temp, 1)
@@ -273,7 +275,7 @@ class LMNPLearner(LanguageLearner):
             comps = torch.stack(comps, dim=-1)
             
             if self.sep_idx is not None and (comps==self.sep_idx).any(): 
-                bar_count += 1
+                sep_count += 1
 
             if self.bos_idx is not None and (comps==self.bos_idx).any(): 
                 print('Predicted BOS token. Returning prediction...')
