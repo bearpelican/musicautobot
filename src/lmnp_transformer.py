@@ -150,7 +150,7 @@ class LMNPTransformerXL(nn.Module):
         #[None,:,:None] for einsum implementation of attention
         hids = []
         pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=inp.dtype)
-        pos_enc = self.pos_enc(pos)
+        pos_enc = self.pos_enc(pos.long())
         hids.append(inp)
         for i, layer in enumerate(self.layers):
             mem = self.hidden[i] if self.mem_len > 0 else None
