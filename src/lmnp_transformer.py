@@ -24,7 +24,7 @@ class TransformerEmbed(nn.Module):
         self.embeddings = nn.ModuleList(embeddings)
         self.drop_emb = nn.Dropout(embed_p)
         if d_model is not None and d_model != emb_size:
-            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True), nn.LayerNorm)
+            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True), nn.LayerNorm(d_model))
         else: self.linear = None
         
     def forward(self, x):
