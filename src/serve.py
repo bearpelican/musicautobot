@@ -15,11 +15,9 @@ import uuid
 # source_dir = 'midi_encode/np/shortdur'
 # path = Path('../../data/midi/v9/')/source_dir
 # out_path = Path('../../data/generated/')
+    
 
 def get_config(vocab_path):
-    bs=16
-    bptt=256
-    
     VOCAB_SZ = create_vocab_sizes(vocab_path)
     N_COMPS = len(VOCAB_SZ)
     N_EMBS = 128
@@ -37,6 +35,7 @@ def get_config(vocab_path):
     config['loss_weights'] = [1,1] # note,duration
     config['pad_idx'] = PADDING_IDX+ENC_OFFSET
     config['bos_idx'] = VALTBOS+ENC_OFFSET
+    config['sep_idx'] = VALTSEP+ENC_OFFSET
     config['enc_offset'] = ENC_OFFSET
     config['transpose_range'] = (0,12)
     config['mask_type'] = MaskType.RandomWindow
@@ -45,12 +44,6 @@ def get_config(vocab_path):
 
     config['d_model'] = total_embs
     config['mem_len'] = 512
-
-    config['resid_p'] = 0.1
-    config['attn_p'] = 0.1 # attention dropout
-    config['ff_p'] = 0.1
-    config['embed_p'] = 0.1 # embedding dropout
-    config['output_p'] = 0.1 # decoder dropout (before final linear layer)
 
     config['bs'] = 16
     config['bptt'] = 256
@@ -59,42 +52,11 @@ def get_config(vocab_path):
     return config
 
 def v10_config(vocab_path):
-    VOCAB_SZ = create_vocab_sizes(vocab_path)
-    N_COMPS = len(VOCAB_SZ)
-    N_EMBS = 128
-    EMB_IDXS = range(N_COMPS)
-    EMB_DIM = [N_EMBS]*len(EMB_IDXS)
-    EMB_MAP = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
-
-    idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
-    total_embs = sum([v[-1] for k,v in idx2embidx.items()])
-
-    config = tfmerXL_lm_config.copy()
-    config['emb_map'] = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
-    config['idx_map'] = idx2embidx
-    config['loss_weights'] = [1,1] # note,duration
-    config['pad_idx'] = PADDING_IDX+ENC_OFFSET
-    config['bos_idx'] = VALTBOS+ENC_OFFSET
-    config['enc_offset'] = ENC_OFFSET
-    config['transpose_range'] = (0,12)
-    config['mask_type'] = MaskType.RandomWindow
-    config['act'] = Activation.GeLU
-    # config['act'] = Activation.ReLU
-
-    config['d_model'] = total_embs
-    config['mem_len'] = 512
-    config['bs'] = 16
-    config['bptt'] = 256
-    
+    config = get_config(vocab_path)
     # larger model
     config['n_heads'] = 12
     config['d_head'] = 64
-#     config['d_inner'] = 3072
-
-    # config['path'] = path
-    # config['cache_name'] = cache_name
     return config
-
 
 def v10_small_config(vocab_path):
     config = v10_config(vocab_path)
@@ -126,48 +88,14 @@ def v10_single_config(vocab_path):
     return config
 
 def v10_large_single_config(vocab_path):
-    config = v10_large_config(vocab_path)
-    emb_size = 256
-    EMB_MAP = [(0, 262, emb_size)]
-    idx2embidx = { 0:EMB_MAP[0] }
-    config['emb_map'] = EMB_MAP
-    config['idx_map'] = idx2embidx
-    config['d_model'] = emb_size
-    config['single_stream'] = True
-    return config
-
-def v10_large_config(vocab_path):
-    VOCAB_SZ = create_vocab_sizes(vocab_path)
-    N_COMPS = len(VOCAB_SZ)
-    N_EMBS = 128
-    EMB_IDXS = range(N_COMPS)
-    EMB_DIM = [N_EMBS]*len(EMB_IDXS)
-    EMB_MAP = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
-
-    idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
-    total_embs = sum([v[-1] for k,v in idx2embidx.items()])
-
-    config = tfmerXL_lm_config.copy()
-    config['emb_map'] = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
-    config['idx_map'] = idx2embidx
-    config['loss_weights'] = [1,1] # note,duration
-    config['pad_idx'] = PADDING_IDX+ENC_OFFSET
-    config['bos_idx'] = VALTBOS+ENC_OFFSET
-    config['enc_offset'] = ENC_OFFSET
-    config['transpose_range'] = (0,24)
-    config['act'] = Activation.GeLU
-    # config['act'] = Activation.ReLU
-
-    config['d_model'] = total_embs
-    config['mem_len'] = 512
-    config['bs'] = 16
-    config['bptt'] = 256
+    config = v10_small_config(vocab_path)
     
     # larger model
-    config['n_heads'] = 14
+    config['n_heads'] = 12
     config['n_layers'] = 16
     config['d_head'] = 54
-    config['d_inner'] = 2560
+    config['d_inner'] = 1024
+    config['d_model'] = 2048
     
     config['attn_p'] = 0.2 # attention dropout
     config['output_p'] = 0.2 # decoder dropout (before final linear layer)
@@ -177,8 +105,7 @@ def v10_large_config(vocab_path):
         'max_size': 5,
         'p': 0.3
     }
-    # config['path'] = path
-    # config['cache_name'] = cache_name
+
     return config
 
 def load_data(path, cache_name, enc_offset, transpose_range, single_stream=False, **kwargs):
@@ -206,8 +133,10 @@ def load_learner(data, config, load_path=None):
 def predict_from_midi(learn, midi=None, n_words=340, 
                       temperatures=(1.5,0.9), min_ps=(1/128,0.0), **kwargs):
     seed_np = midi2npenc(midi) # music21 can handle bytes directly
-    xb = torch.tensor(seed_np)[None]
+    xb = torch.tensor(to_single_stream(seed_np))[None]
     pred, seed = learn.predict(xb, n_words=n_words, temperatures=temperatures, min_ps=min_ps)
+    seed = to_double_stream(seed)
+    pred = to_double_stream(pred)
     full = np.concatenate((seed,pred), axis=0)
     
     return pred, seed, full
