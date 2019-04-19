@@ -280,8 +280,10 @@ class LMNPLearner(LanguageLearner):
                 comps.append(mult_idx.squeeze().to(xb.device))
             comps = torch.stack(comps, dim=-1)
             
-            if self.sep_idx is not None and (comps==self.sep_idx).any(): 
-                sep_count += 1
+            if self.sep_idx is not None and (timesteps and timesteps[-1]==self.sep_idx): 
+                duration = (mult_idx.item() - 3 - 130) + 1
+                sep_count += duration
+                print('Bars', duration, sep_count // 16)
 
             if self.bos_idx is not None and (comps==self.bos_idx).any(): 
                 print('Predicted BOS token. Returning prediction...')
