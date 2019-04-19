@@ -61,7 +61,8 @@ def v10_config(vocab_path):
 def v10_small_config(vocab_path):
     config = v10_config(vocab_path)
     emb_size = 64
-    EMB_MAP = [(0, 262, emb_size)]
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
     idx2embidx = { 0:EMB_MAP[0] }
     config['emb_map'] = EMB_MAP
     config['idx_map'] = idx2embidx
@@ -79,7 +80,8 @@ def v10_small_config(vocab_path):
 def v10_single_config(vocab_path):
     config = v10_config(vocab_path)
     emb_size = 256
-    EMB_MAP = [(0, 262, emb_size)]
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
     idx2embidx = { 0:EMB_MAP[0] }
     config['emb_map'] = EMB_MAP
     config['idx_map'] = idx2embidx
@@ -90,7 +92,8 @@ def v10_single_config(vocab_path):
 def v10_sxl_config(vocab_path):
     config = v10_config(vocab_path)
     emb_size = 512
-    EMB_MAP = [(0, 262, emb_size)]
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
     idx2embidx = { 0:EMB_MAP[0] }
     config['emb_map'] = EMB_MAP
     config['idx_map'] = idx2embidx
@@ -105,7 +108,8 @@ def v10_sxl_config(vocab_path):
 def v10_s3_config(vocab_path):
     config = v10_config(vocab_path)
     emb_size = 512
-    EMB_MAP = [(0, 262, emb_size)]
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
     idx2embidx = { 0:EMB_MAP[0] }
     config['emb_map'] = EMB_MAP
     config['idx_map'] = idx2embidx
@@ -120,7 +124,8 @@ def v10_s3_config(vocab_path):
 def v10_s2_config(vocab_path):
     config = v10_config(vocab_path)
     emb_size = 64
-    EMB_MAP = [(0, 262, emb_size)]
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
     idx2embidx = { 0:EMB_MAP[0] }
     config['emb_map'] = EMB_MAP
     config['idx_map'] = idx2embidx
