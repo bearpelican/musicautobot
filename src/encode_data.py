@@ -407,12 +407,12 @@ def pad_array(arr, fill_value, final_length):
     padding = [fill_value] * max(0, final_length - len(arr))
     return arr+padding
 
-def seq2npenc(seq, num_comps=2):
+def seq2npenc(seq, num_comps=2, category=PADDING_IDX):
     "Note function returns a list of note components for separation"
     
-    ts_bos = pad_array([VALTBOS], PADDING_IDX, num_comps)
+    ts_bos = pad_array([VALTBOS], category, num_comps)
     result = [ts_bos]
-    wait_count = 0
+    wait_count = 1
     for idx,timestep in enumerate(seq):
         flat_time = [npenc_func(n, num_comps) for n in timestep if n.pitch.octave and n.dur > 0]
         if len(flat_time) == 0:
@@ -422,7 +422,7 @@ def seq2npenc(seq, num_comps=2):
             ts_sep = pad_array([VALTSEP, wait_count], PADDING_IDX, num_comps)
             result.append(ts_sep)
             result.extend(flat_time)
-            wait_count = 0
+            wait_count = 1
     return np.array(result, dtype=int) + ENC_OFFSET
 
 def npdec_func(step):
@@ -437,9 +437,9 @@ def npenc2seq(npenc, dec_func=npdec_func):
         n,d = x[:2]
         if n == VALTBOS: continue
         if n == VALTSEP: 
-            if len(tstep) > 0: seq.append(tstep)
+            if len(tstep) > 0: seq.append(tstep) # add notes if they exists
             tstep = []
-            for i in range(d): seq.append([])
+            for i in range(1, d): seq.append([])
         else:
             if d == 0: 
                 print('Note with 0 duration. continuing')
