@@ -102,6 +102,21 @@ def v10_sxl_config(vocab_path):
     config['d_head'] = 64
     return config
 
+def v10_s3_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 512
+    EMB_MAP = [(0, 262, emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
+    config['d_model'] = emb_size
+    config['single_stream'] = True
+    config['d_inner'] = 2048
+    config['n_layers'] = 16
+    config['n_heads'] = 8
+    config['d_head'] = 64
+    return config
+
 def v10_s2_config(vocab_path):
     config = v10_config(vocab_path)
     emb_size = 64
