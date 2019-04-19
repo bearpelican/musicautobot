@@ -24,8 +24,10 @@ class TransformerEmbed(nn.Module):
         self.embeddings = nn.ModuleList(embeddings)
         self.drop_emb = nn.Dropout(embed_p)
         if d_model is not None and d_model != emb_size:
-            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True), nn.LayerNorm(d_model))
-        else: self.linear = None
+#            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True), nn.LayerNorm(d_model))
+            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True))
+#        else: self.linear = None
+        else: self.linear = nn.LayerNorm(d_model)
         
     def forward(self, x):
         # batch x bptt x (n,o,d,i)
@@ -53,8 +55,9 @@ class TXLLinearDecoder(nn.Module):
         if tie_encoder: self.decoder.weight = tie_encoder.weight
             
         if input_dim is not None and input_dim != n_hid:
-            self.decoder = nn.Sequential(nn.Linear(input_dim, n_hid, bias=True), nn.LayerNorm(n_hid), self.decoder)
-
+            # self.decoder = nn.Sequential(nn.Linear(input_dim, n_hid, bias=True), nn.LayerNorm(n_hid), self.decoder)
+            self.decoder = nn.Sequential(nn.Linear(input_dim, n_hid, bias=True), self.decoder)
+            
     def forward(self, input):
         return self.decoder(input)
 
