@@ -24,8 +24,8 @@ class TransformerEmbed(nn.Module):
         self.embeddings = nn.ModuleList(embeddings)
         self.drop_emb = nn.Dropout(embed_p)
         if d_model is not None and d_model != emb_size:
-#            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True), nn.LayerNorm(d_model))
-            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True))
+            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True), nn.LayerNorm(d_model))
+#            self.linear = nn.Sequential(nn.Linear(emb_size, d_model, bias=True))
 #        else: self.linear = None
         else: self.linear = nn.LayerNorm(d_model)
         
