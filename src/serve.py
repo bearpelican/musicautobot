@@ -100,10 +100,10 @@ def v10_s2_config(vocab_path):
     config['d_inner'] = 1024
 
     config['attn_p'] = 0.2 # attention dropout
-    config['output_p'] = 0.2 # decoder dropout (before final linear layer)
+#    config['output_p'] = 0.2 # decoder dropout (before final linear layer)
     
-    config['learned_pos_enc'] = True
-    config['ctx_len'] = 1024
+#    config['learned_pos_enc'] = True
+#    config['ctx_len'] = 1024
     return config
 
 def v10_large_single_config(vocab_path):

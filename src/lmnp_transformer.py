@@ -100,6 +100,7 @@ class LMNPTransformerXL(nn.Module):
                  learned_pos_enc:bool=False, mask_type:MaskType=MaskType.Sequential, mask_args=None, mem_len:int=0, **kwargs):
         super().__init__()
         self.encoder = encoder
+        self.learned_pos_enc = learned_pos_enc
         self.pos_enc = nn.Embedding(ctx_len, d_model) if learned_pos_enc else PositionalEncoding(d_model)
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
@@ -149,8 +150,10 @@ class LMNPTransformerXL(nn.Module):
             
         #[None,:,:None] for einsum implementation of attention
         hids = []
-        pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=inp.dtype)
-        pos_enc = self.pos_enc(pos.long())
+
+        pos_dtype = torch.long if self.learned_pos_enc else inp.dtype
+        pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=pos_dtype)
+        pos_enc = self.pos_enc(pos)
         hids.append(inp)
         for i, layer in enumerate(self.layers):
             mem = self.hidden[i] if self.mem_len > 0 else None
