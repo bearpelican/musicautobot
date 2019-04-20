@@ -119,6 +119,15 @@ def v10_s3_config(vocab_path):
     config['n_layers'] = 16
     config['n_heads'] = 8
     config['d_head'] = 64
+
+    config['embed_p'] = 0.3
+    config['attn_p'] = 0.15 # attention dropout
+    config['output_p'] = 0.15 # decoder dropout (before final linear layer)
+#    config['mask_args'] = {
+#        'max_size': 6,
+#        'p': 0.2
+#    }
+
     return config
 
 def v10_s2_config(vocab_path):
