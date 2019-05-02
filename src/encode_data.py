@@ -143,7 +143,7 @@ def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None, flat=True):
     noteFilter=music21.stream.filters.ClassFilter('Note')
     chordFilter=music21.stream.filters.ClassFilter('Chord')
     
-    if flat: s = s.flat # required when stream contains measures.
+    if flat: s = s.flat.stripTies() # required when stream contains measures.
     def note_data(pitch, note):
         inst_id = note.activeSite.getInstrument().id
         iidx = inst2idx[inst_id]
@@ -387,7 +387,7 @@ def midi2npenc(midi_file, num_comps=2, midi_source=None):
     s_arr = stream2chordarr(stream) # 2.
     seq = chordarr2seq(s_arr) # 3.
 
-    category = PADDING_IDX is midi_source is None else source2encidx(midi_source)
+    category = PADDING_IDX if midi_source is None else source2encidx(midi_source)
     return seq2npenc(seq, num_comps=num_comps, category=category)
 
 def source2encidx(source):
