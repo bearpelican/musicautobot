@@ -194,8 +194,8 @@ def load_learner(data, config, load_path=None):
 # NOTE: looks like npenc does not include the separator. 
 # This means we don't have to remove the last (separator) step from the seed in order to keep predictions
 def predict_from_midi(learn, midi=None, n_words=600, 
-                      temperatures=(1.5,0.9), min_ps=(1/128,0.0), **kwargs):
-    seed_np = midi2npenc(midi) # music21 can handle bytes directly
+                      temperatures=(1.5,0.9), min_ps=(1/128,0.0), category=None, **kwargs):
+    seed_np = midi2npenc(midi, category=category) # music21 can handle bytes directly
     xb = torch.tensor(to_single_stream(seed_np))[None]
     pred, seed = learn.predict(xb, n_words=n_words, temperatures=temperatures, min_ps=min_ps)
     seed = to_double_stream(seed)

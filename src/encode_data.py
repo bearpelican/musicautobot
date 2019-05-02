@@ -381,17 +381,24 @@ def npenc2stream(arr, bpm=120):
     chordarr = seq2chordarr(seq)
     return chordarr2stream(chordarr, bpm=bpm)
 
-def midi2npenc(midi_file, num_comps=2):
+def midi2npenc(midi_file, num_comps=2, midi_source=None):
     "Converts midi file to numpy encoding for language model"
     stream = file2stream(midi_file) # 1.
     s_arr = stream2chordarr(stream) # 2.
     seq = chordarr2seq(s_arr) # 3.
-    return seq2npenc(seq, num_comps=num_comps)
+
+    category = PADDING_IDX is midi_source is None else source2encidx(midi_source)
+    return seq2npenc(seq, num_comps=num_comps, category=category)
+
+def source2encidx(source):
+    return ENC_OFFSET + max_dur + sources.index(source) + 1
 
 VALTSEP = -2
 VALTBOS = -1
 PADDING_IDX = -3
 ENC_OFFSET = 3
+
+MIDI_SOURCES = ['hooktheory', 'hooktheory_c', 'freemidi', 'midiworld', 'ecomp', 'cprato', 'classical_piano', 'musescore', 'wikifonia', 'lmd', 'reddit']
 
 # 4.
 def npenc_func(n, num_comps):
@@ -407,9 +414,9 @@ def pad_array(arr, fill_value, final_length):
     padding = [fill_value] * max(0, final_length - len(arr))
     return arr+padding
 
-def seq2npenc(seq, num_comps=2, category=PADDING_IDX):
+def seq2npenc(seq, num_comps=2, category=None):
     "Note function returns a list of note components for separation"
-    
+    if category is None: category = PADDING_IDX
     ts_bos = pad_array([VALTBOS], category, num_comps)
     result = [ts_bos]
     wait_count = 1
