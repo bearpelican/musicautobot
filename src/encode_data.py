@@ -166,9 +166,9 @@ def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None, flat=True):
     return score_arr
 
 def compress_chordarr(chordarr):
-    return _shorten_chordarr_rests(_trim_chordarr_rests(chordarr))
+    return shorten_chordarr_rests(trim_chordarr_rests(chordarr))
 
-def _trim_chordarr_rests(arr, max_rests=16):
+def trim_chordarr_rests(arr, max_rests=16):
     start_idx = 0
     for idx,t in enumerate(arr):
         if t.sum() != 0: break
@@ -183,7 +183,7 @@ def _trim_chordarr_rests(arr, max_rests=16):
 #     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(arr)-end_idx, end_idx)
     return arr[start_idx:(len(arr)-end_idx)]
 
-def _shorten_chordarr_rests(arr, max_rests=32):
+def shorten_chordarr_rests(arr, max_rests=32):
     rest_count = 0
     result = []
     for timestep in arr:
@@ -390,15 +390,16 @@ def midi2npenc(midi_file, num_comps=2, midi_source=None):
     category = PADDING_IDX if midi_source is None else source2encidx(midi_source)
     return seq2npenc(seq, num_comps=num_comps, category=category)
 
-def source2encidx(source):
-    return ENC_OFFSET + max_dur + sources.index(source) + 1
-
 VALTSEP = -2
 VALTBOS = -1
 PADDING_IDX = -3
 ENC_OFFSET = 3
 
 MIDI_SOURCES = ['hooktheory', 'hooktheory_c', 'freemidi', 'midiworld', 'ecomp', 'cprato', 'classical_piano', 'musescore', 'wikifonia', 'lmd', 'reddit']
+
+def source2encidx(source, max_dur=128):
+    return ENC_OFFSET + max_dur + MIDI_SOURCES.index(source) + 1
+
 
 # 4.
 def npenc_func(n, num_comps):

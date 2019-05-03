@@ -90,6 +90,13 @@ def rand_transpose(t, enc_offset, rand_range=(0,24), p=0.5):
         notes[notes >= enc_offset] += np.random.randint(*rand_range)-rand_range[1]//2
     return t
 
+def rand_category(t, pad_idx, bos_idx, p=0.5):
+    t = t.copy()
+    if np.random.rand() < p:
+        assert(t[0,0] == bos_idx)
+        t[0,1] = pad_idx
+    return t
+
 # single stream instead of note,dur
 def to_single_stream(t, offset=130):
     t = t.copy()

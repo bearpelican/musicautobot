@@ -171,13 +171,14 @@ def v10_large_single_config(vocab_path):
 
     return config
 
-def load_data(path, cache_name, enc_offset, transpose_range, single_stream=False, **kwargs):
+def load_data(path, cache_name, enc_offset, pad_idx, bos_idx, transpose_range, single_stream=False, **kwargs):
     transpose_tfm = partial(rand_transpose, enc_offset=enc_offset, rand_range=transpose_range)
+    category_tfm = partial(rand_category, pad_idx=pad_idx, bos_idx=bos_idx)
     if single_stream:
         data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
-                                  train_tfms=[transpose_tfm, to_single_stream], valid_tfms=[to_single_stream])
+                                  train_tfms=[transpose_tfm, category_tfm, to_single_stream], valid_tfms=[to_single_stream])
     else:
-        data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, train_tfms=[transpose_tfm])
+        data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, train_tfms=[transpose_tfm, category_tfm])
     return data
 
 def load_learner(data, config, load_path=None):
