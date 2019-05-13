@@ -156,7 +156,8 @@ def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None, flat=True):
         pitchesInChord=c.pitches
         for p in pitchesInChord:
             notes.append(note_data(p, c))
-    notes_sorted = sorted(notes, key=lambda x: x[1]) # sorting notes by offset so we don't overwrite
+    # sort notes by offset (1), duration (2) so that hits are not overwritten and longer notes have priority
+    notes_sorted = sorted(notes, key=lambda x: (x[1], x[2])) 
     for n in notes_sorted:
         if n is None: continue
         pitch,offset,duration,inst = n
@@ -395,7 +396,7 @@ VALTBOS = -1
 PADDING_IDX = -3
 ENC_OFFSET = 3
 
-MIDI_SOURCES = ['hooktheory', 'hooktheory_c', 'freemidi', 'midiworld', 'ecomp', 'cprato', 'classical_piano', 'musescore', 'wikifonia', 'lmd', 'reddit']
+MIDI_SOURCES = ['hooktheory', 'hooktheory_c', 'freemidi', 'midiworld', 'ecomp', 'cprato', 'classical_piano', 'musescore', 'wikifonia', 'lmd', 'reddit', 'classical_archives']
 
 def source2encidx(source, max_dur=128):
     return ENC_OFFSET + max_dur + MIDI_SOURCES.index(source) + 1
