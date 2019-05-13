@@ -3,122 +3,70 @@ from enum import Enum
 import music21
 from src.midi_data import file2mf, keyc_offset
 
+PIANO_TYPES = list(range(24)) + list(range(80, 96)) # Piano, Synths
+PLUCK_TYPES = list(range(24, 40)) + list(range(104, 112)) # Guitar, Bass, Ethnic
+BRIGHT_TYPES = list(range(40, 56)) + list(range(56, 80))
+
 class Track(Enum):
-    INFO = 0
-    MELODY = 1
-    PIANO = 2 # discrete instruments - keyboard, woodwinds
-    STRING = 3 # continuous instruments with pitch bend: violin, trombone, synths
-    PERC = 4
-    UNDEF = 5
+    PIANO = 0 # discrete instruments - keyboard, woodwinds
+    PLUCK = 1 # continuous instruments with pitch bend: violin, trombone, synths
+    BRIGHT = 2
+    PERC = 3
+    UNDEF = 4
     
 type2inst = {
     # use print_music21_instruments() to see supported types
-    Track.INFO: 0, # Ocarina
-    Track.MELODY: 0, # Ocarina
-    Track.STRING: 24, # Guitar
-    Track.PIANO: 1 # Piano
+    Track.PIANO: 0, # Piano
+    Track.PLUCK: 24, # Guitar
+    Track.BRIGHT: 40, # Violin
+    Track.PERC: 114, # Steel Drum
 }
 
-INFO_TYPES = set(['TIME_SIGNATURE'])
-# INFO_TYPES = set(['TIME_SIGNATURE', 'KEY_SIGNATURE', 'SET_TEMPO'])
+# INFO_TYPES = set(['TIME_SIGNATURE', 'KEY_SIGNATURE'])
+INFO_TYPES = set(['TIME_SIGNATURE', 'KEY_SIGNATURE', 'SET_TEMPO'])
 
-def transform_midi(midi_file, out_file, cutoff=6, transpose=True, offset=None):
-    music_file = compress_midi_file(midi_file, cutoff=cutoff) # remove non note tracks and standardize instruments
-    if music_file is None: return
-    if offset is not None: music_file = transpose_midi_file(music_file, offset) # transpose to keyc if offset passed
-    # (AS) do our own track partitioning. music21 doesn't always parse correctly
-    s_out = music21.midi.translate.midiFileToStream(music_file) # create music21 stream
-    s_comb = music21.instrument.partitionByInstrument(s_out) # combine same track instruments to single part
-    if transpose and offset is None: 
-        print('Inferring offset')
-        key = s_comb.flat.analyze('key')
-        halfsteps = keyc_offset(key.tonic.name, key.mode)
-        s_comb = s_comb.transpose(halfsteps)
-    s_comb.write('midi', fp=out_file)
-    return s_comb
+def num_piano_tracks(fp):
+    music_file = file2mf(fp)
+    note_tracks = [t for t in music_file.tracks if t.hasNotes() and get_track_type(t) == Track.PIANO]
+    return len(note_tracks)
 
 def compress_midi_file(fp, cutoff=6, unsup_types=set([Track.UNDEF, Track.PERC])):
     music_file = file2mf(fp)
+    
+    info_tracks = [t for t in music_file.tracks if not t.hasNotes()]
+    note_tracks = [t for t in music_file.tracks if t.hasNotes()]
+    
+    if len(note_tracks) > cutoff:
+        note_tracks = sorted(note_tracks, key=lambda x: len(x.events), reverse=True)
+        
     supported_tracks = []
-    noteworthy_first = sorted(music_file.tracks, key=lambda x: len(x.events), reverse=True)
-    for idx,t in enumerate(noteworthy_first):
-        track_type = get_track_type(t,idx,fp)
-        if len(supported_tracks) >= cutoff: continue
+    for idx,t in enumerate(note_tracks):
+        track_type = get_track_type(t,idx)
+        if track_type == Track.UNDEF: print('Could not designate track:', fp, t)
+        if len(supported_tracks) >= cutoff: break
         if track_type in unsup_types: continue
-        if track_type in type2inst:
-            change_track_instrument(t, type2inst[track_type])
+        change_track_instrument(t, type2inst[track_type])
         supported_tracks.append(t)
     if not supported_tracks: return None
-    music_file.tracks = supported_tracks
+    music_file.tracks = info_tracks + supported_tracks
     return music_file
 
-def transpose_midi_file(mf, offset):
-    for t in mf.tracks:
-        if 10 in t.getChannels(): continue # skip percussion
-        for e in t.events:
-            if e.pitch is None: continue
-            e.pitch += offset
-    return mf
+def get_track_type(t, idx):
+    if is_channel(t, 10): return Track.PERC
+    i = get_track_instrument(t)
+    if i in PIANO_TYPES: return Track.PIANO
+    if i in PLUCK_TYPES: return Track.PLUCK
+    if i in BRIGHT_TYPES: return Track.BRIGHT
+    return Track.UNDEF
 
-def get_track_type(t, idx, fp=''):
-    if is_info_track(t, idx): return Track.INFO
-    if not t.hasNotes(): return Track.UNDEF
-    if is_melody(t, fp): return Track.MELODY
-    if is_percussion(t): return Track.PERC
-    if is_string(t): return Track.STRING
-    return Track.PIANO
+def get_track_instrument(t):
+    for idx,e in enumerate(t.events):
+        if e.type == 'PROGRAM_CHANGE': return e.data
+    return None
 
 def change_track_instrument(t, value):
     for idx,e in enumerate(t.events):
-        if e.type == 'PROGRAM_CHANGE':
-            e.data = value
-
-
-
-def is_channel(t, c_val):
-    return any([c == c_val for c in t.getChannels()])
-
-def has_event_type(t, etypes):
-    if isinstance(etypes, list): etypes = set(etypes)
-    elif isinstance(etypes, set): pass
-    else: etypes = set([etypes])
-    for e in t.events:
-        if e.type in etypes:
-            return True
-    return False
-
-def is_info_track(t, idx):
-    if t.hasNotes(): return False
-    is_ch0 = idx == 0
-    is_info = has_event_type(t, INFO_TYPES)
-#     if is_info and t.hasNotes(): raise Exception('Error: found track with notes and track info')
-#     if is_ch0 ^ is_info: raise Exception('Error: info channel is not channel 0')
-    return is_info
-
-def is_melody(t, fp=''):
-    if not t.hasNotes(): return False
-    # special case for hooktheory
-    if 'hooktheory' in str(fp):
-        if is_channel(t, 1): return True
-        if is_channel(t, 0): return True
-        return False
-    if has_event_type(t, ['LYRIC']): return True # lyrics associated with vocals
-    if is_channel(t, 1): return True # (AS) WARNING - assuming first track is always the melody track
-
-def is_percussion(t):
-    return is_channel(t, 10)
-
-def is_string(t):
-    if not t.hasNotes(): return False
-    if has_event_type(t, ['PITCH_BEND']): return True
-    return False
-
-def is_piano(t, fp):
-    if not t.hasNotes(): return False
-    if is_melody(t, fp): return False
-    if is_string(t): return False
-    if is_percussion(t): return False
-    return True
+        if e.type == 'PROGRAM_CHANGE': e.data = value
 
 def print_music21_instruments():
     for i in range(200):
