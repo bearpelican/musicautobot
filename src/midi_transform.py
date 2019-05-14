@@ -30,7 +30,10 @@ def num_piano_tracks(fp):
     note_tracks = [t for t in music_file.tracks if t.hasNotes() and get_track_type(t) == Track.PIANO]
     return len(note_tracks)
 
-def compress_midi_file(fp, cutoff=6, unsup_types=set([Track.UNDEF, Track.PERC])):
+def is_channel(t, c_val):
+    return any([c == c_val for c in t.getChannels()])
+
+def compress_midi_file(fp, cutoff=6, supported_types=set([Track.PIANO, Track.PLUCK, Track.BRIGHT])):
     music_file = file2mf(fp)
     
     info_tracks = [t for t in music_file.tracks if not t.hasNotes()]
@@ -41,17 +44,17 @@ def compress_midi_file(fp, cutoff=6, unsup_types=set([Track.UNDEF, Track.PERC]))
         
     supported_tracks = []
     for idx,t in enumerate(note_tracks):
-        track_type = get_track_type(t,idx)
-        if track_type == Track.UNDEF: print('Could not designate track:', fp, t)
+        track_type = get_track_type(t)
+#         if track_type == Track.UNDEF: print('Could not designate track:', fp, t)
         if len(supported_tracks) >= cutoff: break
-        if track_type in unsup_types: continue
+        if track_type not in supported_types: continue
         change_track_instrument(t, type2inst[track_type])
         supported_tracks.append(t)
     if not supported_tracks: return None
     music_file.tracks = info_tracks + supported_tracks
     return music_file
 
-def get_track_type(t, idx):
+def get_track_type(t):
     if is_channel(t, 10): return Track.PERC
     i = get_track_instrument(t)
     if i in PIANO_TYPES: return Track.PIANO
