@@ -16,7 +16,7 @@ from src.serve import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v11/midi_encode/')
+parser.add_argument('--path', type=str, default='../data/midi/v13/midi_encode/')
 parser.add_argument('--cache', type=str, default='tmp/dmp')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)

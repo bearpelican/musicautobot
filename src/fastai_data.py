@@ -108,7 +108,7 @@ def to_double_stream(t, offset=130):
     t[:, 1] = t[:, 1] - offset
     return t
 
-def create_vocab_sizes(cache_path):
+def calc_vocab_sizes(cache_path):
     max_vocab_file = cache_path/'max_vocab.npy'
     if max_vocab_file.exists(): return np.load(max_vocab_file).tolist()
     train_ids_file = max_vocab_file.with_name('train_ids.npy')
@@ -117,6 +117,13 @@ def create_vocab_sizes(cache_path):
     ax = tuple(range(len(id_cat.shape)-1))
     max_vocab = id_cat.max(axis=ax)+1
     if max_vocab[0] in [118, 120]: max_vocab[0] += 12 # to allow data augmentation
+    np.save(max_vocab_file, max_vocab)
+    return max_vocab.tolist()
+
+def create_vocab_sizes(cache_path):
+    max_vocab_file = cache_path/'max_vocab.npy'
+    if max_vocab_file.exists(): return np.load(max_vocab_file).tolist()
+    max_vocab = np.array(130, 150)
     np.save(max_vocab_file, max_vocab)
     return max_vocab.tolist()
 
