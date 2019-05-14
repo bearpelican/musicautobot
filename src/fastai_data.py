@@ -110,9 +110,9 @@ def to_double_stream(t, offset=130):
 
 def calc_vocab_sizes(cache_path):
     max_vocab_file = cache_path/'max_vocab.npy'
-    if max_vocab_file.exists(): return np.load(max_vocab_file).tolist()
+    if max_vocab_file.exists(): return np.load(max_vocab_file, allow_pickle=True).tolist()
     train_ids_file = max_vocab_file.with_name('train_ids.npy')
-    all_ids = np.load(train_ids_file)
+    all_ids = np.load(train_ids_file, allow_pickle=True)
     id_cat = np.concatenate(all_ids); id_cat.shape
     ax = tuple(range(len(id_cat.shape)-1))
     max_vocab = id_cat.max(axis=ax)+1
@@ -130,7 +130,7 @@ def create_vocab_sizes(cache_path):
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
-        return np.load(item) if isinstance(item, Path) else item
+        return np.load(item, allow_pickle=True) if isinstance(item, Path) else item
     
 class LMNPDataBunch(DataBunch):
     "Create a `TextDataBunch` suitable for training a language model."
@@ -176,9 +176,9 @@ class LMNPDataBunch(DataBunch):
     def load(cls, path:PathOrStr, cache_name:PathOrStr='tmp', processor:PreProcessor=None, **kwargs):
         "Load a `TextDataBunch` from `path/cache_name`. `kwargs` are passed to the dataloader creation."
         cache_path = Path(path)/cache_name
-        train_ids,train_lbls = np.load(cache_path/f'train_ids.npy'), np.load(cache_path/f'train_lbl.npy')
-        valid_ids,valid_lbls = np.load(cache_path/f'valid_ids.npy'), np.load(cache_path/f'valid_lbl.npy')
-        test_ids = np.load(cache_path/f'test_ids.npy') if os.path.isfile(cache_path/f'test_ids.npy') else None
+        train_ids,train_lbls = np.load(cache_path/f'train_ids.npy', allow_pickle=True), np.load(cache_path/f'train_lbl.npy', allow_pickle=True)
+        valid_ids,valid_lbls = np.load(cache_path/f'valid_ids.npy', allow_pickle=True), np.load(cache_path/f'valid_lbl.npy', allow_pickle=True)
+        test_ids = np.load(cache_path/f'test_ids.npy', allow_pickle=True) if os.path.isfile(cache_path/f'test_ids.npy') else None
         classes = loadtxt_str(cache_path/'classes.txt') if os.path.isfile(cache_path/'classes.txt') else None
         return cls.from_ids(path, train_ids, valid_ids, test_ids, train_lbls, valid_lbls, classes, processor, **kwargs)
 
