@@ -101,12 +101,22 @@ def rand_category(t, pad_idx, bos_idx, p=0.5):
 def to_single_stream(t, offset=130):
     t = t.copy()
     t[:, 1] = t[:, 1] + offset
-    return t.reshape(-1, 1)
+    return t.reshape(-1)
 
 def to_double_stream(t, offset=130):
     t = t.copy().reshape(-1, 2)
     t[:, 1] = t[:, 1] - offset
     return t
+
+# def to_single_stream(t, offset=130):
+#     t = t.copy()
+#     t[:, 1] = t[:, 1] + offset
+#     return t.reshape(-1, 1)
+
+# def to_double_stream(t, offset=130):
+#     t = t.copy().reshape(-1, 2)
+#     t[:, 1] = t[:, 1] - offset
+#     return t
 
 def calc_vocab_sizes(cache_path):
     max_vocab_file = cache_path/'max_vocab.npy'
@@ -157,7 +167,7 @@ class LMNPDataBunch(DataBunch):
         "Create a `TextDataBunch` from ids, labels and a `vocab`. `kwargs` are passed to the dataloader creation."
         src = ItemLists(path, LMNPItemList(train_ids, path=path, processor=[], tfms=train_tfms),
                         LMNPItemList(valid_ids, path=path, processor=[], tfms=valid_tfms))
-        src = src.label_const(label_cls=EmptyLabelList)
+        src = src.label_const(label_cls=LMLabelList)
         if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
         return src.databunch(**kwargs)
     

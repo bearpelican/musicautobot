@@ -17,52 +17,161 @@ import uuid
 # out_path = Path('../../data/generated/')
     
 
-def v13_config(vocab_path):
+def get_config(vocab_path):
     VOCAB_SZ = create_vocab_sizes(vocab_path)
-    
+    N_COMPS = len(VOCAB_SZ)
+    N_EMBS = 128
+    EMB_IDXS = range(N_COMPS)
+    EMB_DIM = [N_EMBS]*len(EMB_IDXS)
+    EMB_MAP = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
+    EMB_MAP
+
+    idx2embidx = { i:EMB_MAP[i] for i in range(N_COMPS) }
+    total_embs = sum([v[-1] for k,v in idx2embidx.items()])
+
     config = tfmerXL_lm_config.copy()
-    
+    config['emb_map'] = list(zip(EMB_IDXS,VOCAB_SZ,EMB_DIM))
+    config['idx_map'] = idx2embidx
+    config['loss_weights'] = [1,1] # note,duration
     config['pad_idx'] = PADDING_IDX+ENC_OFFSET
     config['bos_idx'] = VALTBOS+ENC_OFFSET
     config['sep_idx'] = VALTSEP+ENC_OFFSET
     config['enc_offset'] = ENC_OFFSET
     config['transpose_range'] = (0,12)
+    config['mask_type'] = MaskType.RandomWindow
     config['act'] = Activation.GeLU
     # config['act'] = Activation.ReLU
 
+    config['d_model'] = total_embs
     config['mem_len'] = 512
 
     config['bs'] = 16
     config['bptt'] = 256
-    
-    emb_size = 768
+    # config['path'] = path
+    # config['cache_name'] = cache_name
+    return config
+
+def v10_config(vocab_path):
+    config = get_config(vocab_path)
+    # larger model
+    config['n_heads'] = 12
+    config['d_head'] = 64
+    return config
+
+def v10_small_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 64
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
     config['d_model'] = emb_size
-    config['vocab_size'] = sum(VOCAB_SZ)
+    config['single_stream'] = True
+    config['d_inner'] = 512
+    config['n_heads'] = 6
+    config['n_layers'] = 12
+    config['d_model'] = 1024
+    config['d_head'] = 48
+    config['transpose_range'] = (0,24)
+#    config['act'] = Activation.Swish
+    return config
+
+def v10_single_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 256
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
+    config['d_model'] = emb_size
+    config['single_stream'] = True
+    return config
+
+def v10_sxl_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 512
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
+    config['d_model'] = emb_size
+    config['single_stream'] = True
+    config['d_inner'] = 1024
+    config['n_layers'] = 16
+    config['n_heads'] = 10
+    config['d_head'] = 64
+    return config
+
+def v10_s3_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 512
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
+    config['d_model'] = emb_size
     config['single_stream'] = True
     config['d_inner'] = 2048
     config['n_layers'] = 16
-    
-    config['n_heads'] = 12
+    config['n_heads'] = 8
     config['d_head'] = 64
 
-#     config['embed_p'] = 0.3
-#     config['attn_p'] = 0.15 # attention dropout
-#     config['output_p'] = 0.15 # decoder dropout (before final linear layer)
-
+    config['embed_p'] = 0.3
+    config['attn_p'] = 0.15 # attention dropout
+    config['output_p'] = 0.15 # decoder dropout (before final linear layer)
+#    config['mask_args'] = {
+#        'max_size': 6,
+#        'p': 0.2
+#    }
 
     return config
 
-def v13s_config(vocab_path):
-    config = v13_config(vocab_path)
-    emb_size = 256
-    config['n_heads'] = 8
-    config['d_head'] = 32
+def v10_s2_config(vocab_path):
+    config = v10_config(vocab_path)
+    emb_size = 64
+    VOCAB_SZ = create_vocab_sizes(vocab_path)
+    EMB_MAP = [(0, sum(VOCAB_SZ), emb_size)]
+    idx2embidx = { 0:EMB_MAP[0] }
+    config['emb_map'] = EMB_MAP
+    config['idx_map'] = idx2embidx
     config['d_model'] = emb_size
-    config['d_inner'] = 2048
-    return config
-    
+    config['single_stream'] = True
+    config['d_model'] = 512
+    config['d_inner'] = 1024
 
-def load_music_data(path, cache_name, enc_offset, pad_idx, bos_idx, transpose_range, single_stream=False, **kwargs):
+    config['attn_p'] = 0.2 # attention dropout
+#    config['output_p'] = 0.2 # decoder dropout (before final linear layer)
+    
+#    config['learned_pos_enc'] = True
+#    config['ctx_len'] = 1024
+    return config
+
+def v10_large_single_config(vocab_path):
+    config = v10_small_config(vocab_path)
+
+    # larger model
+    config['n_heads'] = 12
+    config['n_layers'] = 16
+    config['d_head'] = 54
+    config['d_inner'] = 1024
+    config['d_model'] = 2048
+    
+    config['attn_p'] = 0.2 # attention dropout
+    config['output_p'] = 0.2 # decoder dropout (before final linear layer)
+
+    config['mask_type'] = MaskType.RandomWindow
+    config['mask_args'] = {
+        'max_size': 5,
+        'p': 0.3
+    }
+
+    return config
+
+def load_data(path, cache_name, enc_offset, pad_idx, bos_idx, transpose_range, single_stream=False, **kwargs):
     transpose_tfm = partial(rand_transpose, enc_offset=enc_offset, rand_range=transpose_range)
     category_tfm = partial(rand_category, pad_idx=pad_idx, bos_idx=bos_idx)
     if single_stream:
@@ -95,6 +204,48 @@ def predict_from_midi(learn, midi=None, n_words=600,
     full = np.concatenate((seed,pred), axis=0)
     
     return pred, seed, full
+
+
+# Deprecated predictions 
+
+# def predict_from_file(learn, midi_file=None, np_file=None, seed_len=60, n_words=340, 
+#                          temperatures=(1.5,0.9), min_ps=(1/128,0.0), **kwargs):
+#     file = np_file
+#     song_np = np.load(file)
+#     seed_np = np.load(file)[:seed_len]
+#     xb = torch.tensor(seed_np)[None]
+#     pred, seed = learn.predict(xb, n_words=n_words, temperatures=temperatures, min_ps=min_ps)
+#     full = np.concatenate((seed,pred), axis=0)
+    
+#     return pred, seed, full
+
+# def save_comps(out_path, pid, nptype='pred', bpm=120, types=('midi', 'musicxml', 'png')): # p = pred, f = full, s = seed
+#     np_path = out_path/pid/f'{nptype}.npy'
+#     npenc = np.load(np_path)
+    
+#     stream = npenc2stream(npenc, bpm=bpm)
+    
+#     if 'midi' in types: stream2midifile(stream, np_path)
+#     if 'musicxml' in types: stream2musicxml(stream, np_path)
+#     if 'png' in types: stream2scoreimg(stream, np_path)
+
+# def save_preds(pred, seed, full, out_path):
+#     pid = str(uuid.uuid4())
+#     path = out_path/pid
+#     path.mkdir(parents=True, exist_ok=True)
+#     np.save(path/f"pred.npy", pred)
+#     np.save(path/f"seed.npy", seed)
+#     np.save(path/f"full.npy", full)
+#     return pid
+
+# def stream2midifile(stream, np_path):
+#     return stream.write("midi", np_path.with_suffix('.mid'))
+    
+# def stream2musicxml(stream, np_path):
+#     return stream.write('musicxml', np_path.with_suffix('.xml'))
+    
+# def stream2scoreimg(stream, np_path):
+#     return stream.write('musicxml.png', np_path.with_suffix('.xml'))
 
 
 
