@@ -21,6 +21,30 @@ from collections import defaultdict
 # 3. numpy array -> music21.Stream
 # 4. Stream -> midi
 
+
+# Functions inspired by:
+# https://github.com/mcleavey/musical-neural-net/blob/master/data/midi-to-encoding.py
+# https://github.com/tensorflow/magenta/tree/master/magenta/models/polyphony_rnn
+
+
+TSEP = '||' # beat/timestep end encoding
+
+MSTART = '|s|' # measure start encoding
+MEND = '|e|' # measure end encoding
+NPRE = 'n' # note value encoding prefix
+OPRE = 'o' # octave encoding prefix
+IPRE = 'i' # instrument encoding prefix
+
+TPRE = 't' # note type encoding prefix - negative means duration encoded
+VALTSTART = -1 # numpy value for TSTART
+VALTCONT = -2 # numpy value for TCONT
+
+NOTE_SEP = ':' # separator for note components. No longer using
+
+TIMESIG = '4/4' # default time signature
+
+
+RENOTE = re.compile('[A-Z][#-b]?\d')
 class NoteEnc():
     # dur = note start/continue, note = midi value, inst = instrument
     def __init__(self, note, dur, inst=None):
@@ -93,6 +117,15 @@ def midi2seq(midi_file):
     stream = file2stream(midi_file) # 1.
     s_arr = stream2chordarr(stream) # 2.
     return chordarr2seq(s_arr) # 3.
+
+# master encoder
+def midi2str(midi_file, note_func, continuous=False):
+    "Converts midi file to string representation for language model"
+#     stream = file2stream(midi_file) # 1.
+#     s_arr = stream2chordarr(stream, encode_duration) # 2.
+#     seq = chordarr2seq(s_arr) # 3.
+    seq = midi2seq(midi_file)
+    return seq2str(seq, note_func=note_func, continuous=continuous)
 
 # 2.
 def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None, flat=True):
@@ -180,7 +213,72 @@ def timestep2seq(timestep):
     sorted_keys = sorted(notes, key=lambda x: x.pitch, reverse=True)
     return sorted_keys
 
+# 4.
+def seq2str(seq, note_func, continuous):
+    if continuous: return seq2str_continuous(seq, note_func)
+    else: return seq2str_duration(seq, note_func)
+    
+def seq2str_continuous(seq, note_func=None, separate_measures=False):
+    "Note function returns a list of note components for spearation"
+    result = []
+    for idx,timestep in enumerate(seq):
+        if separate_measures and idx and idx%4 == 0:
+            result.append(MEND)
+            if idx < len(seq)-1: result.append(MSTART)
+        flat_time = [i for n in timestep for i in note_func(n)]
+        result.extend(flat_time)
+        result.append(TSEP)
+    return ' '.join(result)
+
+# 4.alt
+def seq2str_duration(seq, note_func=None):
+    "Note function returns a list of note components for spearation"
+    result = []
+    wait_count = 0
+    for idx,timestep in enumerate(seq):
+        flat_time = [i for n in timestep for i in note_func(n)]
+        if len(flat_time) == 0:
+            wait_count += 1
+        else:
+            result.append(TSEP)
+            result.append(f'{TPRE}{wait_count}')
+            result.extend(flat_time)
+            wait_count = 0
+    return ' '.join(result)
+    
 ##### DECODING #####
+# 
+def str2stream(seq_str):
+    seq = str2seq(seq_str)
+    arr = seq2chordarr(seq)
+    return chordarr2stream(arr)
+
+# 1.
+def str2seq(seq_str):
+    seq_str = seq_str.replace(f'{MSTART} ', '').replace(f'{MEND} ', '').replace(f'{BOS} ', '')
+    timesteps = seq_str.split(f'{TSEP} ')
+    
+    seq = []
+    for t in timesteps:
+        tsplit = t.split(' ')
+        if tsplit and TPRE in tsplit[0]:
+            duration = int(tsplit[0][1:])
+            for i in range(duration): seq.append([])
+            tsplit = tsplit[1:]
+        seq.append(steps2seq(tsplit))
+    return seq
+
+# 1b.
+def steps2seq(tarr):
+    idxs = [idx for idx,s in enumerate(tarr) if s and s[0] == NPRE]
+    notes = []
+    for a in np.split(tarr, idxs):
+        try: 
+            note = NoteEnc.parse_arr(a) 
+            if note: notes.append(note)
+        except Exception as e:
+            print(e)
+    return notes
 
 # 2.
 def seq2chordarr(seq, note_range=127):
@@ -289,29 +387,52 @@ def midi2npenc(midi_file, num_comps=2, midi_source=None):
     stream = file2stream(midi_file) # 1.
     s_arr = stream2chordarr(stream) # 2.
     seq = chordarr2seq(s_arr) # 3.
-    return seq2npenc(seq, num_comps=num_comps)
 
-VALTSEP = 0
+    category = PADDING_IDX if midi_source is None else source2encidx(midi_source)
+    return seq2npenc(seq, num_comps=num_comps, category=category)
+
+VALTBOS = -1
+VALTSEP = -2
+PADDING_IDX = -3
+ENC_OFFSET = 3
+
+MIDI_SOURCES = ['hooktheory', 'hooktheory_c', 'freemidi', 'midiworld', 'ecomp', 'cprato', 'classical_piano', 'musescore', 'wikifonia', 'lmd', 'reddit', 'classical_archives']
+
+def source2encidx(source, max_dur=128):
+    return ENC_OFFSET + max_dur + MIDI_SOURCES.index(source) + 1
+
 
 # 4.
 def npenc_func(n, num_comps):
     if num_comps == 2: return [n.pitch.midi, n.dur]
+    elif num_comps in [3, 4]:
+        octave = n.pitch.octave
+        if octave is None: octave = -1
+        return [n.pitch.pitchClass, n.dur, octave+1, n.inst][:num_comps]
     raise ValueError('Unhandled number of components')
 
-def seq2npenc(seq, num_comps=2):
+def pad_array(arr, fill_value, final_length):
+    if isinstance(arr, np.ndarray): arr = arr.tolist()
+    padding = [fill_value] * max(0, final_length - len(arr))
+    return arr+padding
+
+def seq2npenc(seq, num_comps=2, category=None):
     "Note function returns a list of note components for separation"
-    result = []
+    if category is None: category = PADDING_IDX
+    ts_bos = pad_array([VALTBOS], category, num_comps)
+    result = [ts_bos]
     wait_count = 1
     for idx,timestep in enumerate(seq):
-        flat_time = [npenc_func(n) for n in timestep if n.pitch.octave and n.dur > 0]
+        flat_time = [npenc_func(n, num_comps) for n in timestep if n.pitch.octave and n.dur > 0]
         if len(flat_time) == 0:
             wait_count += 1
         else:
             # pitch, octave, duration, instrument
-            result.append([VALTSEP, wait_count])
+            ts_sep = pad_array([VALTSEP, wait_count], PADDING_IDX, num_comps)
+            result.append(ts_sep)
             result.extend(flat_time)
             wait_count = 1
-    return np.array(result, dtype=int)
+    return np.array(result, dtype=int) + ENC_OFFSET
 
 def npdec_func(step):
     n,d,o,i = pad_array(step, 0, final_length=4)
@@ -320,10 +441,10 @@ def npdec_func(step):
 def npenc2seq(npenc, dec_func=npdec_func):
     seq = []
     tstep = []
-    npenc = npenc.copy()
+    npenc = npenc.copy() - ENC_OFFSET
     for x in npenc:
         n,d = x[:2]
-        if n < 0: continue # special token
+        if n == VALTBOS: continue
         if n == VALTSEP: 
             if len(tstep) > 0: seq.append(tstep) # add notes if they exists
             tstep = []
@@ -335,8 +456,3 @@ def npenc2seq(npenc, dec_func=npdec_func):
             tstep.append(dec_func(x))
     if len(tstep) > 0: seq.append(tstep)
     return seq
-
-def pad_array(arr, fill_value, final_length):
-    if isinstance(arr, np.ndarray): arr = arr.tolist()
-    padding = [fill_value] * max(0, final_length - len(arr))
-    return arr+padding
