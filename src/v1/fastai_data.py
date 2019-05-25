@@ -1,16 +1,148 @@
 "Fast parallel databunch creation and special npencoding DataBunch"
-# from fastai.text import *
+from fastai.text import *
 from numbers import Integral
-from src.encode_data import npenc2seq
+from .encode_data import npenc2seq
 
+Y_OFFSET=1
+    
+class MusicTokenizer():
+    def __init__(self):
+        super().__init__()
+        self.n_cpus = num_cpus()
+    def process_text(self, t:str) -> List[str]: return t.split(" ")
+    def _process_all_1(self, texts:Collection[str]) -> List[List[str]]:
+        return [self.process_text(t) for t in texts]
+    def process_all(self, texts:Collection[str]) -> List[List[str]]:
+        "Process a list of `texts`."
+        if self.n_cpus <= 1: return self._process_all_1(texts)
+        with ProcessPoolExecutor(self.n_cpus) as e:
+            return sum(e.map(self._process_all_1, partition_by_cores(texts, self.n_cpus)), [])
+
+
+def lm_join_texts(texts:Collection[str]):
+    return [f'{BOS} {t}' for t in texts]
+
+class LMOpenFileProcessor(OpenFileProcessor):
+    # Removing numpy array conversion to fix OOM error
+    def process(self, ds:Collection): ds.items = [self.process_one(item) for item in ds.items] 
+
+class LMTokenizeProcessor(PreProcessor):
+    "`PreProcessor` that tokenizes the texts in `ds`."
+    def __init__(self, ds:ItemList=None, tokenizer:Tokenizer=None, chunksize:int=10000):
+        self.tokenizer,self.chunksize = ifnone(tokenizer, Tokenizer()),chunksize
+    def process_one(self, item):  return self.tokenizer._process_all_1([item])[0]
+    def process(self, ds):
+        ds.items = lm_join_texts(ds.items)
+        tokens = []
+        for i in progress_bar(range(0,len(ds),self.chunksize), leave=False):
+            tokens += self.tokenizer.process_all(ds.items[i:i+self.chunksize])
+        ds.items = tokens
+
+def numericalize(data):
+    stoi, items = data
+    return [[stoi[w] for w in item] for item in items]
+
+def count_tokens(tokens): return Counter(p for o in tokens for p in o)    
+def vocab_create_parallel(tokens:Tokens, max_vocab:int, min_freq:int) -> 'Vocab':
+    "Create a vocabulary from a set of `tokens`."
+    n_cpus = num_cpus()
+    print("Creating vocabulary")
+    gc.collect()
+    with ProcessPoolExecutor(n_cpus) as e:
+        freq = sum(e.map(count_tokens, partition_by_cores(tokens, n_cpus*10)), Counter())
+        
+    print("Counting done")
+    itos = [o for o,c in freq.most_common(max_vocab) if c > min_freq]
+    for o in reversed(defaults.text_spec_tok):
+        if o in itos: itos.remove(o)
+        itos.insert(0, o)
+    return Vocab(itos)
+Vocab.create = vocab_create_parallel
+
+class LMNumericalizeProcessor(PreProcessor):
+    "`PreProcessor` that numericalizes the tokens in `ds`."
+    def __init__(self, ds:ItemList=None, vocab:Vocab=None, max_vocab:int=60000, min_freq:int=2):
+        vocab = ifnone(vocab, ds.vocab if ds is not None else None)
+        self.vocab,self.max_vocab,self.min_freq = vocab,max_vocab,min_freq
+
+    def process_one(self,item): return np.array(self.vocab.numericalize(item), dtype=np.int64)
+    def process(self, ds):
+        if self.vocab is None: self.vocab = vocab_create_parallel(ds.items, self.max_vocab, self.min_freq)
+#         if self.vocab is None: self.vocab = Vocab.create(ds.items, self.max_vocab, self.min_freq)
+        ds.vocab = self.vocab
+        print("Numericalizing")
+        n_cpus = num_cpus()
+        parts = partition_by_cores(ds.items, n_cpus*4)
+        vocabs = [ds.vocab.stoi.copy() for i in range(len(parts))]
+        with ProcessPoolExecutor(n_cpus) as e:
+            items = sum(e.map(numericalize, zip(vocabs, parts)), [])
+        gc.collect()
+        ds.items = array(items)
+        
+        
+        
 ## For npenc dataset
+
+def rand_transpose(t, enc_offset, rand_range=(0,24), p=0.5):
+    t = t.copy()
+    notes = t[...,0]
+    if np.random.rand() < p:
+        notes[notes >= enc_offset] += np.random.randint(*rand_range)-rand_range[1]//2
+    return t
+
+def rand_category(t, pad_idx, bos_idx, p=0.5):
+    t = t.copy()
+    if np.random.rand() < p:
+        assert(t[0,0] == bos_idx)
+        t[0,1] = pad_idx
+    return t
+
+# single stream instead of note,dur
+def to_single_stream(t, offset=130):
+    t = t.copy()
+    t[:, 1] = t[:, 1] + offset
+    return t.reshape(-1)
+
+def to_double_stream(t, offset=130):
+    t = t.copy().reshape(-1, 2)
+    t[:, 1] = t[:, 1] - offset
+    return t
+
+# def to_single_stream(t, offset=130):
+#     t = t.copy()
+#     t[:, 1] = t[:, 1] + offset
+#     return t.reshape(-1, 1)
+
+# def to_double_stream(t, offset=130):
+#     t = t.copy().reshape(-1, 2)
+#     t[:, 1] = t[:, 1] - offset
+#     return t
+
+def calc_vocab_sizes(cache_path):
+    max_vocab_file = cache_path/'max_vocab.npy'
+    if max_vocab_file.exists(): return np.load(max_vocab_file, allow_pickle=True).tolist()
+    train_ids_file = max_vocab_file.with_name('train_ids.npy')
+    all_ids = np.load(train_ids_file, allow_pickle=True)
+    id_cat = np.concatenate(all_ids); id_cat.shape
+    ax = tuple(range(len(id_cat.shape)-1))
+    max_vocab = id_cat.max(axis=ax)+1
+    if max_vocab[0] in [118, 120]: max_vocab[0] += 12 # to allow data augmentation
+    np.save(max_vocab_file, max_vocab)
+    return max_vocab.tolist()
+
+def create_vocab_sizes(cache_path):
+    max_vocab_file = cache_path/'max_vocab.npy'
+    if max_vocab_file.exists(): return np.load(max_vocab_file).tolist()
+    max_vocab = np.array(130, 150)
+    np.save(max_vocab_file, max_vocab)
+    return max_vocab.tolist()
 
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
         return np.load(item, allow_pickle=True) if isinstance(item, Path) else item
     
-class MusicDataBunch(DataBunch):
+class LMNPDataBunch(DataBunch):
     "Create a `TextDataBunch` suitable for training a language model."
     @classmethod
     def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
@@ -19,10 +151,9 @@ class MusicDataBunch(DataBunch):
         "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
         datasets = cls._init_ds(train_ds, valid_ds, test_ds)
         val_bs = ifnone(val_bs, bs)
-        datasets = [MusicPreloader(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards) 
+        datasets = [LMNPPreloader(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards) 
                     for i,ds in enumerate(datasets)]
         val_bs = bs
-        print('DLTFMS:', dl_tfms)
         dls = [DataLoader(d, b, shuffle=False) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     
@@ -34,8 +165,8 @@ class MusicDataBunch(DataBunch):
                  train_tfms=None, valid_tfms=None,
                  **kwargs) -> DataBunch:
         "Create a `TextDataBunch` from ids, labels and a `vocab`. `kwargs` are passed to the dataloader creation."
-        src = ItemLists(path, MusicItemList(train_ids, path=path, processor=[], tfms=train_tfms),
-                        MusicItemList(valid_ids, path=path, processor=[], tfms=valid_tfms))
+        src = ItemLists(path, LMNPItemList(train_ids, path=path, processor=[], tfms=train_tfms),
+                        LMNPItemList(valid_ids, path=path, processor=[], tfms=valid_tfms))
         src = src.label_const(label_cls=LMLabelList)
         if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
         return src.databunch(**kwargs)
@@ -61,8 +192,8 @@ class MusicDataBunch(DataBunch):
         classes = loadtxt_str(cache_path/'classes.txt') if os.path.isfile(cache_path/'classes.txt') else None
         return cls.from_ids(path, train_ids, valid_ids, test_ids, train_lbls, valid_lbls, classes, processor, **kwargs)
 
-class MusicItemList(ItemList):
-    _bunch = MusicDataBunch
+class LMNPItemList(ItemList):
+    _bunch = LMNPDataBunch
     
     def __init__(self, *args, tfms=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -74,7 +205,7 @@ class MusicItemList(ItemList):
         for tfm in self.tfms: item = tfm(item)
         return item
 
-class MusicPreloader(Callback):
+class LMNPPreloader(Callback):
     "Transforms the tokens in `dataset` to a stream of contiguous batches for language modelling."
     
     class CircularIndex():
@@ -86,11 +217,10 @@ class MusicPreloader(Callback):
         def shuffle(self): np.random.shuffle(self.idx)
 
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
-                 shuffle:bool=False, y_offset:int=0):
+                 shuffle:bool=False):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
         self.bs *= num_distrib() or 1
         self.totalToks,self.ite_len,self.idx = int(0),None,None
-        self.y_offset = y_offset
         self.allocate_buffers() # needed for valid_dl on distributed training - otherwise doesn't get initialized on first epoch
 
     def __len__(self): 
@@ -105,9 +235,9 @@ class MusicPreloader(Callback):
     def allocate_buffers(self):
         "Create the ragged array that will be filled when we ask for items."
         if self.ite_len is None: len(self)
-        self.idx   = MusicPreloader.CircularIndex(len(self.dataset.x), not self.backwards)
-        self.batch = np.zeros((self.bs, self.bptt+self.y_offset) + self.dataset.x[0].shape[1:], dtype=np.int64)
-        self.batch_x, self.batch_y = self.batch[:,0:self.bptt], self.batch[:,self.y_offset:self.bptt+self.y_offset] 
+        self.idx   = LMNPPreloader.CircularIndex(len(self.dataset.x), not self.backwards)
+        self.batch = np.zeros((self.bs, self.bptt+Y_OFFSET) + self.dataset.x[0].shape[1:], dtype=np.int64)
+        self.batch_x, self.batch_y = self.batch[:,0:self.bptt], self.batch[:,Y_OFFSET:self.bptt+Y_OFFSET] 
         #ro: index of the text we're at inside our datasets for the various batches
         self.ro    = np.zeros(self.bs, dtype=np.int64)
         #ri: index of the token we're at inside our current text for the various batches
@@ -141,7 +271,7 @@ class MusicPreloader(Callback):
                                               self.ro[j], self.ri[j], overlap=1, lengths=self.lengths)
         return self.batch_x[j], self.batch_y[j]
 
-    def fill_row(self, forward, items, idx, row, ro, ri, overlap, lengths):
+    def fill_row(self, forward, items, idx, row, ro, ri, overlap,lengths):
         "Fill the row with tokens from the ragged array. --OBS-- overlap != 1 has not been implemented"
         ibuf = n = 0 
         ro  -= 1
@@ -159,81 +289,3 @@ class MusicPreloader(Callback):
                 row[ibuf:ibuf+n] = rag[ri-n:ri][::-1]
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
-
-
-# Seq2Seq
-
-def avg_tempo(t, sep_idx=0):
-    avg = t[t[:, 0] == sep_idx][:, 1].sum()/t.shape[0]
-    return 'mt'+str(int(max(round(avg), 4)))
-
-class Seq2SeqProcessor(PreProcessor):
-    def __init__(self, vocab=None, ds:Collection=None):  
-        self.vocab = vocab
-        super().__init__(ds)
-        
-    "`PreProcessor` that opens the filenames and read the texts."
-    def process_one(self,item):
-        left, right = [np.load(i, allow_pickle=True) for i in item]
-        start_seq = np.array([self.vocab.stoi[BOS], self.vocab.stoi[PAD]])
-        
-        chord_meta = np.array([self.vocab.stoi[CSEQ], self.vocab.stoi[avg_tempo(left)]])
-        chord_seq = to_single_stream(left, self.vocab, start_seq=chord_meta)
-        melody_meta = np.array([self.vocab.stoi[MSEQ], self.vocab.stoi[avg_tempo(right)]]) # pad should be average notes - tempo
-        melody_seq = to_single_stream(right, self.vocab, start_seq=melody_meta)
-        
-        
-        cat_sequence = np.concatenate([start_seq, chord_seq, melody_seq, np.array([-100]*100)])
-            
-        return cat_sequence
-
-# BERT Transform
-
-def next_sentence_ranges(x, y, max_cls=4):
-    bs,bptt = x.shape
-    s = min(random.randint(1, max_cls), bs-2)
-    
-    min_seq_len = bptt // s
-
-    bs_shift = [0]+(np.random.choice(bs-1, s, replace=False)+1).tolist()
-    row_shift = [int(min_seq_len + random.randint(-min_seq_len, min_seq_len)//s) for i in range(s)]
-    
-    accum = 0
-    ranges = []
-    for i in range(s):
-        end = accum + row_shift[i] if i < (s-1) else bptt
-        ranges.append((i, bs_shift[i], accum, end))
-        accum = end
-    return ranges
-
-def next_sentence_tfm(b, max_cls=4):
-    x, y = b
-    x_new = x.clone()
-    y_new = y.clone()
-    z = torch.zeros_like(x)
-    ranges = next_sentence_ranges(x, y, max_cls)
-    for i,shift,s,e in ranges:
-        if i == 0: continue
-        x_new[:, s:e] = torch.roll(x, shifts=shift, dims=0)[:, s:e]
-        y_new[:, s:e] = torch.roll(y, shifts=shift, dims=0)[:, s:e]
-        z[:, s:e] = i
-    return x_new, (y_new, z)
-
-MASK_IDX = vocab.stoi[MASK]
-PAD_IDX = vocab.stoi[PAD]
-WRONGWORD_RANGE = (vocab.stoi[NOTE_OFF], vocab.stoi[DUR_END]+1)
-
-def mask_tfm(b, word_range=WRONGWORD_RANGE, pad_idx=PAD_IDX, mask_idx=MASK_IDX, p=0.2, double=False, mask_last=False):
-    # p = replacement probability
-    # double = mask 2 sequences at once
-    # y is ignored
-#     y = x.clone()
-    x,y = b
-    rand = torch.rand(x.shape)
-    rand[x < len(SPECIAL_TOKS)] = 1.0
-    if mask_last: rand[-1] = 0.0
-    y[rand > p] = PAD_IDX
-    x[rand <= (p*.8)] = mask_idx # 80% = mask
-    wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
-    x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()])
-    return x, y
