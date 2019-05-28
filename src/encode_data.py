@@ -9,8 +9,11 @@ from fastai.text.data import BOS
 import scipy.sparse
 from collections import defaultdict
 
-
 TIMESIG = '4/4' # default time signature
+PIANO_RANGE = (21, 108)
+VALTSEP = -1 # separator value for numpy encoding
+VALTSTART = -1 # numpy value for TSTART
+VALTCONT = -2 # numpy value for TCONT
 
 # Encoding process
 # 1. midi -> music21.Stream
@@ -287,21 +290,19 @@ def npenc2stream(arr, bpm=120):
     chordarr = seq2chordarr(seq)
     return chordarr2stream(chordarr, bpm=bpm)
 
-def midi2npenc(midi_file, num_comps=2, midi_source=None):
+def midi2npenc(midi_file, midi_source=None):
     "Converts midi file to numpy encoding for language model"
     stream = file2stream(midi_file) # 1.
     s_arr = stream2chordarr(stream) # 2.
     seq = chordarr2seq(s_arr) # 3.
-    return seq2npenc(seq, num_comps=num_comps)
-
-VALTSEP = -1
+    return seq2npenc(seq)
 
 # 4.
-def npenc_func(n, num_comps):
+def npenc_func(n, num_comps=2):
     if num_comps == 2: return [n.pitch.midi, n.dur]
     raise ValueError('Unhandled number of components')
 
-def seq2npenc(seq, num_comps=2):
+def seq2npenc(seq):
     "Note function returns a list of note components for separation"
     result = []
     wait_count = 1
@@ -326,7 +327,7 @@ def npenc2seq(npenc, dec_func=npdec_func):
     npenc = npenc.copy()
     for x in npenc:
         n,d = x[:2]
-        if n < 0: continue # special token
+        if n < VALTSEP: continue # special tokens
         if n == VALTSEP: 
             if len(tstep) > 0: seq.append(tstep) # add notes if they exists
             tstep = []

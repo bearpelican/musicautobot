@@ -3,6 +3,8 @@
 from numbers import Integral
 from src.encode_data import npenc2seq
 
+from fastai.basics import *
+
 # Additional encoding
 
 BOS = 'bos'
@@ -23,7 +25,7 @@ DUR_OFF = 'd0'
 NOTE_RANGE = 130
 DURATION_RANGE = 130
 NOTE_END = f'n{NOTE_RANGE-1}'
-DUR_END = f'd{DUR_RANGE-1}'
+DUR_END = f'd{DURATION_RANGE-1}'
 
 NOTE_TOKS = [f'n{i}' for i in range(NOTE_RANGE)] 
 DUR_TOKS = [f'd{i}' for i in range(DURATION_RANGE)]
@@ -308,6 +310,7 @@ def next_sentence_tfm(b, max_cls=4):
         z[:, s:e] = i
     return x_new, (y_new, z)
 
+vocab = MusicVocab.create()
 MASK_IDX = vocab.stoi[MASK]
 PAD_IDX = vocab.stoi[PAD]
 WRONGWORD_RANGE = (vocab.stoi[NOTE_OFF], vocab.stoi[DUR_END]+1)
