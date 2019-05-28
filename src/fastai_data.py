@@ -3,6 +3,95 @@
 from numbers import Integral
 from src.encode_data import npenc2seq
 
+# Additional encoding
+
+BOS = 'bos'
+PAD = 'pad'
+EOS = 'eos'
+CLS = 'cls'
+MASK = 'mask'
+CSEQ = 'cseq'
+MSEQ = 'mseq'
+FSEQ = 'fseq'
+
+SPECIAL_TOKS = [BOS, PAD, EOS, CLS, MASK, CSEQ, MSEQ, FSEQ]
+
+
+SEP = 'sep'
+NOTE_OFF = SEP
+DUR_OFF = 'd0'
+NOTE_RANGE = 130
+DURATION_RANGE = 130
+NOTE_END = f'n{NOTE_RANGE-1}'
+DUR_END = f'd{DUR_RANGE-1}'
+
+NOTE_TOKS = [f'n{i}' for i in range(NOTE_RANGE)] 
+DUR_TOKS = [f'd{i}' for i in range(DURATION_RANGE)]
+
+MTEMPO_OFF = 'mt0'
+MTEMPO_TOKS = [f'mt{i}' for i in range(5)]
+
+# single stream instead of note,dur
+def to_single_stream(t, vocab, start_seq=None):
+    t = t.copy()
+    t[:, 0] = t[:, 0] + vocab.stoi[NOTE_OFF]
+    t[:, 1] = t[:, 1] + vocab.stoi[DUR_OFF]
+    stream = t.reshape(-1)
+    if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
+    return  np.concatenate([start_seq, t.reshape(-1)])
+
+def to_double_stream(t, vocab):
+    t = t.copy().reshape(-1, 2)
+    t[:, 0] = t[:, 0] - vocab.stoi[NOTE_OFF]
+    t[:, 1] = t[:, 1] - vocab.stoi[DUR_OFF]
+    return t
+
+def rand_transpose(t, note_range, rand_range=(0,24), p=0.5):
+    if np.random.rand() < p:
+        t = t.copy()
+        t[(t >= note_range[0]) & (t < note_range[1])] += np.random.randint(*rand_range)-rand_range[1]//2
+    return t
+
+class MusicVocab():
+    "Contain the correspondence between numbers and tokens and numericalize."
+    def __init__(self, itos:Collection[str]):
+        self.itos = itos
+#         self.stoi = collections.defaultdict(int,{v:k for k,v in enumerate(self.itos)})
+        self.stoi = {v:k for k,v in enumerate(self.itos)}
+
+    def numericalize(self, t:Collection[str]) -> List[int]:
+        "Convert a list of tokens `t` to their ids."
+        return [self.stoi[w] for w in t]
+
+    def textify(self, nums:Collection[int], sep=' ') -> List[str]:
+        "Convert a list of `nums` to their tokens."
+        return sep.join([self.itos[i] for i in nums]) if sep is not None else [self.itos[i] for i in nums]
+
+    def __getstate__(self):
+        return {'itos':self.itos}
+
+    def __setstate__(self, state:dict):
+        self.itos = state['itos']
+#         self.stoi = collections.defaultdict(int,{v:k for k,v in enumerate(self.itos)})
+        self.stoi = {v:k for k,v in enumerate(self.itos)}
+
+    def save(self, path):
+        "Save `self.itos` in `path`"
+        pickle.dump(self.itos, open(path, 'wb'))
+
+    @classmethod
+    def create(cls) -> 'Vocab':
+        "Create a vocabulary from a set of `tokens`."
+        itos = SPECIAL_TOKS + [SEP] + NOTE_TOKS + DUR_TOKS + MTEMPO_TOKS
+        return cls(itos)
+    
+    @classmethod
+    def load(cls, path):
+        "Load the `Vocab` contained in `path`"
+        itos = pickle.load(open(path, 'rb'))
+        return cls(itos)
+
+
 ## For npenc dataset
 
 class OpenNPFileProcessor(PreProcessor):

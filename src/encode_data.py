@@ -9,6 +9,9 @@ from fastai.text.data import BOS
 import scipy.sparse
 from collections import defaultdict
 
+
+TIMESIG = '4/4' # default time signature
+
 # Encoding process
 # 1. midi -> music21.Stream
 # 2. Stream -> numpy chord array (timestep X instrument X noterange)
@@ -291,7 +294,7 @@ def midi2npenc(midi_file, num_comps=2, midi_source=None):
     seq = chordarr2seq(s_arr) # 3.
     return seq2npenc(seq, num_comps=num_comps)
 
-VALTSEP = 0
+VALTSEP = -1
 
 # 4.
 def npenc_func(n, num_comps):
