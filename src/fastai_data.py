@@ -341,11 +341,11 @@ def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, mask_idx=vo
     # y is ignored
 #     y = x.clone()
     x,y = b
-    rand = torch.rand(x.shape)
+    rand = torch.rand(x.shape, device=x.device)
     rand[x < word_range[0]] = 1.0
     if mask_last: rand[-1] = 0.0
     y[rand > p] = pad_idx
     x[rand <= (p*.8)] = mask_idx # 80% = mask
     wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
-    x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()])
+    x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()], device=x.device)
     return x, y
