@@ -16,6 +16,12 @@ VALTSEP = -1 # separator value for numpy encoding
 VALTSTART = -1 # numpy value for TSTART
 VALTCONT = -2 # numpy value for TCONT
 
+
+NPRE = 'n' # note value encoding prefix
+OPRE = 'o' # octave encoding prefix
+IPRE = 'i' # instrument encoding prefix
+TPRE = 't' # note type encoding prefix - negative means duration encoded
+
 # Encoding process
 # 1. midi -> music21.Stream
 # 2. Stream -> numpy chord array (timestep X instrument X noterange)

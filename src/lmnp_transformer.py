@@ -86,7 +86,7 @@ class MusicLearner(LanguageLearner):
         "Return the `n_words` that come after `text` using beam search."
         ds = self.data.single_dl.dataset
         self.model.reset()
-
+        self.model.eval()
         xb_length = xb.shape[-1]
         if xb.shape[0] > 1: xb = xb[0][None]
         yb = torch.ones_like(xb)
