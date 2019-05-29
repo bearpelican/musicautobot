@@ -17,7 +17,7 @@ import uuid
 # out_path = Path('../../data/generated/')
     
 
-def v14_config(vocab):
+def v15_config(vocab):
     config = tfmerXL_lm_config.copy()
     
     config['pad_idx'] = vocab.pad_idx
@@ -48,8 +48,8 @@ def v14_config(vocab):
 
     return config
 
-def v14s_config(vocab):
-    config = v14_config(vocab)
+def v15s_config(vocab):
+    config = v15_config(vocab)
     config['n_heads'] = 8
     config['d_head'] = 32
     config['d_model'] = 256
