@@ -8,6 +8,7 @@ from .midi_data import file2stream
 from fastai.text.data import BOS
 import scipy.sparse
 from collections import defaultdict
+from math import ceil
 
 TIMESIG = '4/4' # default time signature
 PIANO_RANGE = (21, 108)
@@ -101,15 +102,16 @@ def midi2seq(midi_file):
     return chordarr2seq(s_arr) # 3.
 
 # 2.
-def stream2chordarr(s, note_range=127, sample_freq=4, max_dur=None, flat=True):
+def stream2chordarr(s, note_range=128, sample_freq=4, max_dur=None, flat=True):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
     # FYI: midi middle C value=60
-    maxTimeStep = int(s.flat.duration.quarterLength * sample_freq)+1
     
     # (AS) TODO: need to order by instruments most played and filter out percussion or include the channel
     inst2idx = defaultdict(int, {inst.id:idx for idx,inst in enumerate(s.flat.getInstruments())})
+    
+    maxTimeStep = int(s.flat.highestTime * sample_freq)+1
     score_arr = np.zeros((maxTimeStep, len(inst2idx), note_range))
 
     notes=[]
