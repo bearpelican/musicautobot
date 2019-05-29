@@ -11,7 +11,6 @@ import sys
 sys.path.insert(0, '..')
 from src.fastai_data import *
 from src.lmnp_transformer import *
-from src.encode_data import VALTSEP, VALTBOS, PADDING_IDX, ENC_OFFSET
 from src.serve import *
 
 import argparse
@@ -28,7 +27,7 @@ parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
 parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-parser.add_argument('--div_factor', type=int, default=25, help='learning rate div factor')
+parser.add_argument('--div_factor', type=int, default=10, help='learning rate div factor')
 parser.add_argument('--save_every', action='store_true', help='Save every epoch')
 parser.add_argument('--config', type=str, help='serve.py config name')
 
@@ -45,10 +44,7 @@ torch.distributed.init_process_group(backend='nccl', init_method='env://')
 path = Path(args.path)
 
 from src import serve
-vocab_path = path/'tmp/all/'
-if args.config is None: config = v15_config(vocab_path)
-else:
-    config = getattr(serve, args.config)(vocab_path)
+config = getattr(serve, args.config)(vocab)
 
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size
@@ -72,6 +68,7 @@ if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'
 if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 
+learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9)
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.1, final_div=50, wd=1e-4)
 
 if args.local_rank == 0: learn.save(f'{args.save}')

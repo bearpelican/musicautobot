@@ -54,7 +54,7 @@ config['bptt'] = args.bptt
 config['bs'] = args.batch_size
 data = load_data(path=path, cache_name=args.cache, **config)
 
-full_clip = None if args.half else 0.25
+full_clip = None if args.half else 0.5
 
 learn = language_model_learner(data, config, clip=full_clip)
 
@@ -66,14 +66,15 @@ if args.load:
 if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
-if args.half: learn = learn.to_fp16(clip=0.25, dynamic=True)
+if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True)
 # learn = learn.to_distributed(args.local_rank, drop_last=True, shuffle=False)
 learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.1, final_div=50, wd=5e-4)
+learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9)
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=10, pct_start=0.1, final_div=25, wd=5e-4)
 #learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.1, final_div=40, wd=1e-5)
 
 if args.local_rank == 0: learn.save(f'{args.save}')
