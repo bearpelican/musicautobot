@@ -35,12 +35,14 @@ MTEMPO_TOKS = [f'mt{i}' for i in range(5)]
 
 # single stream instead of note,dur
 def to_single_stream(t, vocab, start_seq=None):
+    if isinstance(t, (list, tuple)) and len(t) == 2: 
+        return [to_single_stream(x, vocab, start_seq) for x in t]
     t = t.copy()
     t[:, 0] = t[:, 0] + vocab.note_range[0]
     t[:, 1] = t[:, 1] + vocab.dur_range[0]
     stream = t.reshape(-1)
     if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
-    return  np.concatenate([start_seq, t.reshape(-1)])
+    return np.concatenate([start_seq, t.reshape(-1)])
 
 def to_double_stream(t, vocab):
     t = t.copy().reshape(-1, 2)
@@ -48,10 +50,17 @@ def to_double_stream(t, vocab):
     t[:, 1] = t[:, 1] - vocab.dur_range[0]
     return t
 
-def rand_transpose(t, note_range, rand_range=(0,24), p=0.5):
+def tfm_transpose(x, value, note_range):
+    x = x.copy()
+    x[(x >= note_range[0]) & (x < note_range[1])] += value
+    return x
+
+def rand_transpose(t, note_range=None, rand_range=(0,24), p=0.5):
     if np.random.rand() < p:
-        t = t.copy()
-        t[(t >= note_range[0]) & (t < note_range[1])] += np.random.randint(*rand_range)-rand_range[1]//2
+        transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
+        if isinstance(t, (list, tuple)) and len(t) == 2: 
+            return [tfm_transpose(x, transpose_value, note_range) for x in t]
+        return tfm_transpose(t, transpose_value, note_range)
     return t
 
 def rand_transpose_double(t, rand_range=(0,24), p=0.5):
@@ -118,76 +127,6 @@ class MusicVocab():
 
 
 ## For npenc dataset
-
-class OpenNPFileProcessor(PreProcessor):
-    "`PreProcessor` that opens the filenames and read the texts."
-    def process_one(self,item):
-        return np.load(item, allow_pickle=True) if isinstance(item, Path) else item
-    
-class MusicDataBunch(DataBunch):
-    "Create a `TextDataBunch` suitable for training a language model."
-    @classmethod
-    def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
-               num_workers:int=0, device:torch.device=None, collate_fn:Callable=data_collate, 
-               dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70, backwards:bool=False, y_offset:int=0, **kwargs) -> DataBunch:
-        "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
-        datasets = cls._init_ds(train_ds, valid_ds, test_ds)
-        val_bs = ifnone(val_bs, bs)
-        datasets = [MusicPreloader(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards, y_offset=y_offset) 
-                    for i,ds in enumerate(datasets)]
-        val_bs = bs
-        print('DLTFMS:', dl_tfms)
-        dls = [DataLoader(d, b, shuffle=False) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]
-        return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
-    
-    @classmethod    
-    def from_ids(cls, path:PathOrStr, train_ids:Collection[Collection[int]], valid_ids:Collection[Collection[int]],
-                 test_ids:Collection[Collection[int]]=None, train_lbls:Collection[Union[int,float]]=None,
-                 valid_lbls:Collection[Union[int,float]]=None, classes:Collection[Any]=None,
-                 processor:PreProcessor=None,
-                 train_tfms=None, valid_tfms=None,
-                 **kwargs) -> DataBunch:
-        "Create a `TextDataBunch` from ids, labels and a `vocab`. `kwargs` are passed to the dataloader creation."
-        src = ItemLists(path, MusicItemList(train_ids, path=path, processor=[], tfms=train_tfms),
-                        MusicItemList(valid_ids, path=path, processor=[], tfms=valid_tfms))
-        src = src.label_const(label_cls=LMLabelList)
-        if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
-        return src.databunch(**kwargs)
-    
-    def save(self, cache_name:PathOrStr='tmp'):
-        "Save the `DataBunch` in `self.path/cache_name` folder."
-        os.makedirs(self.path/cache_name, exist_ok=True)
-        cache_path = self.path/cache_name
-        np.save(cache_path/f'train_ids.npy', self.train_ds.x.items)
-        np.save(cache_path/f'train_lbl.npy', self.train_ds.y.items)
-        np.save(cache_path/f'valid_ids.npy', self.valid_ds.x.items)
-        np.save(cache_path/f'valid_lbl.npy', self.valid_ds.y.items)
-        if self.test_dl is not None: np.save(cache_path/f'test_ids.npy', self.test_ds.x.items)
-        if hasattr(self.train_ds, 'classes'): save_texts(cache_path/'classes.txt', self.train_ds.classes)
-
-    @classmethod
-    def load(cls, path:PathOrStr, cache_name:PathOrStr='tmp', processor:PreProcessor=None, **kwargs):
-        "Load a `TextDataBunch` from `path/cache_name`. `kwargs` are passed to the dataloader creation."
-        cache_path = Path(path)/cache_name
-        train_ids,train_lbls = np.load(cache_path/f'train_ids.npy', allow_pickle=True), np.load(cache_path/f'train_lbl.npy', allow_pickle=True)
-        valid_ids,valid_lbls = np.load(cache_path/f'valid_ids.npy', allow_pickle=True), np.load(cache_path/f'valid_lbl.npy', allow_pickle=True)
-        test_ids = np.load(cache_path/f'test_ids.npy', allow_pickle=True) if os.path.isfile(cache_path/f'test_ids.npy') else None
-        classes = loadtxt_str(cache_path/'classes.txt') if os.path.isfile(cache_path/'classes.txt') else None
-        return cls.from_ids(path, train_ids, valid_ids, test_ids, train_lbls, valid_lbls, classes, processor, **kwargs)
-
-class MusicItemList(ItemList):
-    _bunch = MusicDataBunch
-    
-    def __init__(self, *args, tfms=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tfms = tfms or []
-        
-    def get(self, i)->Any:
-        item = self.items[i]
-        if self.tfms is None: return item
-        for tfm in self.tfms: item = tfm(item)
-        return item
-
 class MusicPreloader(Callback):
     "Transforms the tokens in `dataset` to a stream of contiguous batches for language modelling."
     
@@ -200,7 +139,7 @@ class MusicPreloader(Callback):
         def shuffle(self): np.random.shuffle(self.idx)
 
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
-                 shuffle:bool=False, y_offset:int=0):
+                 shuffle:bool=False, y_offset:int=0, **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
         self.bs *= num_distrib() or 1
         self.totalToks,self.ite_len,self.idx = int(0),None,None
@@ -274,6 +213,76 @@ class MusicPreloader(Callback):
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
 
+    
+class OpenNPFileProcessor(PreProcessor):
+    "`PreProcessor` that opens the filenames and read the texts."
+    def process_one(self,item):
+        return np.load(item, allow_pickle=True) if isinstance(item, Path) else item
+    
+class MusicDataBunch(DataBunch):
+    "Create a `TextDataBunch` suitable for training a language model."
+    @classmethod
+    def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
+               num_workers:int=0, device:torch.device=None, collate_fn:Callable=data_collate, 
+               dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70, backwards:bool=False, y_offset:int=0,
+               preloader_cls=MusicPreloader, **kwargs) -> DataBunch:
+        "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
+        datasets = cls._init_ds(train_ds, valid_ds, test_ds)
+        val_bs = ifnone(val_bs, bs)
+        datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards, y_offset=y_offset) 
+                    for i,ds in enumerate(datasets)]
+        val_bs = bs
+        print('DLTFMS:', dl_tfms)
+        dls = [DataLoader(d, b, shuffle=False) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]
+        return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
+    
+    @classmethod    
+    def from_ids(cls, path:PathOrStr, train_ids:Collection[Collection[int]], valid_ids:Collection[Collection[int]],
+                 test_ids:Collection[Collection[int]]=None, train_lbls:Collection[Union[int,float]]=None,
+                 valid_lbls:Collection[Union[int,float]]=None, classes:Collection[Any]=None,
+                 processor:PreProcessor=None,
+                 train_tfms=None, valid_tfms=None,
+                 **kwargs) -> DataBunch:
+        "Create a `TextDataBunch` from ids, labels and a `vocab`. `kwargs` are passed to the dataloader creation."
+        src = ItemLists(path, MusicItemList(train_ids, path=path, processor=[], tfms=train_tfms),
+                        MusicItemList(valid_ids, path=path, processor=[], tfms=valid_tfms))
+        src = src.label_const(label_cls=LMLabelList)
+        if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
+        return src.databunch(**kwargs)
+    
+    def save(self, cache_name:PathOrStr='tmp'):
+        "Save the `DataBunch` in `self.path/cache_name` folder."
+        os.makedirs(self.path/cache_name, exist_ok=True)
+        cache_path = self.path/cache_name
+        np.save(cache_path/f'train_ids.npy', self.train_ds.x.items)
+        np.save(cache_path/f'train_lbl.npy', self.train_ds.y.items)
+        np.save(cache_path/f'valid_ids.npy', self.valid_ds.x.items)
+        np.save(cache_path/f'valid_lbl.npy', self.valid_ds.y.items)
+        if self.test_dl is not None: np.save(cache_path/f'test_ids.npy', self.test_ds.x.items)
+        if hasattr(self.train_ds, 'classes'): save_texts(cache_path/'classes.txt', self.train_ds.classes)
+
+    @classmethod
+    def load(cls, path:PathOrStr, cache_name:PathOrStr='tmp', processor:PreProcessor=None, **kwargs):
+        "Load a `TextDataBunch` from `path/cache_name`. `kwargs` are passed to the dataloader creation."
+        cache_path = Path(path)/cache_name
+        train_ids,train_lbls = np.load(cache_path/f'train_ids.npy', allow_pickle=True), np.load(cache_path/f'train_lbl.npy', allow_pickle=True)
+        valid_ids,valid_lbls = np.load(cache_path/f'valid_ids.npy', allow_pickle=True), np.load(cache_path/f'valid_lbl.npy', allow_pickle=True)
+        test_ids = np.load(cache_path/f'test_ids.npy', allow_pickle=True) if os.path.isfile(cache_path/f'test_ids.npy') else None
+        classes = loadtxt_str(cache_path/'classes.txt') if os.path.isfile(cache_path/'classes.txt') else None
+        return cls.from_ids(path, train_ids, valid_ids, test_ids, train_lbls, valid_lbls, classes, processor, **kwargs)
+
+class MusicItemList(ItemList):
+    _bunch = MusicDataBunch
+    
+    def __init__(self, *args, tfms=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tfms = tfms or []
+        
+    def get(self, i)->Any:
+        item = self.items[i]
+        if self.tfms is None: return item
+        for tfm in self.tfms: item = tfm(item)
+        return item
 
 # Seq2Seq
 
