@@ -4,31 +4,31 @@ from numbers import Integral
 from src.encode_data import npenc2seq
 
 from fastai.basics import *
+from fastai.text.data import LMLabelList
 
 # Additional encoding
 
-BOS = 'bos'
-PAD = 'pad'
-EOS = 'eos'
-CLS = 'cls'
-MASK = 'mask'
-CSEQ = 'cseq'
-MSEQ = 'mseq'
-FSEQ = 'fseq'
+BOS = 'xxbos'
+PAD = 'xxpad'
+EOS = 'xxeos'
+CLS = 'xxcls'
+MASK = 'xxmask'
+CSEQ = 'xxcseq'
+MSEQ = 'xxmseq'
+FSEQ = 'xxfseq'
 
-SPECIAL_TOKS = [BOS, PAD, EOS, CLS, MASK, CSEQ, MSEQ, FSEQ]
+SEP = 'xxsep' # separator idx = -1 (part of notes)
+
+SPECIAL_TOKS = [BOS, PAD, EOS, CLS, MASK, CSEQ, MSEQ, FSEQ, SEP] # Important: SEP token must be last
 
 
-SEP = 'sep'
-NOTE_OFF = SEP
-DUR_OFF = 'd0'
 NOTE_RANGE = 130
-DURATION_RANGE = 130
-NOTE_END = f'n{NOTE_RANGE-1}'
-DUR_END = f'd{DURATION_RANGE-1}'
+DUR_RANGE = 130
 
 NOTE_TOKS = [f'n{i}' for i in range(NOTE_RANGE)] 
-DUR_TOKS = [f'd{i}' for i in range(DURATION_RANGE)]
+DUR_TOKS = [f'd{i}' for i in range(DUR_RANGE)]
+NOTE_START, NOTE_END = NOTE_TOKS[0], NOTE_TOKS[-1]
+DUR_START, DUR_END = DUR_TOKS[0], DUR_TOKS[-1]
 
 MTEMPO_OFF = 'mt0'
 MTEMPO_TOKS = [f'mt{i}' for i in range(5)]
@@ -36,22 +36,30 @@ MTEMPO_TOKS = [f'mt{i}' for i in range(5)]
 # single stream instead of note,dur
 def to_single_stream(t, vocab, start_seq=None):
     t = t.copy()
-    t[:, 0] = t[:, 0] + vocab.stoi[NOTE_OFF]
-    t[:, 1] = t[:, 1] + vocab.stoi[DUR_OFF]
+    t[:, 0] = t[:, 0] + vocab.note_range[0]
+    t[:, 1] = t[:, 1] + vocab.dur_range[0]
     stream = t.reshape(-1)
     if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
     return  np.concatenate([start_seq, t.reshape(-1)])
 
 def to_double_stream(t, vocab):
     t = t.copy().reshape(-1, 2)
-    t[:, 0] = t[:, 0] - vocab.stoi[NOTE_OFF]
-    t[:, 1] = t[:, 1] - vocab.stoi[DUR_OFF]
+    t[:, 0] = t[:, 0] - vocab.note_range[0]
+    t[:, 1] = t[:, 1] - vocab.dur_range[0]
     return t
 
 def rand_transpose(t, note_range, rand_range=(0,24), p=0.5):
     if np.random.rand() < p:
         t = t.copy()
         t[(t >= note_range[0]) & (t < note_range[1])] += np.random.randint(*rand_range)-rand_range[1]//2
+    return t
+
+def rand_transpose_double(t, rand_range=(0,24), p=0.5):
+    "For transposing double column encoded midi"
+    if np.random.rand() < p:
+        t = t.copy()
+        notes = t[...,0]
+        notes[notes > VALTSEP] += np.random.randint(*rand_range)-rand_range[1]//2
     return t
 
 class MusicVocab():
@@ -61,14 +69,29 @@ class MusicVocab():
 #         self.stoi = collections.defaultdict(int,{v:k for k,v in enumerate(self.itos)})
         self.stoi = {v:k for k,v in enumerate(self.itos)}
 
-    def numericalize(self, t:Collection[str]) -> List[int]:
-        "Convert a list of tokens `t` to their ids."
-        return [self.stoi[w] for w in t]
+#     def numericalize(self, t:Collection[str]) -> List[int]:
+#         "Convert a list of tokens `t` to their ids."
+#         return [self.stoi[w] for w in t]
 
-    def textify(self, nums:Collection[int], sep=' ') -> List[str]:
-        "Convert a list of `nums` to their tokens."
-        return sep.join([self.itos[i] for i in nums]) if sep is not None else [self.itos[i] for i in nums]
-
+#     def textify(self, nums:Collection[int], sep=' ') -> List[str]:
+#         "Convert a list of `nums` to their tokens."
+#         return sep.join([self.itos[i] for i in nums]) if sep is not None else [self.itos[i] for i in nums]
+    @property 
+    def mask_idx(self): return self.stoi[MASK]
+    @property 
+    def pad_idx(self): return self.stoi[PAD]
+    @property
+    def bos_idx(self): return self.stoi[BOS]
+    @property
+    def sep_idx(self): return self.stoi[SEP]
+    @property
+    def npenc_range(self): return (vocab.stoi[SEP], vocab.stoi[DUR_END]+1)
+    @property
+    def note_range(self): return vocab.stoi[NOTE_START], vocab.stoi[NOTE_END]
+    @property
+    def dur_range(self): return vocab.stoi[DUR_START], vocab.stoi[DUR_END]
+    @property
+        
     def __getstate__(self):
         return {'itos':self.itos}
 
@@ -84,7 +107,7 @@ class MusicVocab():
     @classmethod
     def create(cls) -> 'Vocab':
         "Create a vocabulary from a set of `tokens`."
-        itos = SPECIAL_TOKS + [SEP] + NOTE_TOKS + DUR_TOKS + MTEMPO_TOKS
+        itos = SPECIAL_TOKS + NOTE_TOKS + DUR_TOKS + MTEMPO_TOKS
         return cls(itos)
     
     @classmethod
@@ -106,11 +129,11 @@ class MusicDataBunch(DataBunch):
     @classmethod
     def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
                num_workers:int=0, device:torch.device=None, collate_fn:Callable=data_collate, 
-               dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70, backwards:bool=False, **kwargs) -> DataBunch:
+               dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70, backwards:bool=False, y_offset:int=0, **kwargs) -> DataBunch:
         "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
         datasets = cls._init_ds(train_ds, valid_ds, test_ds)
         val_bs = ifnone(val_bs, bs)
-        datasets = [MusicPreloader(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards) 
+        datasets = [MusicPreloader(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards, y_offset=y_offset) 
                     for i,ds in enumerate(datasets)]
         val_bs = bs
         print('DLTFMS:', dl_tfms)
@@ -311,20 +334,17 @@ def next_sentence_tfm(b, max_cls=4):
     return x_new, (y_new, z)
 
 vocab = MusicVocab.create()
-MASK_IDX = vocab.stoi[MASK]
-PAD_IDX = vocab.stoi[PAD]
-WRONGWORD_RANGE = (vocab.stoi[NOTE_OFF], vocab.stoi[DUR_END]+1)
 
-def mask_tfm(b, word_range=WRONGWORD_RANGE, pad_idx=PAD_IDX, mask_idx=MASK_IDX, p=0.2, double=False, mask_last=False):
+def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, mask_idx=vocab.mask_idx, p=0.2, double=False, mask_last=False):
     # p = replacement probability
     # double = mask 2 sequences at once
     # y is ignored
 #     y = x.clone()
     x,y = b
     rand = torch.rand(x.shape)
-    rand[x < len(SPECIAL_TOKS)] = 1.0
+    rand[x < word_range[0]] = 1.0
     if mask_last: rand[-1] = 0.0
-    y[rand > p] = PAD_IDX
+    y[rand > p] = pad_idx
     x[rand <= (p*.8)] = mask_idx # 80% = mask
     wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
     x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()])

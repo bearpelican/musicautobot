@@ -17,16 +17,14 @@ import uuid
 # out_path = Path('../../data/generated/')
     
 
-def v13_config(vocab_path):
-    VOCAB_SZ = create_vocab_sizes(vocab_path)
-    
+def v14_config(vocab):
     config = tfmerXL_lm_config.copy()
     
-    config['pad_idx'] = PADDING_IDX+ENC_OFFSET
-    config['bos_idx'] = VALTBOS+ENC_OFFSET
-    config['sep_idx'] = VALTSEP+ENC_OFFSET
-    config['enc_offset'] = ENC_OFFSET
+    config['pad_idx'] = vocab.pad_idx
+    config['bos_idx'] = vocab.bos_idx
+    config['sep_idx'] = vocab.sep_idx
     config['transpose_range'] = (0,12)
+    config['note_range'] = vocab.note_range
     config['act'] = Activation.GeLU
     # config['act'] = Activation.ReLU
 
@@ -35,10 +33,8 @@ def v13_config(vocab_path):
     config['bs'] = 16
     config['bptt'] = 256
     
-    emb_size = 768
-    config['d_model'] = emb_size
-    config['vocab_size'] = sum(VOCAB_SZ)
-    config['single_stream'] = True
+    config['d_model'] = 768
+    config['vocab_size'] = len(vocab.itos)
     config['d_inner'] = 2048
     config['n_layers'] = 16
     
@@ -52,24 +48,20 @@ def v13_config(vocab_path):
 
     return config
 
-def v13s_config(vocab_path):
-    config = v13_config(vocab_path)
-    emb_size = 256
+def v14s_config(vocab):
+    config = v14_config(vocab)
     config['n_heads'] = 8
     config['d_head'] = 32
-    config['d_model'] = emb_size
+    config['d_model'] = 256
     config['d_inner'] = 2048
     return config
     
 
-def load_music_data(path, cache_name, enc_offset, pad_idx, bos_idx, transpose_range, single_stream=False, **kwargs):
-    transpose_tfm = partial(rand_transpose, enc_offset=enc_offset, rand_range=transpose_range)
-    category_tfm = partial(rand_category, pad_idx=pad_idx, bos_idx=bos_idx)
-    if single_stream:
-        data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
-                                  train_tfms=[transpose_tfm, category_tfm, to_single_stream], valid_tfms=[to_single_stream])
-    else:
-        data = LMNPDataBunch.load(path=path, cache_name=cache_name, **kwargs, train_tfms=[transpose_tfm, category_tfm])
+def load_music_data(path, cache_name, vocab, transpose_range=(0,1), **kwargs):
+    transpose_tfm = partial(rand_transpose, note_range=vocab.note_range, rand_range=transpose_range)
+    single_tfm = partial(to_single_stream, vocab=vocab)
+    data = MusicDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
+                              train_tfms=[single_tfm, transpose_tfm], valid_tfms=[single_tfm])
     return data
 
 def load_learner(data, config, load_path=None):
