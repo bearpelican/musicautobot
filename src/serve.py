@@ -7,7 +7,7 @@ from fastai.text.models.transformer import *
 import numpy as np
 
 from .fastai_data import *
-from .lmnp_transformer import *
+from .music_transformer import *
 from .encode_data import *
 
 import uuid
@@ -46,6 +46,15 @@ def v15_config(vocab):
 #     config['output_p'] = 0.15 # decoder dropout (before final linear layer)
 
 
+    return config
+
+
+def v15m_config(vocab):
+    config = v15_config(vocab)
+    config['n_heads'] = 8
+    config['d_head'] = 64
+    config['d_model'] = 512
+    config['d_inner'] = 2048
     return config
 
 def v15s_config(vocab):

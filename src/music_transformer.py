@@ -21,6 +21,11 @@ def rand_window_mask(x_len,m_len,device,max_size=3,p=0.2,is_eval=False):
     mask = torch.tensor(np_mask, device=device).byte()[None,None]; mask
     return mask
 
+
+# import inspect
+# argspec = inspect.getfullargspec(TransformerXL)
+# config_params = { k:config[k] for k in argspec.args if k in config }
+    
 def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pretrained:bool=False,
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
@@ -45,8 +50,14 @@ def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pr
         learn.freeze()
     return learn
 
-class UniLMTransformerXL(TransformerXL):
+class MusicTransformerXL(TransformerXL):
     
+    def __init__(self, vocab_sz:int, ctx_len:int, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
+                 resid_p:float=0., attn_p:float=0., ff_p:float=0., embed_p:float=0., bias:bool=False, scale:bool=True,
+                 act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MultiHeadRelativeAttention,
+                 learned_pos_enc:bool=False, mask:bool=True, mem_len:int=0, **kwargs):
+        super().__init__()
+        
     def forward(self, x):
         #The hidden state has to be initiliazed in the forward pass for nn.DataParallel
         if self.mem_len > 0 and not self.init: 
