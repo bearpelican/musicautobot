@@ -55,7 +55,7 @@ full_clip = None if args.half else 0.5
 
 opt_func = AdamW
 if args.lamb:
-    from lamb import Lamb
+    from src.lamb import Lamb
     opt_func = Lamb
     
 learn = music_model_learner(data, config, clip=full_clip, drop_mult=1.5, opt_func=opt_func)
@@ -68,7 +68,7 @@ if args.load:
 if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
-if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, loss_scale=128)
+if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, loss_scale=128, max_scale=256)
 learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
