@@ -24,6 +24,7 @@ parser.add_argument("--batch_size", type=int, default=12)
 parser.add_argument("--mem_len", type=int, default=512)
 parser.add_argument("--bptt", type=int, default=512)
 parser.add_argument('--half', action='store_true', help='Use half precision')
+parser.add_argument('--lamb', action='store_true', help='Use lamb optimizer')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
 parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
@@ -52,7 +53,12 @@ data = load_music_data(path=path, cache_name=args.cache, vocab=vocab, y_offset=1
 
 full_clip = None if args.half else 0.5
 
-learn = music_model_learner(data, config, clip=full_clip, drop_mult=1.5)
+opt_func = AdamW
+if args.lamb:
+    from lamb import Lamb
+    opt_func = Lamb
+    
+learn = music_model_learner(data, config, clip=full_clip, drop_mult=1.5, opt_func=opt_func)
 
 if args.load:
     load_path = Path(args.path)/args.load
@@ -68,7 +74,7 @@ if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'
 if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 
-learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9)
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.1, final_div=50, wd=args.wd)
+if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.15, final_div=50, wd=args.wd)
 
 if args.local_rank == 0: learn.save(f'{args.save}')
