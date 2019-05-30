@@ -52,7 +52,7 @@ data = load_music_data(path=path, cache_name=args.cache, vocab=vocab, y_offset=1
 
 full_clip = None if args.half else 0.5
 
-learn = music_model_learner(data, config, clip=full_clip)
+learn = music_model_learner(data, config, clip=full_clip, drop_mult=1.5)
 
 if args.load:
     load_path = Path(args.path)/args.load
@@ -62,13 +62,13 @@ if args.load:
 if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
-if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True)
+if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, loss_scale=128)
 learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 
 learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9)
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.1, final_div=50, wd=1e-4)
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.1, final_div=50, wd=args.wd)
 
 if args.local_rank == 0: learn.save(f'{args.save}')

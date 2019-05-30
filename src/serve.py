@@ -55,6 +55,7 @@ def v15m_config(vocab):
     config['d_head'] = 64
     config['d_model'] = 512
     config['d_inner'] = 2048
+    config['embed_p'] = 0.2
     return config
 
 def v15s_config(vocab):
