@@ -10,7 +10,7 @@ import numpy as np
 import sys
 sys.path.insert(0, '..')
 from src.fastai_data import *
-from src.lmnp_transformer import *
+from src.music_transformer import *
 from src.serve import *
 
 import argparse
