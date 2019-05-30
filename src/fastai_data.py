@@ -139,7 +139,7 @@ class MusicPreloader(Callback):
         def shuffle(self): np.random.shuffle(self.idx)
 
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
-                 shuffle:bool=False, y_offset:int=0, **kwargs):
+                 shuffle:bool=False, y_offset:int=1, **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
         self.bs *= num_distrib() or 1
         self.totalToks,self.ite_len,self.idx = int(0),None,None
@@ -224,7 +224,7 @@ class MusicDataBunch(DataBunch):
     @classmethod
     def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
                num_workers:int=0, device:torch.device=None, collate_fn:Callable=data_collate, 
-               dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70, backwards:bool=False, y_offset:int=0,
+               dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70, backwards:bool=False, y_offset:int=1,
                preloader_cls=MusicPreloader, **kwargs) -> DataBunch:
         "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
         datasets = cls._init_ds(train_ds, valid_ds, test_ds)
@@ -232,7 +232,6 @@ class MusicDataBunch(DataBunch):
         datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards, y_offset=y_offset) 
                     for i,ds in enumerate(datasets)]
         val_bs = bs
-        print('DLTFMS:', dl_tfms)
         dls = [DataLoader(d, b, shuffle=False) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     

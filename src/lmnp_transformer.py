@@ -120,6 +120,7 @@ class MusicLearner(LanguageLearner):
         self.model.reset()
         self.model.mask = False
         if xb.shape[0] > 1: xb = xb[0][None]
+        seed = xb.cpu().numpy().squeeze()
         yb = torch.ones_like(xb)
         new_idx = []
 
@@ -157,4 +158,4 @@ class MusicLearner(LanguageLearner):
 
             new_idx.append(idx)
             xb = xb.new_tensor([idx])[None]
-        return np.array(new_idx)
+        return np.array(new_idx), seed
