@@ -99,7 +99,6 @@ class MusicVocab():
     def note_range(self): return vocab.stoi[NOTE_START], vocab.stoi[NOTE_END]
     @property
     def dur_range(self): return vocab.stoi[DUR_START], vocab.stoi[DUR_END]
-    @property
         
     def __getstate__(self):
         return {'itos':self.itos}

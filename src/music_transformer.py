@@ -25,11 +25,11 @@ def rand_window_mask(x_len,m_len,device,max_size=3,p=0.2,is_eval=False):
 # import inspect
 # argspec = inspect.getfullargspec(TransformerXL)
 # config_params = { k:config[k] for k in argspec.args if k in config }
-    
 def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pretrained:bool=False,
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
-    model = get_language_model(TransformerXL, config['vocab_size'], config=config, drop_mult=drop_mult)
+    _model_meta[MusicTransformerXL] = _model_meta[TransformerXL]
+    model = get_language_model(MusicTransformerXL, config['vocab_size'], config=config, drop_mult=drop_mult)
     
     meta = _model_meta[TransformerXL]
     learn = MusicLearner(data, model, split_func=meta['split_lm'], 
@@ -52,11 +52,8 @@ def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pr
 
 class MusicTransformerXL(TransformerXL):
     
-    def __init__(self, vocab_sz:int, ctx_len:int, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
-                 resid_p:float=0., attn_p:float=0., ff_p:float=0., embed_p:float=0., bias:bool=False, scale:bool=True,
-                 act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MultiHeadRelativeAttention,
-                 learned_pos_enc:bool=False, mask:bool=True, mem_len:int=0, **kwargs):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         
     def forward(self, x):
         #The hidden state has to be initiliazed in the forward pass for nn.DataParallel
@@ -68,8 +65,9 @@ class MusicTransformerXL(TransformerXL):
         m_len = self.hidden[0].size(1) if hasattr(self, 'hidden') and len(self.hidden[0].size()) > 1 else 0
         seq_len = m_len + x_len
         
-        mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=m_len).byte()[None,None] if self.mask else None
-        if m_len == 0: self.mask[...,0,0] = 0
+        # mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=m_len).byte()[None,None] if self.mask else None
+        mask = rand_window_mask(x_len, m_len, inp.device) if self.mask else None
+        if m_len == 0: mask[...,0,0] = 0
         #[None,:,:None] for einsum implementation of attention
         hids = []
         pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=inp.dtype)
