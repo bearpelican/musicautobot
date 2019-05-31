@@ -68,7 +68,7 @@ if args.load:
 if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
-if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, loss_scale=128, max_scale=256)
+if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True)
 learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
