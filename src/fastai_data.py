@@ -31,15 +31,15 @@ NOTE_START, NOTE_END = NOTE_TOKS[0], NOTE_TOKS[-1]
 DUR_START, DUR_END = DUR_TOKS[0], DUR_TOKS[-1]
 
 MTEMPO_OFF = 'mt0'
-MTEMPO_TOKS = [f'mt{i}' for i in range(5)]
+MTEMPO_TOKS = [f'mt{i}' for i in range(20)]
 
 # single stream instead of note,dur
 def to_single_stream(t, vocab, start_seq=None):
     if isinstance(t, (list, tuple)) and len(t) == 2: 
         return [to_single_stream(x, vocab, start_seq) for x in t]
-    t = t.copy()
-    t[:, 0] = t[:, 0] + vocab.note_range[0]
-    t[:, 1] = t[:, 1] + vocab.dur_range[0]
+    t = t.copy()[1:]
+    t[:, 0] = t[:, 0] + vocab.note_range[0] - 3
+    t[:, 1] = t[:, 1] + vocab.dur_range[0] - 3
     stream = t.reshape(-1)
     if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
     return np.concatenate([start_seq, t.reshape(-1)])
