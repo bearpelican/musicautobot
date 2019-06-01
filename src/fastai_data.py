@@ -40,7 +40,6 @@ def to_single_stream(t, vocab, start_seq=None):
     t = t.copy()
     t[:, 0] = t[:, 0] + vocab.note_range[0]
     t[:, 1] = t[:, 1] + vocab.dur_range[0]
-    stream = t.reshape(-1)
     if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
     return np.concatenate([start_seq, t.reshape(-1)])
 
