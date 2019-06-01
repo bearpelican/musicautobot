@@ -28,7 +28,7 @@ class Lamb(Optimizer):
         https://arxiv.org/abs/1904.00962
     """
 
-    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6,
+    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-4,
                  weight_decay=0, adam=False):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
