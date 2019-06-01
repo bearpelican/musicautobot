@@ -37,12 +37,16 @@ MTEMPO_TOKS = [f'mt{i}' for i in range(20)]
 def to_single_stream(t, vocab, start_seq=None):
     if isinstance(t, (list, tuple)) and len(t) == 2: 
         return [to_single_stream(x, vocab, start_seq) for x in t]
+#    if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[MTEMPO_OFF]+t[0,1]-132])
+    if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
+
     t = t.copy()[1:]
     t[:, 0] = t[:, 0] + vocab.note_range[0] - 3
     t[:, 1] = t[:, 1] + vocab.dur_range[0] - 3
     stream = t.reshape(-1)
-    if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
-    return np.concatenate([start_seq, t.reshape(-1)])
+    
+#    print(start_seq)
+    return np.concatenate([start_seq, stream])
 
 def to_double_stream(t, vocab):
     t = t.copy().reshape(-1, 2)

@@ -65,9 +65,9 @@ class MusicTransformerXL(TransformerXL):
         m_len = self.hidden[0].size(1) if hasattr(self, 'hidden') and len(self.hidden[0].size()) > 1 else 0
         seq_len = m_len + x_len
         
-        # mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=m_len).byte()[None,None] if self.mask else None
-        mask = rand_window_mask(x_len, m_len, inp.device) if self.mask else None
-        if m_len == 0: mask[...,0,0] = 0
+        mask = torch.triu(x.new_ones(x_len, seq_len), diagonal=1+m_len).byte()[None,None] if self.mask else None
+        #mask = rand_window_mask(x_len, m_len, inp.device) if self.mask else None
+        #if m_len == 0: mask[...,0,0] = 0
         #[None,:,:None] for einsum implementation of attention
         hids = []
         pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=inp.dtype)
