@@ -95,6 +95,7 @@ class S2SPreloader(Callback):
         x = self.single_tfm(x, start_seq=melody_meta)
         y = self.single_tfm(y, start_seq=chord_meta)
         
+        if random.randint(0,1) == 1: x,y = y,x # switch translation order around
         x,y = self.transpose_tfm((x,y))
         
         x = np.pad(x, (0,max(0,self.bptt-len(x))), 'constant', constant_values=vocab.pad_idx)[:self.bptt]
