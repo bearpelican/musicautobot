@@ -32,6 +32,7 @@ parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--div_factor', type=int, default=10, help='learning rate div factor')
 parser.add_argument('--save_every', action='store_true', help='Save every epoch')
 parser.add_argument('--config', type=str, help='serve.py config name')
+parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
 
 args = parser.parse_args()
 
@@ -50,6 +51,7 @@ config = getattr(serve, args.config)(vocab)
 
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size
+if args.no_transpose: config['transpose_range'] = (0, 1)
 data = load_music_data(path=path, cache_name=args.cache, vocab=vocab, y_offset=1, **config)
 
 full_clip = None if args.half else 0.5
