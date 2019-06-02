@@ -114,7 +114,7 @@ def mask_s2s_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx,
 # Next Word transform
 def nw_tfm(b):
     x,y_nw = b
-    x_mask,y_mask = mask_tfm((x,x.clone(), mask_last=True))
+    x_mask,y_mask = mask_tfm((x,x.clone()), mask_last=True)
     return (x_mask,torch.tensor([TaskType.NextWord.value]),x),(y_mask,y_nw) 
     
     
@@ -131,13 +131,13 @@ class BertTrainer(LearnerCallback):
     
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
-        if self.count % 3 == 2:
+        if self.count % 3 == 0:
             print('Switching to next sentence data')
             self.learn.data = self.ns_data
         elif self.count % 3 == 1:
             print('Switching to translate data')
             self.learn.data = self.s2s_data
-        elif self.count % 3 == 0:
+        elif self.count % 3 == 2:
             print('Switching to next word data')
             self.learn.data = self.nw_data
         self.count += 1

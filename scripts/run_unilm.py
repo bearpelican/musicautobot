@@ -77,7 +77,7 @@ if args.lamb:
     opt_func = partial(Lamb, eps=1e-4)
     
 # Load Learner
-learn = bert_model_learner(nw_data, config.copy(), 
+learn = bert_model_learner(s2s_data, config.copy(), 
                            loss_func=BertLoss(),
                            clip=full_clip, drop_mult=1.5, opt_func=opt_func)
 
@@ -98,7 +98,7 @@ if args.save:
 if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, max_scale=2**18)
 learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 # if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
-    
+
 if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.15, final_div=50, wd=args.wd)
 
