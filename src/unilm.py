@@ -17,7 +17,8 @@ def next_sentence_ranges(x, y, max_cls=4):
     
     min_seq_len = bptt // s
 
-    bs_shift = [0]+(np.random.choice(bs-1, s, replace=False)+1).tolist()
+#    bs_shift = [0]+(np.random.choice(bs-1, s, replace=False)+1).tolist()
+    bs_shift = [0]+(np.random.choice(bs-1, s, replace=False)+1).tolist()    
     row_shift = [int(min_seq_len + random.randint(-min_seq_len, min_seq_len)//s) for i in range(s)]
     
     accum = 0
@@ -157,7 +158,7 @@ def get_bert_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
     embed = TransformerEmbedding(vocab_sz, n_hid, inp_p=config['embed_p'])
     encoder = BertEncoder(embed=embed, **config)
     mask_decoder = BertLinearDecoder(n_hid, vocab_sz, output_p, tie_encoder=embed.embed, bias=out_bias)
-    ns_decoder = BertLinearDecoder(n_hid, 4, output_p, tie_encoder=None, bias=out_bias)
+    ns_decoder = BertLinearDecoder(n_hid, 16, output_p, tie_encoder=None, bias=out_bias) # hardcoded max number of next sentence shifts
     s2s_decoder = S2SDecoder(embed, n_hid, vocab_sz, **config)
     model = BertHead(encoder, mask_decoder, ns_decoder, s2s_decoder)
     return model.apply(init_transformer)

@@ -32,6 +32,7 @@ parser.add_argument('--div_factor', type=int, default=10, help='learning rate di
 parser.add_argument('--save_every', action='store_true', help='Save every epoch')
 parser.add_argument('--config', type=str, default='unilm_config', help='serve.py config name')
 parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
+parser.add_argument("--ns_max_cls", type=int, default=4)
 
 args = parser.parse_args()
 args.path = Path(args.path)
@@ -51,14 +52,14 @@ config = getattr(serve, args.config)(vocab)
 
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size
+config['max_cls'] = args.ns_max_cls
 
 if args.no_transpose: config['transpose_range'] = (0, 1)
 
 # Next Sentence Data
-ns_dl_tfms = [mask_tfm, next_sentence_tfm]
-ns_config = config.copy()
+ns_dl_tfms = [mask_tfm, partial(next_sentence_tfm, max_cls=config['max_cls'])]
 ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
-                          y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
+                          y_offset=0, dl_tfms=ns_dl_tfms, **config)
 
 s2s_dl_tfms = [mask_s2s_tfm]
 s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
@@ -77,7 +78,7 @@ if args.lamb:
     opt_func = partial(Lamb, eps=1e-4)
     
 # Load Learner
-learn = bert_model_learner(s2s_data, config.copy(), 
+learn = bert_model_learner(nw_data, config.copy(), 
                            loss_func=BertLoss(),
                            clip=full_clip, drop_mult=1.5, opt_func=opt_func)
 
