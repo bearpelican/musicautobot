@@ -9,18 +9,23 @@ from fastai.text.models.transformer import init_transformer
 from fastai.text.learner import language_model_learner, get_language_model, _model_meta
 from fastai.callbacks.tracker import *
 
-def rand_window_mask(x_len,m_len,device,max_size=3,p=0.2,is_eval=False):
-    if is_eval or m_len == 0 or np.random.rand() >= p: 
-        win_size,k = (1,1)
-    else: win_size,k = (np.random.randint(0,max_size)+1,0)
-        
+def window_mask(x_len, device, m_len=0, size=(1,1)):
+    win_size,k = size
     mem_mask = np.zeros((x_len,m_len))
     tri_mask = np.triu(np.ones((x_len//win_size+1,x_len//win_size+1)),k=k)
     window_mask = tri_mask.repeat(win_size,axis=0).repeat(win_size,axis=1)[:x_len,:x_len]
     np_mask = np.concatenate((mem_mask, window_mask), axis=1)
-    mask = torch.tensor(np_mask, device=device).byte()[None,None]; mask
+    mask = torch.tensor(np_mask, device=device).byte()[None,None]
     return mask
+    
+def rand_window_mask(x_len,m_len,device,max_size=3,p=0.2,is_eval=False):
+    if is_eval or m_len == 0 or np.random.rand() >= p: 
+        win_size,k = (1,1)
+    else: win_size,k = (np.random.randint(0,max_size)+1,0)
+    return window_mask(x_len, device, m_len, size=(win_size,k))
 
+def lm_mask(x_len, device):
+    return torch.triu(torch.ones((x_len, x_len), device=device), diagonal=1)[None,None].byte()
 
 # import inspect
 # argspec = inspect.getfullargspec(TransformerXL)
@@ -51,7 +56,6 @@ def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pr
     return learn
 
 class MusicTransformerXL(TransformerXL):
-    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         

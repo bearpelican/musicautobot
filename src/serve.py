@@ -33,12 +33,12 @@ def v15_config(vocab):
     config['bs'] = 16
     config['bptt'] = 256
     
-    config['d_model'] = 768
+    config['d_model'] = 512
     config['vocab_size'] = len(vocab.itos)
     config['d_inner'] = 2048
     config['n_layers'] = 16
     
-    config['n_heads'] = 12
+    config['n_heads'] = 8
     config['d_head'] = 64
 
 #     config['embed_p'] = 0.3
@@ -51,19 +51,19 @@ def v15_config(vocab):
 
 def v15m_config(vocab):
     config = v15_config(vocab)
-    config['n_heads'] = 8
-    config['d_head'] = 64
-    config['d_model'] = 512
-    config['d_inner'] = 2048
     config['embed_p'] = 0.2
     return config
 
 def v15s_config(vocab):
     config = v15_config(vocab)
-    config['n_heads'] = 8
     config['d_head'] = 32
     config['d_model'] = 256
-    config['d_inner'] = 2048
+    return config
+    
+def unilm_config(vocab):
+    config = v15_config(vocab)
+    config['n_layers'] = 10
+    config['dec_layers'] = 6
     return config
     
 

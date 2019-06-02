@@ -123,6 +123,7 @@ class MusicVocab():
         itos = pickle.load(open(path, 'rb'))
         return cls(itos)
 
+vocab = MusicVocab.create()
 
 ## For npenc dataset
 class MusicPreloader(Callback):
@@ -223,14 +224,14 @@ class MusicDataBunch(DataBunch):
     def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
                num_workers:int=0, device:torch.device=None, collate_fn:Callable=data_collate, 
                dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70, backwards:bool=False, y_offset:int=1,
-               preloader_cls=MusicPreloader, **kwargs) -> DataBunch:
+               preloader_cls=MusicPreloader, shuffle_dl=False, **kwargs) -> DataBunch:
         "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
         datasets = cls._init_ds(train_ds, valid_ds, test_ds)
         val_bs = ifnone(val_bs, bs)
         datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards, y_offset=y_offset) 
                     for i,ds in enumerate(datasets)]
         val_bs = bs
-        dls = [DataLoader(d, b, shuffle=False) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]
+        dls = [DataLoader(d, b, shuffle=shuffle_dl) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     
     @classmethod    
@@ -280,78 +281,3 @@ class MusicItemList(ItemList):
         if self.tfms is None: return item
         for tfm in self.tfms: item = tfm(item)
         return item
-
-# Seq2Seq
-
-def avg_tempo(t, sep_idx=0):
-    avg = t[t[:, 0] == sep_idx][:, 1].sum()/t.shape[0]
-    return 'mt'+str(int(max(round(avg), 4)))
-
-class Seq2SeqProcessor(PreProcessor):
-    def __init__(self, vocab=None, ds:Collection=None):  
-        self.vocab = vocab
-        super().__init__(ds)
-        
-    "`PreProcessor` that opens the filenames and read the texts."
-    def process_one(self,item):
-        left, right = [np.load(i, allow_pickle=True) for i in item]
-        start_seq = np.array([self.vocab.stoi[BOS], self.vocab.stoi[PAD]])
-        
-        chord_meta = np.array([self.vocab.stoi[CSEQ], self.vocab.stoi[avg_tempo(left)]])
-        chord_seq = to_single_stream(left, self.vocab, start_seq=chord_meta)
-        melody_meta = np.array([self.vocab.stoi[MSEQ], self.vocab.stoi[avg_tempo(right)]]) # pad should be average notes - tempo
-        melody_seq = to_single_stream(right, self.vocab, start_seq=melody_meta)
-        
-        
-        cat_sequence = np.concatenate([start_seq, chord_seq, melody_seq, np.array([-100]*100)])
-            
-        return cat_sequence
-
-# BERT Transform
-
-def next_sentence_ranges(x, y, max_cls=4):
-    bs,bptt = x.shape
-    s = min(random.randint(1, max_cls), bs-2)
-    
-    min_seq_len = bptt // s
-
-    bs_shift = [0]+(np.random.choice(bs-1, s, replace=False)+1).tolist()
-    row_shift = [int(min_seq_len + random.randint(-min_seq_len, min_seq_len)//s) for i in range(s)]
-    
-    accum = 0
-    ranges = []
-    for i in range(s):
-        end = accum + row_shift[i] if i < (s-1) else bptt
-        ranges.append((i, bs_shift[i], accum, end))
-        accum = end
-    return ranges
-
-def next_sentence_tfm(b, max_cls=4):
-    x, y = b
-    x_new = x.clone()
-    y_new = y.clone()
-    z = torch.zeros_like(x)
-    ranges = next_sentence_ranges(x, y, max_cls)
-    for i,shift,s,e in ranges:
-        if i == 0: continue
-        x_new[:, s:e] = torch.roll(x, shifts=shift, dims=0)[:, s:e]
-        y_new[:, s:e] = torch.roll(y, shifts=shift, dims=0)[:, s:e]
-        z[:, s:e] = i
-    return x_new, (y_new, z)
-
-vocab = MusicVocab.create()
-
-def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, mask_idx=vocab.mask_idx, p=0.2, double=False, mask_last=False):
-    # p = replacement probability
-    # double = mask 2 sequences at once
-    # y is ignored
-#     y = x.clone()
-    x,y = b
-    rand = torch.rand(x.shape, device=x.device)
-    rand[x < word_range[0]] = 1.0
-    if mask_last: rand[-1] = 0.0
-    y[rand > p] = pad_idx
-    x[rand <= (p*.8)] = mask_idx # 80% = mask
-    wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
-    x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()], device=x.device)
-    return x, y
