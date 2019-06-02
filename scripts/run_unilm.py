@@ -77,17 +77,13 @@ if args.lamb:
     from src.lamb import Lamb
     opt_func = partial(Lamb, eps=1e-4)
     
-# Load Loss/Metrics
-metrics = [mask_acc, ns_acc, s2s_acc, nw_acc]
-loss_func = BertLoss(CrossEntropyFlat(ignore_index=vocab.pad_idx), 
-                           CrossEntropyFlat(), 
-                           CrossEntropyFlat(ignore_index=vocab.pad_idx))
 # Load Learner
-learn = bert_model_learner(s2s_data, config.copy(), 
-                           loss_func=loss_func, metrics=metrics,
+learn = bert_model_learner(nw_data, config.copy(), 
+                           loss_func=BertLoss(),
                            clip=full_clip, drop_mult=1.5, opt_func=opt_func)
 
 # Load custom data trainer - overwrite RNNTrainer
+learn.metrics = [mask_acc, ns_acc, s2s_acc, nw_acc]
 learn.callbacks = [BertTrainer(learn, ns_data, s2s_data, nw_data)]
 
 if args.load:
@@ -96,14 +92,14 @@ if args.load:
     get_model(learn.model).load_state_dict(state['model'], strict=False)
     learn.model.cuda()
 if args.save:
-    save_path = Path(args.path)/learn.model_dir/args.save
+    save_path = Path(args.path)/'s2s_encode'/learn.model_dir/args.save
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    save_path = Path(args.path)/'piano_duet'/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
 if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, max_scale=2**18)
 learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
-if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
-if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
-# learn.callbacks.append(EarlyStoppingCallback(learn))
-
+# if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
+    
 if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.15, final_div=50, wd=args.wd)
 

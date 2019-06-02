@@ -39,7 +39,7 @@ def next_sentence_tfm(b, max_cls=4):
         x_new[:, s:e] = torch.roll(x, shifts=shift, dims=0)[:, s:e]
         y_new[:, s:e] = torch.roll(y, shifts=shift, dims=0)[:, s:e]
         z[:, s:e] = i
-    return (x_new, torch.tensor(TaskType.NextSent.value)), (y_new, z)
+    return (x_new, torch.tensor([TaskType.NextSent.value])), (y_new, z)
 
 def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, mask_idx=vocab.mask_idx, p=0.2, double=False, mask_last=False):
     # p = replacement probability
@@ -111,13 +111,13 @@ def mask_s2s_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx,
              mask_idx=vocab.mask_idx, p=0.1, double=False, mask_last=False):
     x,y_s2s = b
     x_mask,y_mask = mask_tfm((x,x.clone()))
-    return (x,torch.tensor(TaskType.Translate.value),y_s2s[:,:-1]),(y_mask,y_s2s[:,1:])
+    return (x,torch.tensor([TaskType.Translate.value]),y_s2s[:,:-1]),(y_mask,y_s2s[:,1:])
 
 # Next Word transform
 def nw_tfm(b):
     x,y_nw = b
     x_mask,y_mask = mask_tfm((x,x.clone()))
-    return (x_mask,torch.tensor(TaskType.NextWord.value),x),(y_mask,y_nw) 
+    return (x_mask,torch.tensor([TaskType.NextWord.value]),x),(y_mask,y_nw) 
     
     
 # DataLoading
@@ -133,13 +133,13 @@ class BertTrainer(LearnerCallback):
     
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
-        if self.count % 3 == 0:
+        if self.count % 3 == 2:
             print('Switching to next sentence data')
             self.learn.data = self.ns_data
         elif self.count % 3 == 1:
             print('Switching to translate data')
             self.learn.data = self.s2s_data
-        else:
+        elif self.count % 3 == 0:
             print('Switching to next word data')
             self.learn.data = self.nw_data
         self.count += 1
@@ -196,14 +196,15 @@ class BertHead(nn.Module):
         
     def forward(self, x, task_type=None, y=None):
 #         x_emb = self.embed(x)
-        self.encoder.mask = task_type == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
+        task_value = task_type.item() if task_type is not None else task_type
+        self.encoder.mask = task_value == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
         x_enc = self.encoder(x)
         
-        if task_type == TaskType.NextSent.value: # mask, and next sentence task
+        if task_value == TaskType.NextSent.value: # mask, and next sentence task
             return self.mask_decoder(x_enc), task_type, self.ns_decoder(x_enc)
-        if task_type == TaskType.Translate.value:
+        if task_value == TaskType.Translate.value:
             return self.mask_decoder(x_enc), task_type, self.s2s_decoder(x_enc, y)
-        if task_type == TaskType.NextWord.value: # use same translation decoder
+        if task_value == TaskType.NextWord.value: # use same translation decoder
             return self.mask_decoder(x_enc), task_type, self.s2s_decoder(x_enc, y)
         return self.mask_decoder(x_enc), task_type
     
@@ -373,18 +374,19 @@ class KVMultiHeadRelativeAttention(nn.Module):
 # LOSS AND METRICS
 
 class BertLoss():
-    def __init__(self, mask_loss, sent_loss, s2s_loss):
-        self.mask_loss = mask_loss
-        self.sent_loss = sent_loss
-        self.s2s_loss = s2s_loss
+    def __init__(self):
+        self.index_loss = CrossEntropyFlat(ignore_index=vocab.pad_idx)
+        self.class_loss = CrossEntropyFlat()
         
     def __call__(self, input:Tensor, target:Tensor, target_2:Tensor, **kwargs)->Rank0Tensor:
         x_mask, task_type, x_task = input
-        m = self.mask_loss.__call__(x_mask, target, **kwargs)
+        if task_type is not None: task_type = task_type.item()
+        m = self.index_loss.__call__(x_mask, target, **kwargs)
         
-        if task_type == TaskType.NextSent.value: s = self.sent_loss.__call__(x_task, target_2, **kwargs)
-        elif task_type == TaskType.Translate.value: s = self.s2s_loss.__call__(x_task, target_2, **kwargs)
-        else: s = 0
+        if task_type == TaskType.NextSent.value: s = self.class_loss.__call__(x_task, target_2, **kwargs)
+        elif task_type == TaskType.Translate.value: s = self.index_loss.__call__(x_task, target_2, **kwargs)
+        elif task_type == TaskType.NextWord.value: s = self.index_loss.__call__(x_task, target_2, **kwargs)
+        else: return m
 
         return m + s
     
@@ -400,15 +402,15 @@ def mask_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
 
 def s2s_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
-    if task_type != TaskType.Translate.value: return torch.tensor(0)
+    if task_type.item() != TaskType.Translate.value: return torch.tensor(0, device=x_mask.device)
     return acc_ignore_pad(x_task, t2, vocab.pad_idx)
 
 def nw_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
-    if task_type != TaskType.NextWord.value: return torch.tensor(0)
+    if task_type.item() != TaskType.NextWord.value: return torch.tensor(0, device=x_mask.device)
     return acc_ignore_pad(x_task, t2, vocab.pad_idx)
 
 def ns_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
-    if task_type != TaskType.NextSent.value: return torch.tensor(0)
+    if task_type.item() != TaskType.NextSent.value: return torch.tensor(0, device=x_mask.device)
     return accuracy(input[-1], t2)
