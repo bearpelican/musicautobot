@@ -108,43 +108,36 @@ def midi2seq(midi_file):
     return chordarr2seq(s_arr) # 3.
 
 # 2.
-def stream2chordarr(s, note_range=128, sample_freq=4, max_dur=None, flat=True):
+def stream2chordarr(s, note_range=128, sample_freq=4, max_dur=None):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
     # FYI: midi middle C value=60
     
     # (AS) TODO: need to order by instruments most played and filter out percussion or include the channel
-    inst2idx = defaultdict(int, {inst.id:idx for idx,inst in enumerate(s.flat.getInstruments())})
-    
     maxTimeStep = int(s.flat.highestTime * sample_freq)+1
-    score_arr = np.zeros((maxTimeStep, len(inst2idx), note_range))
+    score_arr = np.zeros((maxTimeStep, len(s.parts), note_range))
 
-    notes=[]
-    noteFilter=music21.stream.filters.ClassFilter('Note')
-    chordFilter=music21.stream.filters.ClassFilter('Chord')
-    
-    if flat: s = s.flat.stripTies() # required when stream contains measures.
     def note_data(pitch, note):
-        inst_id = note.activeSite.getInstrument().id
-        iidx = inst2idx[inst_id]
-        return (pitch.midi, round(note.offset*sample_freq), round(note.duration.quarterLength*sample_freq), iidx)
+        return (pitch.midi, round(note.offset*sample_freq), round(note.duration.quarterLength*sample_freq))
 
-    for n in s.recurse().addFilter(noteFilter):
-        notes.append(note_data(n.pitch, n))
-        
-    for c in s.recurse().addFilter(chordFilter):
-        pitchesInChord=c.pitches
-        for p in pitchesInChord:
-            notes.append(note_data(p, c))
-    # sort notes by offset (1), duration (2) so that hits are not overwritten and longer notes have priority
-    notes_sorted = sorted(notes, key=lambda x: (x[1], x[2])) 
-    for n in notes_sorted:
-        if n is None: continue
-        pitch,offset,duration,inst = n
-        if max_dur is not None and duration > max_dur: duration = max_dur
-        score_arr[offset, inst, pitch] = duration
-        score_arr[offset+1:offset+duration, inst, pitch] = VALTCONT      # Continue holding note
+    for idx,part in enumerate(s.parts):
+        notes=[]
+        for elem in part.flat:
+            if isinstance(elem, music21.note.Note):
+                notes.append(note_data(elem.pitch, elem))
+            if isinstance(elem, music21.chord.Chord):
+                for p in elem.pitches:
+                    notes.append(note_data(p, elem))
+                
+        # sort notes by offset (1), duration (2) so that hits are not overwritten and longer notes have priority
+        notes_sorted = sorted(notes, key=lambda x: (x[1], x[2])) 
+        for n in notes_sorted:
+            if n is None: continue
+            pitch,offset,duration = n
+            if max_dur is not None and duration > max_dur: duration = max_dur
+            score_arr[offset, idx, pitch] = duration
+            score_arr[offset+1:offset+duration, idx, pitch] = VALTCONT      # Continue holding note
     return score_arr
 
 def compress_chordarr(chordarr):
