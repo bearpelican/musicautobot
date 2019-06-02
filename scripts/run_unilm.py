@@ -57,7 +57,6 @@ if args.no_transpose: config['transpose_range'] = (0, 1)
 # Next Sentence Data
 ns_dl_tfms = [mask_tfm, next_sentence_tfm]
 ns_config = config.copy()
-ns_config['bs'] *= 2
 ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
                           y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
 

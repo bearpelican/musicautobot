@@ -41,11 +41,9 @@ def next_sentence_tfm(b, max_cls=4):
         z[:, s:e] = i
     return (x_new, torch.tensor([TaskType.NextSent.value])), (y_new, z)
 
-def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, mask_idx=vocab.mask_idx, p=0.2, double=False, mask_last=False):
+def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
+             mask_idx=vocab.mask_idx, p=0.2, mask_last=False):
     # p = replacement probability
-    # double = mask 2 sequences at once
-    # y is ignored
-#     y = x.clone()
     x,y = b
     rand = torch.rand(x.shape, device=x.device)
     rand[x < word_range[0]] = 1.0
@@ -116,7 +114,7 @@ def mask_s2s_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx,
 # Next Word transform
 def nw_tfm(b):
     x,y_nw = b
-    x_mask,y_mask = mask_tfm((x,x.clone()))
+    x_mask,y_mask = mask_tfm((x,x.clone(), mask_last=True))
     return (x_mask,torch.tensor([TaskType.NextWord.value]),x),(y_mask,y_nw) 
     
     
