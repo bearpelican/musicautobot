@@ -20,7 +20,7 @@ parser.add_argument('--path', type=str, default='../data/midi/v15/')
 parser.add_argument('--cache', type=str, default='tmp/all')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
-parser.add_argument("--local_rank", type=int)
+parser.add_argument("--local_rank", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=4)
 parser.add_argument("--bptt", type=int, default=1024)
 parser.add_argument('--half', action='store_true', help='Use half precision')
@@ -37,12 +37,15 @@ parser.add_argument("--ns_max_cls", type=int, default=4)
 args = parser.parse_args()
 args.path = Path(args.path)
 
+is_distributed = num_distrib() > 0
+
 if args.local_rank != 0:
     f = open('/dev/null', 'w')
     sys.stdout = f
-    
-torch.cuda.set_device(args.local_rank)
-torch.distributed.init_process_group(backend='nccl', init_method='env://')
+
+if is_distributed:
+    torch.cuda.set_device(args.local_rank)
+    torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
 
 path = Path(args.path)
@@ -68,6 +71,7 @@ s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache,
 
 nw_dl_tfms = [nw_tfm]
 nw_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, dl_tfms=nw_dl_tfms, y_offset=1, **config)
+datasets = [ns_data, s2s_data, nw_data]
 
 full_clip = None if args.half else 0.5
 
@@ -78,13 +82,13 @@ if args.lamb:
     opt_func = partial(Lamb, eps=1e-4)
     
 # Load Learner
-learn = bert_model_learner(nw_data, config.copy(), 
+learn = bert_model_learner(datasets[0], config.copy(), 
                            loss_func=BertLoss(),
                            clip=full_clip, drop_mult=1.5, opt_func=opt_func)
 
 # Load custom data trainer - overwrite RNNTrainer
 learn.metrics = [mask_acc, ns_acc, s2s_acc, nw_acc]
-learn.callbacks = [BertTrainer(learn, ns_data, s2s_data, nw_data)]
+learn.callbacks = [BertTrainer(learn, datasets)]
 
 if args.load:
     load_path = Path(args.path)/args.load
@@ -97,7 +101,7 @@ if args.save:
     save_path = Path(args.path)/'piano_duet'/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
 if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, max_scale=2**18)
-learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
+if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 # if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb

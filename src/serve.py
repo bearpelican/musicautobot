@@ -66,6 +66,12 @@ def unilm_config(vocab):
     config['dec_layers'] = 6
     return config
     
+def unilm_sm_config(vocab):
+    config = v15_config(vocab)
+    config['n_layers'] = 4
+    config['dec_layers'] = 2
+    config['n_heads'] = 4
+    return config
 
 def load_music_data(path, cache_name, vocab, transpose_range=(0,1), **kwargs):
     transpose_tfm = partial(rand_transpose, note_range=vocab.note_range, rand_range=transpose_range)

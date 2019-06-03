@@ -123,24 +123,14 @@ def nw_tfm(b):
 
 class BertTrainer(LearnerCallback):
     "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
-    def __init__(self, learn:Learner, ns_data, s2s_data, nw_data):
+    def __init__(self, learn:Learner, dataloaders):
         super().__init__(learn)
-        self.ns_data = ns_data
-        self.s2s_data = s2s_data
-        self.nw_data = nw_data
-        self.count = 0
+        self.dataloaders = dataloaders
+        self.count = 1
     
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
-        if self.count % 3 == 0:
-            print('Switching to next sentence data')
-            self.learn.data = self.ns_data
-        elif self.count % 3 == 1:
-            print('Switching to translate data')
-            self.learn.data = self.s2s_data
-        elif self.count % 3 == 2:
-            print('Switching to next word data')
-            self.learn.data = self.nw_data
+        self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
         self.count += 1
         
         
