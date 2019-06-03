@@ -17,7 +17,6 @@ def next_sentence_ranges(x, y, max_cls=4):
     
     min_seq_len = bptt // s
 
-#    bs_shift = [0]+(np.random.choice(bs-1, s, replace=False)+1).tolist()
     bs_shift = [0]+(np.random.choice(bs-1, s, replace=False)+1).tolist()    
     row_shift = [int(min_seq_len + random.randint(-min_seq_len, min_seq_len)//s) for i in range(s)]
     
@@ -199,14 +198,19 @@ class BertHead(nn.Module):
         task_value = task_type.item() if task_type is not None else task_type
         self.encoder.mask = task_value == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
         x_enc = self.encoder(x)
+        x_mask = self.mask_decoder(x_enc) # all tasks include mask decoding
+        
+        requires_grad(self.ns_decoder, task_value == TaskType.NextSent.value)
+        requires_grad(self.s2s_decoder, task_value != TaskType.NextSent.value)
         
         if task_value == TaskType.NextSent.value: # mask, and next sentence task
-            return self.mask_decoder(x_enc), task_type, self.ns_decoder(x_enc)
-        if task_value == TaskType.Translate.value:
-            return self.mask_decoder(x_enc), task_type, self.s2s_decoder(x_enc, y)
-        if task_value == TaskType.NextWord.value: # use same translation decoder
-            return self.mask_decoder(x_enc), task_type, self.s2s_decoder(x_enc, y)
-        return self.mask_decoder(x_enc), task_type
+            dummy_task = self.s2s_decoder(x_enc, torch.zeros_like(x))*0
+            return x_mask+dummy_task.sum(), task_type, self.ns_decoder(x_enc)
+        if task_value in [TaskType.Translate.value, TaskType.NextWord.value]: 
+            # use same translation decoder
+            dummy_task = self.ns_decoder(x_enc)*0
+            return x_mask+dummy_task.sum(), task_type, self.s2s_decoder(x_enc, y)
+        return x_mask, task_type
     
     def __getitem__(self, idx):
         return [self.encoder, self.mask_decoder, self.ns_decoder, self.s2s_decoder][idx]
