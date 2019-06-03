@@ -60,7 +60,7 @@ config['max_cls'] = args.ns_max_cls
 if args.no_transpose: config['transpose_range'] = (0, 1)
 
 # Next Sentence Data
-ns_dl_tfms = [mask_tfm, partial(next_sentence_tfm, max_cls=config['max_cls'])]
+ns_dl_tfms = [partial(mask_tfm, p=0.3), partial(next_sentence_tfm, max_cls=config['max_cls'])]
 ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
                           y_offset=0, dl_tfms=ns_dl_tfms, **config)
 
@@ -105,6 +105,6 @@ if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=args.
 # if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.15, final_div=50, wd=args.wd)
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.5, final_div=50, wd=args.wd)
 
 if args.local_rank == 0: learn.save(f'{args.save}')
