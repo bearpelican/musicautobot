@@ -1,0 +1,14 @@
+# use/edit this file only for working with fastai-0.7.x version
+# for fastai-1.0+ edit "setup.py" and use "pip install -e ."
+# or "pip install -e .[dev]" for extra developer requirements
+name: midi
+channels:
+- fastai
+- pytorch
+- defaults
+dependencies:
+- pytorch
+- fastai
+- jupyter
+- pip:
+  - music21
