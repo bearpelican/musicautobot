@@ -44,7 +44,10 @@ def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pr
 
 class MusicTransformerXL(TransformerXL):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        import inspect
+        argspec = inspect.getfullargspec(TransformerXL)
+        arg_params = { k:kwargs[k] for k in argspec.args if k in kwargs }
+        super().__init__(*args, **arg_params)
         
     def forward(self, x):
         #The hidden state has to be initiliazed in the forward pass for nn.DataParallel
