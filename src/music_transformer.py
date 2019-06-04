@@ -114,8 +114,8 @@ class MusicLearner(LanguageLearner):
         node_idx = torch.multinomial(torch.exp(-scores), 1).item()
         return [i.item() for i in nodes[node_idx][xb_length:] ]
 
-    def predict(self, xb:Tensor, n_words:int=1,
-            temperature:float=1., min_p:float=None, min_bars=4):
+    def predict(self, xb:Tensor, n_words:int=128,
+            temperatures:float=(1.0,1.0), min_p:float=None, min_bars=4):
         "Return the `n_words` that come after `text`."
         ds = self.data.single_dl.dataset
         self.model.reset()
@@ -143,7 +143,10 @@ class MusicLearner(LanguageLearner):
             # bar = 16 beats
             if (sep_count // 16) <= min_bars: res[self.bos_idx] = 0.
 
+            # Use first temperatures value if last prediction was duration
+            temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
             if temperature != 1.: res.pow_(1 / (temperature * running_ps))
+
             idx = torch.multinomial(res, 1).item()
 
 

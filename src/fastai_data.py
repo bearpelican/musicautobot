@@ -1,7 +1,7 @@
 "Fast parallel databunch creation and special npencoding DataBunch"
 # from fastai.text import *
 from numbers import Integral
-from src.encode_data import npenc2seq
+from .encode_data import npenc2seq
 
 from fastai.basics import *
 from fastai.text.data import LMLabelList
@@ -33,43 +33,7 @@ DUR_START, DUR_END = DUR_TOKS[0], DUR_TOKS[-1]
 MTEMPO_OFF = 'mt0'
 MTEMPO_TOKS = [f'mt{i}' for i in range(5)]
 
-# single stream instead of note,dur
-def to_single_stream(t, vocab, start_seq=None):
-    if isinstance(t, (list, tuple)) and len(t) == 2: 
-        return [to_single_stream(x, vocab, start_seq) for x in t]
-    t = t.copy()
-    t[:, 0] = t[:, 0] + vocab.note_range[0]
-    t[:, 1] = t[:, 1] + vocab.dur_range[0]
-    if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
-    return np.concatenate([start_seq, t.reshape(-1)])
-
-def to_double_stream(t, vocab):
-    t = t.copy().reshape(-1, 2)
-    t[:, 0] = t[:, 0] - vocab.note_range[0]
-    t[:, 1] = t[:, 1] - vocab.dur_range[0]
-    return t
-
-def tfm_transpose(x, value, note_range):
-    x = x.copy()
-    x[(x >= note_range[0]) & (x < note_range[1])] += value
-    return x
-
-def rand_transpose(t, note_range=None, rand_range=(0,24), p=0.5):
-    if np.random.rand() < p:
-        transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
-        if isinstance(t, (list, tuple)) and len(t) == 2: 
-            return [tfm_transpose(x, transpose_value, note_range) for x in t]
-        return tfm_transpose(t, transpose_value, note_range)
-    return t
-
-def rand_transpose_double(t, rand_range=(0,24), p=0.5):
-    "For transposing double column encoded midi"
-    if np.random.rand() < p:
-        t = t.copy()
-        notes = t[...,0]
-        notes[notes > VALTSEP] += np.random.randint(*rand_range)-rand_range[1]//2
-    return t
-
+# Vocab - token to index mapping
 class MusicVocab():
     "Contain the correspondence between numbers and tokens and numericalize."
     def __init__(self, itos:Collection[str]):
@@ -95,9 +59,12 @@ class MusicVocab():
     @property
     def npenc_range(self): return (vocab.stoi[SEP], vocab.stoi[DUR_END]+1)
     @property
-    def note_range(self): return vocab.stoi[NOTE_START], vocab.stoi[NOTE_END]
+    def note_range(self): return vocab.stoi[NOTE_START], vocab.stoi[NOTE_END]+1
     @property
-    def dur_range(self): return vocab.stoi[DUR_START], vocab.stoi[DUR_END]
+    def dur_range(self): return vocab.stoi[DUR_START], vocab.stoi[DUR_END]+1
+
+    def is_duration(self, idx): 
+        return idx >= self.dur_range[0] and idx < self.dur_range[1]
         
     def __getstate__(self):
         return {'itos':self.itos}
@@ -124,6 +91,43 @@ class MusicVocab():
         return cls(itos)
 
 vocab = MusicVocab.create()
+
+# single stream instead of note,dur
+def to_single_stream(t, vocab=vocab, start_seq=None):
+    if isinstance(t, (list, tuple)) and len(t) == 2: 
+        return [to_single_stream(x, vocab, start_seq) for x in t]
+    t = t.copy()
+    t[:, 0] = t[:, 0] + vocab.note_range[0]
+    t[:, 1] = t[:, 1] + vocab.dur_range[0]
+    if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
+    return np.concatenate([start_seq, t.reshape(-1)])
+
+def to_double_stream(t, vocab=vocab):
+    t = t.copy().reshape(-1, 2)
+    t[:, 0] = t[:, 0] - vocab.note_range[0]
+    t[:, 1] = t[:, 1] - vocab.dur_range[0]
+    return t
+
+def tfm_transpose(x, value, note_range):
+    x = x.copy()
+    x[(x >= note_range[0]) & (x < note_range[1])] += value
+    return x
+
+def rand_transpose(t, note_range=None, rand_range=(0,24), p=0.5):
+    if np.random.rand() < p:
+        transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
+        if isinstance(t, (list, tuple)) and len(t) == 2: 
+            return [tfm_transpose(x, transpose_value, note_range) for x in t]
+        return tfm_transpose(t, transpose_value, note_range)
+    return t
+
+def rand_transpose_double(t, rand_range=(0,24), p=0.5):
+    "For transposing double column encoded midi"
+    if np.random.rand() < p:
+        t = t.copy()
+        notes = t[...,0]
+        notes[notes > VALTSEP] += np.random.randint(*rand_range)-rand_range[1]//2
+    return t
 
 ## For npenc dataset
 class MusicPreloader(Callback):

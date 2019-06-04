@@ -190,9 +190,9 @@ def timestep2seq(timestep):
 ##### DECODING #####
 
 # 2.
-def seq2chordarr(seq, note_range=127):
-    num_instruments = max([n.ival() for t in seq for n in t]) + 1
-    score_arr = np.zeros((len(seq), num_instruments, note_range))
+def seq2chordarr(seq, note_range=128): # 128 = default midi range
+    num_parts = max([n.ival() for t in seq for n in t]) + 1
+    score_arr = np.zeros((len(seq), num_parts, note_range))
     for idx,ts in enumerate(seq):
         for note in ts:
             score_arr[idx,note.ival(),note.pitch.midi] = note.dur
