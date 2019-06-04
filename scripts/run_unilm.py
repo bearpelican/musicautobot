@@ -105,7 +105,7 @@ if args.save:
 if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, max_scale=2**18)
 if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
 if args.data_parallel: learn = learn.to_parallel()
-# if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
+if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.5, final_div=50, wd=args.wd)

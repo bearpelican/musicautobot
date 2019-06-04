@@ -118,7 +118,6 @@ def nw_tfm(b):
     x_mask,y_mask = mask_tfm((x,x.clone()), mask_last=True)
     return (x_mask,torch.full_like(x, TaskType.NextWord.value),x),(y_mask,y_nw) 
     
-    
 # DataLoading
 
 class BertTrainer(LearnerCallback):
@@ -183,23 +182,40 @@ class BertHead(nn.Module):
         self.ns_decoder = ns_decoder
         self.s2s_decoder = s2s_decoder
         
+    
     def forward(self, x, task_type=None, y=None):
         task_value = task_type[0,0].item() if task_type is not None else task_type
         self.encoder.mask = task_value == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
         x_enc = self.encoder(x)
         x_mask = self.mask_decoder(x_enc) # all tasks include mask decoding
         
-#        requires_grad(self.ns_decoder, task_value == TaskType.NextSent.value)
-#        requires_grad(self.s2s_decoder, task_value != TaskType.NextSent.value)
-        
         if task_value == TaskType.NextSent.value: # mask, and next sentence task
-            dummy_task = self.s2s_decoder(x_enc, torch.zeros_like(x))*0.0
-            return x_mask+dummy_task.sum(), task_type, self.ns_decoder(x_enc)
+            return x_mask, task_type, self.ns_decoder(x_enc)
         if task_value in [TaskType.Translate.value, TaskType.NextWord.value]: 
             # use same translation decoder
-            dummy_task = self.ns_decoder(x_enc)*0.0
-            return x_mask+dummy_task.sum(), task_type, self.s2s_decoder(x_enc, y)
+            return x_mask, task_type, self.s2s_decoder(x_enc, y)
         return x_mask, task_type
+    
+    # Forward for DDP - however sill gets slow results
+#     def forward(self, x, task_type=None, y=None):
+#         task_value = task_type[0,0].item() if task_type is not None else task_type
+#         self.encoder.mask = task_value == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
+#         x_enc = self.encoder(x)
+#         x_mask = self.mask_decoder(x_enc) # all tasks include mask decoding
+        
+# #        requires_grad(self.ns_decoder, task_value == TaskType.NextSent.value)
+# #        requires_grad(self.s2s_decoder, task_value != TaskType.NextSent.value)
+        
+#         if task_value == TaskType.NextSent.value: # mask, and next sentence task
+#             dummy_task = self.s2s_decoder(x_enc, torch.zeros_like(x))*0.0
+#             return x_mask+dummy_task.sum(), task_type, self.ns_decoder(x_enc)
+#         if task_value in [TaskType.Translate.value, TaskType.NextWord.value]: 
+#             # use same translation decoder
+#             dummy_task = self.ns_decoder(x_enc)*0.0
+#             return x_mask+dummy_task.sum(), task_type, self.s2s_decoder(x_enc, y)
+#         return x_mask, task_type
+    
+    
     
     def __getitem__(self, idx):
         return [self.encoder, self.mask_decoder, self.ns_decoder, self.s2s_decoder][idx]
