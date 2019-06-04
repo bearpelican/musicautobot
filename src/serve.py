@@ -65,6 +65,13 @@ def unilm_config(vocab):
     config['n_layers'] = 10
     config['dec_layers'] = 6
     return config
+
+def unilm_m_config(vocab):
+    config = v15_config(vocab)
+    config['n_layers'] = 8
+    config['dec_layers'] = 12
+    return config
+
     
 def unilm_sm_config(vocab):
     config = v15_config(vocab)
