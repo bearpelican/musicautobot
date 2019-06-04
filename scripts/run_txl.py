@@ -20,7 +20,7 @@ parser.add_argument('--path', type=str, default='../data/midi/v15/midi_encode/')
 parser.add_argument('--cache', type=str, default='tmp/dmp')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
-parser.add_argument("--local_rank", type=int)
+parser.add_argument("--local_rank", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=12)
 parser.add_argument("--mem_len", type=int, default=512)
 parser.add_argument("--bptt", type=int, default=512)
@@ -33,15 +33,17 @@ parser.add_argument('--div_factor', type=int, default=10, help='learning rate di
 parser.add_argument('--save_every', action='store_true', help='Save every epoch')
 parser.add_argument('--config', type=str, help='serve.py config name')
 parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
+parser.add_argument('--parallel', action='store_true', help='Run in dataparallel')
 
 args = parser.parse_args()
-
+is_distributed = num_distrib() > 0
 if args.local_rank != 0:
     f = open('/dev/null', 'w')
     sys.stdout = f
-    
-torch.cuda.set_device(args.local_rank)
-torch.distributed.init_process_group(backend='nccl', init_method='env://')
+
+if is_distributed:
+    torch.cuda.set_device(args.local_rank)
+    torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
 
 path = Path(args.path)
@@ -72,7 +74,8 @@ if args.save:
     save_path = Path(args.path)/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
 if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, max_scale=2**18)
-learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
+if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
+if args.parallel: learn = learn.to_parallel()
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_epoch', every='epoch'))
 # learn.callbacks.append(EarlyStoppingCallback(learn))
