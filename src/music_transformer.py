@@ -40,19 +40,6 @@ def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pr
     learn = MusicLearner(data, model, split_func=meta['split_lm'], 
                          bos_idx=config['bos_idx'], sep_idx=config['sep_idx'],
                         **learn_kwargs)
-    
-    if pretrained:
-        if 'url' not in meta: 
-            warn("There are no pretrained weights for that architecture yet!")
-            return learn
-        model_path = untar_data(meta['url'], data=False)
-        fnames = [list(model_path.glob(f'*.{ext}'))[0] for ext in ['pth', 'pkl']]
-        learn.load_pretrained(*fnames)
-        learn.freeze()
-    if pretrained_fnames is not None:
-        fnames = [learn.path/learn.model_dir/f'{fn}.{ext}' for fn,ext in zip(pretrained_fnames, ['pth', 'pkl'])]
-        learn.load_pretrained(*fnames)
-        learn.freeze()
     return learn
 
 class MusicTransformerXL(TransformerXL):

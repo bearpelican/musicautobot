@@ -78,10 +78,11 @@ def load_music_data(path, cache_name, vocab, transpose_range=(0,1), **kwargs):
     single_tfm = partial(to_single_stream, vocab=vocab)
     data = MusicDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
                               train_tfms=[single_tfm, transpose_tfm], valid_tfms=[single_tfm])
+    data.vocab = vocab
     return data
 
-def load_learner(data, config, load_path=None):
-    learn = language_model_learner(data, config, clip=0.25)
+def load_music_learner(data, config, load_path=None):
+    learn = music_model_learner(data, config)
     if load_path:
         state = torch.load(load_path, map_location='cpu')
         get_model(learn.model).load_state_dict(state['model'], strict=False)
