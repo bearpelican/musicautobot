@@ -37,9 +37,7 @@ def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pr
     model = get_language_model(MusicTransformerXL, config['vocab_size'], config=config, drop_mult=drop_mult)
     
     meta = _model_meta[TransformerXL]
-    learn = MusicLearner(data, model, split_func=meta['split_lm'], 
-                         bos_idx=config['bos_idx'], sep_idx=config['sep_idx'],
-                        **learn_kwargs)
+    learn = MusicLearner(data, model, config=config, split_func=meta['split_lm'], **learn_kwargs)
     return learn
 
 class MusicTransformerXL(TransformerXL):
