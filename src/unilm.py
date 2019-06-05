@@ -1,5 +1,5 @@
 from .fastai_data import *
-from .music_transformer import MusicLearner, lm_mask
+from .music_transformer import MusicLearner, lm_mask, window_mask
 from fastai.basics import *
 from fastai.text.models.transformer import _line_shift, init_transformer
 from fastai.text.models.awd_lstm import *
@@ -174,6 +174,89 @@ def bert_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pre
         learn.freeze()
     return learn
 
+# Attn
+
+
+
+class MemMultiHeadRelativeAttentionKV(nn.Module):
+    "MutiHeadAttention with relative positional encoding."
+    def __init__(self, n_heads:int, d_model:int, d_head:int=None, resid_p:float=0., attn_p:float=0., bias:bool=True,
+                 scale:bool=True, mem_len:int=512):
+        super().__init__()
+        d_head = ifnone(d_head, d_model//n_heads)
+        self.n_heads,self.d_head,self.scale = n_heads,d_head,scale
+        
+        self.q_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
+        self.k_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
+        self.v_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
+        
+        self.out = nn.Linear(n_heads * d_head, d_model, bias=bias)
+        self.drop_att,self.drop_res = nn.Dropout(attn_p),nn.Dropout(resid_p)
+        self.ln = nn.LayerNorm(d_model)
+        self.r_attn = nn.Linear(d_model, n_heads * d_head, bias=bias)
+
+        self.mem_len = mem_len
+        self.prev_k = None
+        self.prev_v = None
+#         print('Mem len:', self.mem_len)
+        
+    def forward(self, q:Tensor, k:Tensor=None, v:Tensor=None, 
+                r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
+                mask:Tensor=None, **kwargs):
+        if k is None: k = q
+        if v is None: v = q
+        return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
+
+    def mem_k(self, k):
+        if self.prev_k is None:
+            self.prev_k = k
+            return k
+#         print('K shape:', k.shape)
+        k_ext = torch.cat([self.prev_k, k], dim=1)
+        self.prev_k = k_ext[:, -self.mem_len:]
+        return k_ext.detach()
+
+    def mem_v(self, v):
+        if self.prev_v is None:
+            self.prev_v = v
+            return v
+#         print('K shape:', v.shape)
+        v_ext = torch.cat([self.prev_v, v], dim=1)
+        self.prev_v = v_ext[:, -self.mem_len:]
+        return v_ext.detach()
+        
+    def reset(self):
+        self.prev_v = None
+        self.prev_k = None
+        
+    def _apply_attention(self, q:Tensor, k:Tensor, v:Tensor, 
+                         r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
+                         mask:Tensor=None, **kwargs):
+        #Notations from the paper: x input, r vector of relative distance between two elements, u et v learnable
+        #parameters of the model common between all layers, mask to avoid cheating and mem the previous hidden states.
+#         bs,x_len,seq_len = q.size(0),q.size(1),r.size(0)
+        k = self.mem_k(k)
+        v = self.mem_v(v)
+        bs,x_len,seq_len = q.size(0),q.size(1),k.size(1)
+        wq,wk,wv = self.q_wgt(q),self.k_wgt(k),self.v_wgt(v)
+        wq = wq[:,-x_len:]
+        wq,wk,wv = map(lambda x:x.view(bs, x.size(1), self.n_heads, self.d_head), (wq,wk,wv))
+        wq,wk,wv = wq.permute(0, 2, 1, 3),wk.permute(0, 2, 3, 1),wv.permute(0, 2, 1, 3)
+        wkr = self.r_attn(r[:seq_len])
+        wkr = wkr.view(seq_len, self.n_heads, self.d_head)
+        wkr = wkr.permute(1,2,0)
+        #### compute attention score (AC is (a) + (c) and BS is (b) + (d) in the paper)
+        AC = torch.matmul(wq+g_u,wk)
+        BD = _line_shift(torch.matmul(wq+g_v, wkr))
+        if self.scale: attn_score = (AC + BD).mul_(1/(self.d_head ** 0.5))
+        if mask is not None: 
+            mask = mask[...,-seq_len:]
+            attn_score = attn_score.float().masked_fill(mask, -float('inf')).type_as(attn_score)
+        attn_prob = self.drop_att(F.softmax(attn_score, dim=-1))
+        attn_vec = torch.matmul(attn_prob, wv)
+        return attn_vec.permute(0, 2, 1, 3).contiguous().view(bs, x_len, -1)
+    
+    
 class BertHead(nn.Module):
     def __init__(self, encoder, mask_decoder, ns_decoder, s2s_decoder):
         super().__init__()
@@ -227,23 +310,26 @@ class BertHead(nn.Module):
 
 class TransformerEmbedding(nn.Module):
     "Embedding + positional encoding + dropout"
-    def __init__(self, vocab_sz:int, emb_sz:int, inp_p:float=0.):
+    def __init__(self, vocab_sz:int, emb_sz:int, inp_p:float=0., mem_len=512):
         super().__init__()
         self.emb_sz = emb_sz
         self.embed = embedding(vocab_sz, emb_sz)
         self.pos_enc = PositionalEncoding(emb_sz)
         self.drop = nn.Dropout(inp_p)
+        self.mem_len = mem_len
     
     def forward(self, inp):
         emb = self.drop(self.embed(inp))
-        pos = torch.arange(0, inp.size(1), device=inp.device, dtype=emb.dtype)
-        return emb, self.pos_enc(pos)
+        pos = torch.arange(0, inp.size(1)+self.mem_len, device=inp.device, dtype=emb.dtype)
+        x_len = inp.shape[-1]
+        mask = window_mask(x_len, inp.device, m_len=self.mem_len)
+        return emb, self.pos_enc(pos), mask
 
 class BertEncoder(nn.Module):
     "TransformerXL model: https://arxiv.org/abs/1901.02860."
     def __init__(self, embed:nn.Module, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
                  resid_p:float=0., attn_p:float=0., ff_p:float=0., bias:bool=False, scale:bool=True,
-                 act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MultiHeadRelativeAttention,
+                 act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MemMultiHeadRelativeAttentionKV,
                  learned_pos_enc:bool=False, mask:bool=True, **kwargs):
         super().__init__()
         self.encoder = embed
@@ -259,12 +345,12 @@ class BertEncoder(nn.Module):
     
     def forward(self, x):
         bs,x_len = x.size()
-        inp, pos_enc = self.encoder(x)
+        inp, pos_enc, mask = self.encoder(x)
 
-        mask = lm_mask(x_len, x.device) if self.mask else None
+        if not self.mask: mask = None
         
         for i, layer in enumerate(self.layers):
-            inp = layer(inp, r=pos_enc, u=self.u, v=self.v, mask=mask, mem=None)
+            inp = layer(inp, r=pos_enc, g_u=self.u, g_v=self.v, mask=mask, mem=None)
         core_out = inp[:,-x_len:]
         return core_out
     
@@ -290,7 +376,7 @@ class BertLinearDecoder(nn.Module):
 class S2SDecoder(nn.Module):
     def __init__(self, embed:nn.Module, n_hid:int, vocab_sz:int, dec_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
                  resid_p:float=0., attn_p:float=0., ff_p:float=0., bias:bool=False, scale:bool=True,
-                 act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MultiHeadRelativeAttention,
+                 act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MemMultiHeadRelativeAttentionKV,
                  learned_pos_enc:bool=False, mask:bool=True, **kwargs):
         super().__init__()
         self.encoder = embed
@@ -309,12 +395,12 @@ class S2SDecoder(nn.Module):
         # x = encoder, y = target
         bs,targ_len = targ.size()
         
-        targ_emb, pos_enc = self.encoder(targ)
+        targ_emb, pos_enc, mask = self.encoder(targ)
 
 #         mask = window_mask(x_len, x.device) if self.mask else None
 
-        mask_out = lm_mask(targ_len, targ.device)
-        mask_in = lm_mask(targ_len, targ.device) if task_value == TaskType.NextWord else None
+        mask_out = mask
+        mask_in = mask if task_value == TaskType.NextWord else None 
         
         for i, layer in enumerate(self.layers):
             targ_emb = layer(targ_emb, enc, mask_out=mask_out, mask_in=mask_in,
@@ -325,10 +411,10 @@ class S2SDecoderBlock(nn.Module):
     "Decoder block of a Transformer model."
     #Can't use Sequential directly cause more than one input...
     def __init__(self, n_heads:int, d_model:int, d_head:int, d_inner:int, resid_p:float=0., attn_p:float=0., ff_p:float=0.,
-                 bias:bool=True, scale:bool=True, double_drop:bool=True, **kwargs):
+                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512, **kwargs):
         super().__init__()
-        self.mha1 = KVMultiHeadRelativeAttention(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale)
-        self.mha2 = KVMultiHeadRelativeAttention(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale)
+        self.mha1 = MemMultiHeadRelativeAttentionKV(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len)
+        self.mha2 = MemMultiHeadRelativeAttentionKV(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len)
         self.ff   = feed_forward(d_model, d_inner, ff_p=ff_p, double_drop=double_drop)
     
     def forward(self, targ:Tensor, enc:Tensor, 
