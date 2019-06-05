@@ -250,14 +250,6 @@ class MusicPreloader(Callback):
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
 
-class RandBpttCallback(LearnerCallback)
-    def on_batch_begin(self, train, **kwargs:Any)->None:
-        "Record learning rate and momentum at beginning of batch."
-        if train:
-            preloader = learn.data.train_dl.dl.dataset
-            if hasattr(preloader, 'update_rand_bptt'):
-                preloader.update_rand_bptt()
-    
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):

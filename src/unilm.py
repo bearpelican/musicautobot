@@ -157,8 +157,7 @@ def bert_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pre
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
     model = get_bert_model(config['vocab_size'], config=config, drop_mult=drop_mult)
-    learn = MusicLearner(data, model, split_func=tfmerXL_lm_split, 
-                         bos_idx=config['bos_idx'], sep_idx=config['sep_idx'],
+    learn = MusicLearner(data, model, config=config, split_func=tfmerXL_lm_split,
                         **learn_kwargs)
     
     if pretrained:

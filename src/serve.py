@@ -83,9 +83,8 @@ def unilm_sm_config(vocab):
     return config
 
 def load_music_data(path, cache_name, vocab, **kwargs):
-    single_tfm = partial(to_single_stream, vocab=vocab)
     data = MusicDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
-                              train_tfms=[single_tfm, transpose_tfm], valid_tfms=[single_tfm])
+                              train_tfms=[to_single_stream], valid_tfms=[to_single_stream])
     data.vocab = vocab
     return data
 
