@@ -34,7 +34,7 @@ def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pr
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
     _model_meta[MusicTransformerXL] = _model_meta[TransformerXL]
-    model = get_language_model(MusicTransformerXL, config['vocab_size'], config=config, drop_mult=drop_mult)
+    model = get_language_model(MusicTransformerXL, len(data.vocab.itos), config=config, drop_mult=drop_mult)
     
     meta = _model_meta[TransformerXL]
     learn = MusicLearner(data, model, config=config, split_func=meta['split_lm'], **learn_kwargs)
@@ -140,37 +140,38 @@ class MusicLearner(LanguageLearner):
         running_ps = 1.0
         sep_count = 0
 
-        for i in progress_bar(range(n_words), leave=True):
+        with torch.no_grad():
+            for i in progress_bar(range(n_words), leave=True):
 
-            running_ps = (n_words * 2 - i) / (n_words * 2)
+                running_ps = (n_words * 2 - i) / (n_words * 2)
 
-            res = self.pred_batch(batch=(xb,yb))[0][-1]
-            #if len(new_idx) == 0: self.model[0].select_hidden([0])
-            if min_p is not None: 
-                if (res >= min_p).float().sum() == 0:
-                    warn(f"There is no item with probability >= {min_p}, try a lower value.")
-                else: res[res < min_p] = 0.
+                res = self.pred_batch(batch=(xb,yb))[0][-1]
+                #if len(new_idx) == 0: self.model[0].select_hidden([0])
+                if min_p is not None: 
+                    if (res >= min_p).float().sum() == 0:
+                        warn(f"There is no item with probability >= {min_p}, try a lower value.")
+                    else: res[res < min_p] = 0.
 
-            # bar = 16 beats
-            if (sep_count // 16) <= min_bars: res[self.bos_idx] = 0.
+                # bar = 16 beats
+                if (sep_count // 16) <= min_bars: res[self.bos_idx] = 0.
 
-            # Use first temperatures value if last prediction was duration
-            temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
-            if temperature != 1.: res.pow_(1 / (temperature * running_ps))
+                # Use first temperatures value if last prediction was duration
+                temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
+                if temperature != 1.: res.pow_(1 / (temperature * running_ps))
 
-            idx = torch.multinomial(res, 1).item()
-
-
-            if new_idx and new_idx[-1]==self.sep_idx: 
-                duration = (idx - 3 - 130) + 1
-                sep_count += duration
-    #                 print('Bars', duration, sep_count // 16)
-
-            if idx==self.bos_idx: 
-                print('Predicted BOS token. Returning prediction...')
-                break
+                idx = torch.multinomial(res, 1).item()
 
 
-            new_idx.append(idx)
-            xb = xb.new_tensor([idx])[None]
+                if new_idx and new_idx[-1]==self.sep_idx: 
+                    duration = (idx - 3 - 130) + 1
+                    sep_count += duration
+        #                 print('Bars', duration, sep_count // 16)
+
+                if idx==self.bos_idx: 
+                    print('Predicted BOS token. Returning prediction...')
+                    break
+
+
+                new_idx.append(idx)
+                xb = xb.new_tensor([idx])[None]
         return np.array(new_idx), seed

@@ -385,18 +385,19 @@ class KVMultiHeadRelativeAttention(nn.Module):
 # LOSS AND METRICS
 
 class BertLoss():
-    def __init__(self):
+    def __init__(self, loss_mult=(1,1,1,1)):
         self.index_loss = CrossEntropyFlat(ignore_index=vocab.pad_idx)
         self.class_loss = CrossEntropyFlat()
+        self.loss_mult=loss_mult
         
     def __call__(self, input:Tensor, target:Tensor, target_2:Tensor, **kwargs)->Rank0Tensor:
         x_mask, task_type, x_task = input
         if task_type is not None: task_type = task_type[0,0].item()
-        m = self.index_loss.__call__(x_mask, target, **kwargs)
+        m = self.index_loss.__call__(x_mask, target, **kwargs) * self.loss_mult[0]
         
-        if task_type == TaskType.NextSent.value: s = self.class_loss.__call__(x_task, target_2, **kwargs)
-        elif task_type == TaskType.Translate.value: s = self.index_loss.__call__(x_task, target_2, **kwargs)
-        elif task_type == TaskType.NextWord.value: s = self.index_loss.__call__(x_task, target_2, **kwargs)
+        if task_type == TaskType.NextSent.value: s = self.class_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[1]
+        elif task_type == TaskType.Translate.value: s = self.index_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[2]
+        elif task_type == TaskType.NextWord.value: s = self.index_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[3]
         else: return m
 
         return m + s
