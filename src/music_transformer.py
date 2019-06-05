@@ -85,6 +85,8 @@ class MusicLearner(LanguageLearner):
         self.sep_idx = sep_idx
         print('Sep_idx:', self.sep_idx)
 
+        if config.get('rand_bptt', False): self.callbacks.append(RandBpttCallback(self))
+
     def beam_search(self, xb:Tensor, n_words:int, top_k:int=10, beam_sz:int=10, temperature:float=1.,
                     ):
         "Return the `n_words` that come after `text` using beam search."

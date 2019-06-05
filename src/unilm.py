@@ -85,7 +85,7 @@ class S2SPreloader(Callback):
         self.vocab = vocab
         self.y_offset = y_offset
         self.single_tfm = partial(to_single_stream, vocab=vocab)
-        self.transpose_tfm = partial(rand_transpose, note_range=vocab.note_range, rand_range=(0,12))
+        self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=(0,12))
     
     def __getitem__(self, k:int):
         item,_ = self.dataset[k]

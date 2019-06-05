@@ -113,7 +113,7 @@ def tfm_transpose(x, value, note_range=vocab.note_range):
     x[(x >= note_range[0]) & (x < note_range[1])] += value
     return x
 
-def rand_transpose(t, note_range=vocab.note_range, rand_range=(0,24), p=0.5):
+def rand_transpose_tfm(t, note_range=vocab.note_range, rand_range=(0,24), p=0.5):
     if np.random.rand() < p:
         transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
         if isinstance(t, (list, tuple)) and len(t) == 2: 
@@ -121,7 +121,7 @@ def rand_transpose(t, note_range=vocab.note_range, rand_range=(0,24), p=0.5):
         return tfm_transpose(t, transpose_value, note_range)
     return t
 
-def rand_transpose_double(t, rand_range=(0,24), p=0.5):
+def rand_transpose_tfm_double(t, rand_range=(0,24), p=0.5):
     "For transposing double column encoded midi"
     if np.random.rand() < p:
         t = t.copy()
@@ -144,7 +144,7 @@ class MusicPreloader(Callback):
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
                  shuffle:bool=False, y_offset:int=1, 
                  rand_transpose=False, transpose_range=(0,24), transpose_p=0.5,
-                 rand_bptt=False,
+                 rand_bptt=False, bptt_p=0.5,
                  **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
         self.bs *= num_distrib() or 1
@@ -152,7 +152,7 @@ class MusicPreloader(Callback):
         self.y_offset = y_offset
         
         self.rand_transpose,self.transpose_range,self.transpose_p = rand_transpose,transpose_range,transpose_p
-        self.rand_bptt = rand_bptt
+        self.rand_bptt, self.bptt_p = rand_bptt, bptt_p
         self.bptt_len = self.bptt
         
         self.allocate_buffers() # needed for valid_dl on distributed training - otherwise doesn't get initialized on first epoch
@@ -187,11 +187,12 @@ class MusicPreloader(Callback):
         mask = torch.rand(rt_arr.shape) > self.transpose_p
         rt_arr[mask] = 0
         return rt_arr
-    
-    def update_rand_bptt(self):
-        if self.rand_bptt:
-            self.bptt_len = random.randint(self.bptt//2, self.bptt)
-        
+
+    def update_rand_bptt(self, new_val=None):
+        if self.rand_bptt and random.random() > self.bptt_p:
+            self.bptt_len = random.randint(self.bptt//2, self.bptt) if new_val is None else new_val
+        else: self.bptt_len = self.bptt
+
     def on_epoch_begin(self, **kwargs):
         if self.idx is None: self.allocate_buffers()
         elif self.shuffle:   
@@ -249,7 +250,13 @@ class MusicPreloader(Callback):
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
 
-
+class RandBpttCallback(LearnerCallback)
+    def on_batch_begin(self, train, **kwargs:Any)->None:
+        "Record learning rate and momentum at beginning of batch."
+        if train:
+            preloader = learn.data.train_dl.dl.dataset
+            if hasattr(preloader, 'update_rand_bptt'):
+                preloader.update_rand_bptt()
     
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
@@ -261,12 +268,12 @@ class MusicDataBunch(DataBunch):
     @classmethod
     def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
                num_workers:int=0, device:torch.device=None, collate_fn:Callable=data_collate, 
-               dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70, backwards:bool=False, y_offset:int=1,
+               dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70,
                preloader_cls=MusicPreloader, shuffle_dl=False, **kwargs) -> DataBunch:
         "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
         datasets = cls._init_ds(train_ds, valid_ds, test_ds)
         val_bs = ifnone(val_bs, bs)
-        datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, backwards=backwards, y_offset=y_offset, **kwargs) 
+        datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, **kwargs) 
                     for i,ds in enumerate(datasets)]
         val_bs = bs
         dls = [DataLoader(d, b, shuffle=shuffle_dl) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]

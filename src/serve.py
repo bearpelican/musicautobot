@@ -24,6 +24,8 @@ def v15_config(vocab):
     config['bos_idx'] = vocab.bos_idx
     config['sep_idx'] = vocab.sep_idx
     config['transpose_range'] = (0,12)
+    config['rand_transpose'] = True
+    config['rand_bptt'] = True
     config['note_range'] = vocab.note_range
     config['act'] = Activation.GeLU
     # config['act'] = Activation.ReLU
@@ -80,8 +82,7 @@ def unilm_sm_config(vocab):
     config['n_heads'] = 4
     return config
 
-def load_music_data(path, cache_name, vocab, transpose_range=(0,1), **kwargs):
-    transpose_tfm = partial(rand_transpose, note_range=vocab.note_range, rand_range=transpose_range)
+def load_music_data(path, cache_name, vocab, **kwargs):
     single_tfm = partial(to_single_stream, vocab=vocab)
     data = MusicDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
                               train_tfms=[single_tfm, transpose_tfm], valid_tfms=[single_tfm])

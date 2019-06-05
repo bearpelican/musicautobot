@@ -90,7 +90,10 @@ learn = bert_model_learner(datasets[0], config.copy(),
 
 # Load custom data trainer - overwrite RNNTrainer
 learn.metrics = [mask_acc, ns_acc, s2s_acc, nw_acc]
-learn.callbacks = [BertTrainer(learn, datasets)]
+
+from fastai.callbacks.rnn import RNNTrainer
+learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
+learn.callbacks.append(BertTrainer(learn, datasets))
 
 if args.load:
     load_path = Path(args.path)/args.load
