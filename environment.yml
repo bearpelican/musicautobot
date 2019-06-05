@@ -5,7 +5,8 @@ channels:
 - defaults
 dependencies:
 - pytorch
-- fastai
+# - fastai outdated versions
 - jupyter
 - pip:
   - music21
+  - "--editable=git+https://github.com/fastai/fastai@master"
