@@ -45,9 +45,10 @@ def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx,
              mask_idx=vocab.mask_idx, p=0.2, mask_last=False):
     # p = replacement probability
     x,y = b
+    x,y = x.clone(),y.clone()
     rand = torch.rand(x.shape, device=x.device)
     rand[x < word_range[0]] = 1.0
-    if mask_last: rand[-1] = 0.0
+    if mask_last: rand[:, -1] = 0.0
     y[rand > p] = pad_idx
     x[rand <= (p*.8)] = mask_idx # 80% = mask
     wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
@@ -109,13 +110,13 @@ class S2SPreloader(Callback):
 def mask_s2s_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
              mask_idx=vocab.mask_idx, p=0.1, double=False, mask_last=False):
     x,y_s2s = b
-    x_mask,y_mask = mask_tfm((x,x.clone()))
+    x_mask,y_mask = mask_tfm((x,x))
     return (x,torch.full_like(x, TaskType.Translate.value),y_s2s[:,:-1]),(y_mask,y_s2s[:,1:])
 
 # Next Word transform
 def nw_tfm(b):
     x,y_nw = b
-    x_mask,y_mask = mask_tfm((x,x.clone()), mask_last=True)
+    x_mask,y_mask = mask_tfm((x,x), mask_last=True)
     return (x_mask,torch.full_like(x, TaskType.NextWord.value),x),(y_mask,y_nw) 
     
 # DataLoading
@@ -193,7 +194,7 @@ class BertHead(nn.Module):
             return x_mask, task_type, self.ns_decoder(x_enc)
         if task_value in [TaskType.Translate.value, TaskType.NextWord.value]: 
             # use same translation decoder
-            return x_mask, task_type, self.s2s_decoder(x_enc, y)
+            return x_mask, task_type, self.s2s_decoder(x_enc, y, task_value)
         return x_mask, task_type
     
     # Forward for DDP - however sill gets slow results
@@ -305,17 +306,19 @@ class S2SDecoder(nn.Module):
         nn.init.normal_(self.u, 0., 0.02)
         nn.init.normal_(self.v, 0., 0.02)
         
-    def forward(self, enc, targ):
+    def forward(self, enc, targ, task_value):
         # x = encoder, y = target
         bs,targ_len = targ.size()
         
         targ_emb, pos_enc = self.encoder(targ)
 
 #         mask = window_mask(x_len, x.device) if self.mask else None
+
         mask_out = lm_mask(targ_len, targ.device)
+        mask_in = lm_mask(targ_len, targ.device) if task_value == TaskType.NextWord else None
         
         for i, layer in enumerate(self.layers):
-            targ_emb = layer(targ_emb, enc, mask_out=mask_out,
+            targ_emb = layer(targ_emb, enc, mask_out=mask_out, mask_in=mask_in,
                         r=pos_enc, u=self.u, v=self.v)
         return self.head(targ_emb)
 

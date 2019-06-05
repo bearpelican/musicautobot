@@ -88,7 +88,6 @@ class MusicLearner(LanguageLearner):
     def beam_search(self, xb:Tensor, n_words:int, top_k:int=10, beam_sz:int=10, temperature:float=1.,
                     ):
         "Return the `n_words` that come after `text` using beam search."
-        ds = self.data.single_dl.dataset
         self.model.reset()
         self.model.eval()
         xb_length = xb.shape[-1]
@@ -120,7 +119,6 @@ class MusicLearner(LanguageLearner):
     def predict(self, xb:Tensor, n_words:int=128,
             temperatures:float=(1.0,1.0), min_p:float=None, min_bars=4):
         "Return the `n_words` that come after `text`."
-        ds = self.data.single_dl.dataset
         self.model.reset()
         self.model.mask = False
         if xb.shape[0] > 1: xb = xb[0][None]
@@ -129,7 +127,6 @@ class MusicLearner(LanguageLearner):
         new_idx = []
 
         running_ps = 1.0
-        timesteps = []
         sep_count = 0
 
         for i in progress_bar(range(n_words), leave=True):
