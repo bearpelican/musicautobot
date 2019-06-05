@@ -242,7 +242,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         wq = wq[:,-x_len:]
         wq,wk,wv = map(lambda x:x.view(bs, x.size(1), self.n_heads, self.d_head), (wq,wk,wv))
         wq,wk,wv = wq.permute(0, 2, 1, 3),wk.permute(0, 2, 3, 1),wv.permute(0, 2, 1, 3)
-        wkr = self.r_attn(r[:seq_len])
+        wkr = self.r_attn(r[-seq_len:])
         wkr = wkr.view(seq_len, self.n_heads, self.d_head)
         wkr = wkr.permute(1,2,0)
         #### compute attention score (AC is (a) + (c) and BS is (b) + (d) in the paper)
@@ -304,7 +304,15 @@ class BertHead(nn.Module):
         return [self.encoder, self.mask_decoder, self.ns_decoder, self.s2s_decoder][idx]
         
     "A sequential module that passes the reset call to its children."
-    def reset(self): pass
+    def reset(self):
+        for module in self.children(): 
+            reset_children(module)
+            
+
+def reset_children(mod):
+    if hasattr(mod, 'reset'): mod.reset()
+    for module in mod.children(): 
+        reset_children(module)
 
 # COMPONENTS
 
@@ -404,7 +412,7 @@ class S2SDecoder(nn.Module):
         
         for i, layer in enumerate(self.layers):
             targ_emb = layer(targ_emb, enc, mask_out=mask_out, mask_in=mask_in,
-                        r=pos_enc, u=self.u, v=self.v)
+                        r=pos_enc, g_u=self.u, g_v=self.v)
         return self.head(targ_emb)
 
 class S2SDecoderBlock(nn.Module):
@@ -418,10 +426,10 @@ class S2SDecoderBlock(nn.Module):
         self.ff   = feed_forward(d_model, d_inner, ff_p=ff_p, double_drop=double_drop)
     
     def forward(self, targ:Tensor, enc:Tensor, 
-                r=None, u=None, v=None,
+                r=None, g_u=None, g_v=None,
                 mask_in:Tensor=None, mask_out:Tensor=None): 
-        y = self.mha1(targ, targ, targ, r, u, v, mask=mask_out)
-        return self.ff(self.mha2(y, enc, enc, r, u, v, mask=mask_in))
+        y = self.mha1(targ, targ, targ, r, g_u, g_v, mask=mask_out)
+        return self.ff(self.mha2(y, enc, enc, r, g_u, g_v, mask=mask_in))
     
 class KVMultiHeadRelativeAttention(nn.Module):
     "MutiHeadAttention with relative positional encoding."
