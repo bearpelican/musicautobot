@@ -108,12 +108,12 @@ def to_double_stream(t, vocab=vocab):
     t[:, 1] = t[:, 1] - vocab.dur_range[0]
     return t
 
-def tfm_transpose(x, value, note_range):
+def tfm_transpose(x, value, note_range=vocab.note_range):
     x = x.copy()
     x[(x >= note_range[0]) & (x < note_range[1])] += value
     return x
 
-def rand_transpose(t, note_range=None, rand_range=(0,24), p=0.5):
+def rand_transpose(t, note_range=vocab.note_range, rand_range=(0,24), p=0.5):
     if np.random.rand() < p:
         transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
         if isinstance(t, (list, tuple)) and len(t) == 2: 
@@ -142,18 +142,27 @@ class MusicPreloader(Callback):
         def shuffle(self): np.random.shuffle(self.idx)
 
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
-                 shuffle:bool=False, y_offset:int=1, **kwargs):
+                 shuffle:bool=False, y_offset:int=1, 
+                 rand_transpose=False, transpose_range=(0,24), transpose_p=0.5,
+                 rand_bptt=False,
+                 **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
         self.bs *= num_distrib() or 1
         self.totalToks,self.ite_len,self.idx = int(0),None,None
         self.y_offset = y_offset
+        
+        self.rand_transpose,self.transpose_range,self.transpose_p = rand_transpose,transpose_range,transpose_p
+        self.rand_bptt = rand_bptt
+        self.bptt_len = self.bptt
+        
         self.allocate_buffers() # needed for valid_dl on distributed training - otherwise doesn't get initialized on first epoch
 
     def __len__(self): 
         if self.ite_len is None:
             if self.lengths is None: self.lengths = np.array([len(item) for item in self.dataset.x])
             self.totalToks = self.lengths.sum()
-            self.ite_len   = self.bs*int( math.ceil( self.totalToks/(self.bptt*self.bs) )) if self.item is None else 1
+            bptt_mult = 3/4 if self.rand_bptt else 1
+            self.ite_len   = self.bs*int( math.ceil( self.totalToks/((self.bptt*bptt_mult)*self.bs) )) if self.item is None else 1
         return self.ite_len
 
     def __getattr__(self,k:str)->Any: return getattr(self.dataset, k)
@@ -168,10 +177,29 @@ class MusicPreloader(Callback):
         self.ro    = np.zeros(self.bs, dtype=np.int64)
         #ri: index of the token we're at inside our current text for the various batches
         self.ri    = np.zeros(self.bs, dtype=np.int)
-
+        
+        # allocate random transpose values. Need to allocate this before hand.
+        if self.rand_transpose: self.transpose_values = self.get_random_transpose_values()
+        
+    def get_random_transpose_values(self):
+        n = len(self.dataset)
+        rt_arr = torch.randint(*self.transpose_range, (n,))-self.transpose_range[1]//2
+        mask = torch.rand(rt_arr.shape) > self.transpose_p
+        rt_arr[mask] = 0
+        return rt_arr
+    
+    def update_rand_bptt(self):
+        if self.rand_bptt:
+            self.bptt_len = random.randint(self.bptt//2, self.bptt)
+        
     def on_epoch_begin(self, **kwargs):
         if self.idx is None: self.allocate_buffers()
-        elif self.shuffle:   self.idx.shuffle()
+        elif self.shuffle:   
+            self.ite_len = None
+            len(self)
+            self.idx.shuffle()
+            if self.rand_transpose: self.transpose_values = self.get_random_transpose_values()
+            self.bptt_len = self.bptt
         self.idx.forward = not self.backwards 
 
         step = self.totalToks / self.bs
@@ -193,9 +221,10 @@ class MusicPreloader(Callback):
         if j==0:
             if self.item is not None: return self.dataset[0]
             if self.idx is None: self.on_epoch_begin()
-        self.ro[j],self.ri[j] = self.fill_row(not self.backwards, self.dataset.x, self.idx, self.batch[j], 
+                
+        self.ro[j],self.ri[j] = self.fill_row(not self.backwards, self.dataset.x, self.idx, self.batch[j][:self.bptt_len+self.y_offset], 
                                               self.ro[j], self.ri[j], overlap=1, lengths=self.lengths)
-        return self.batch_x[j], self.batch_y[j]
+        return self.batch_x[j][:self.bptt_len], self.batch_y[j][:self.bptt_len]
 
     def fill_row(self, forward, items, idx, row, ro, ri, overlap, lengths):
         "Fill the row with tokens from the ragged array. --OBS-- overlap != 1 has not been implemented"
@@ -204,7 +233,11 @@ class MusicPreloader(Callback):
         while ibuf < row.shape[0]:  
             ro   += 1 
             ix    = idx[ro]
+            
             rag   = items[ix]
+            if self.rand_transpose: 
+                rag = tfm_transpose(rag, self.transpose_values[ix].item())
+                
             if forward:
                 ri = 0 if ibuf else ri
                 n  = min(lengths[ix] - ri, row.shape[0] - ibuf)
@@ -215,6 +248,7 @@ class MusicPreloader(Callback):
                 row[ibuf:ibuf+n] = rag[ri-n:ri][::-1]
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
+
 
     
 class OpenNPFileProcessor(PreProcessor):
