@@ -14,6 +14,9 @@ TIMESIG = '4/4' # default time signature
 PIANO_RANGE = (21, 108)
 VALTSEP = -1 # separator value for numpy encoding
 
+MAX_NOTE = 128
+MAX_DUR = 130
+
 # Encoding process
 # 1. midi -> music21.Stream
 # 2. Stream -> numpy chord array (timestep X instrument X noterange)
@@ -35,15 +38,15 @@ def npenc2stream(arr, bpm=120):
 ##### ENCODING ######
 
 # 2.
-def stream2chordarr(s, note_range=128, sample_freq=4, max_dur=None):
+def stream2chordarr(s, max_note=MAX_NOTE, sample_freq=4, max_dur=None):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
     # FYI: midi middle C value=60
     
     # (AS) TODO: need to order by instruments most played and filter out percussion or include the channel
-    maxTimeStep = int(s.flat.highestTime * sample_freq)+1
-    score_arr = np.zeros((maxTimeStep, len(s.parts), note_range))
+    maxTimeStep = round(s.flat.highestTime * sample_freq)+1
+    score_arr = np.zeros((maxTimeStep, len(s.parts), max_note))
 
     def note_data(pitch, note):
         return (pitch.midi, round(note.offset*sample_freq), round(note.duration.quarterLength*sample_freq))
@@ -143,13 +146,13 @@ def timestep2npenc(timestep, note_range=PIANO_RANGE, enc_type=None):
 ##### DECODING #####
 
 # 1.
-def npenc2chordarr(npenc, note_range=128):
+def npenc2chordarr(npenc, max_note=MAX_NOTE):
     max_vals = npenc.max(axis=0)
     num_instruments = 1 if len(npenc.shape) <= 2 else max_vals[-1]
     
     max_len = npenc_len(npenc)
     # score_arr = (steps, inst, note)
-    score_arr = np.zeros((max_len, num_instruments, note_range))
+    score_arr = np.zeros((max_len, num_instruments, max_note))
     
     idx = 0
     for step in npenc:
@@ -224,3 +227,18 @@ def load_chordarr(file):
     np_arr = np.array(sparse_matrix.todense())
     return np_arr.reshape((np_arr.shape[0], -1, 127))
 
+
+# Conversion helpers
+
+def is_valid_npenc(npenc, note_range=PIANO_RANGE, max_dur=MAX_DUR, input_path=None, verbose=True):
+    if len(npenc) < 32:
+        if verbose: print('Sequence too short:', len(seq), input_path)
+        return False
+    if (npenc[:,1] >= max_dur).any(): 
+        if verbose: print(f'npenc exceeds max {max_dur} duration:', input_path)
+        return False
+    # https://en.wikipedia.org/wiki/Scientific_pitch_notation - 88 key range - 21 = A0, 108 = C8
+    if ((npenc[...,0] > VALTSEP) & ((npenc[...,0] < note_range[0]) | (npenc[...,0] >= note_range[1]))).any(): 
+        print(f'npenc out of piano note range {note_range}:', input_path)
+        return False
+    return True
