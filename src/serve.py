@@ -25,7 +25,7 @@ def v15_config(vocab):
     config['sep_idx'] = vocab.sep_idx
     config['transpose_range'] = (0,12)
     config['rand_transpose'] = True
-    config['rand_bptt'] = True
+    config['rand_bptt'] = False
     config['note_range'] = vocab.note_range
     config['act'] = Activation.GeLU
     # config['act'] = Activation.ReLU
