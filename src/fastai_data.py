@@ -2,7 +2,7 @@
 # from fastai.text import *
 from fastai.basics import *
 from fastai.text.data import LMLabelList
-from .encode_data import MAX_NOTE, MAX_DUR
+from .encode_data import NOTE_SIZE, DUR_SIZE
 # Additional encoding
 
 BOS = 'xxbos'
@@ -18,13 +18,13 @@ SEP = 'xxsep' # separator idx = -1 (part of notes)
 
 SPECIAL_TOKS = [BOS, PAD, EOS, CLS, MASK, CSEQ, MSEQ, FSEQ, SEP] # Important: SEP token must be last
 
-NOTE_TOKS = [f'n{i}' for i in range(MAX_NOTE)] 
-DUR_TOKS = [f'd{i}' for i in range(MAX_DUR)]
+NOTE_TOKS = [f'n{i}' for i in range(NOTE_SIZE)] 
+DUR_TOKS = [f'd{i}' for i in range(DUR_SIZE)]
 NOTE_START, NOTE_END = NOTE_TOKS[0], NOTE_TOKS[-1]
 DUR_START, DUR_END = DUR_TOKS[0], DUR_TOKS[-1]
 
 MTEMPO_OFF = 'mt0'
-MTEMPO_TOKS = [f'mt{i}' for i in range(5)]
+MTEMPO_TOKS = [f'mt{i}' for i in range(10)]
 
 # Vocab - token to index mapping
 class MusicVocab():

@@ -10,13 +10,16 @@ import scipy.sparse
 from collections import defaultdict
 from math import ceil
 
-TIMESIG = '4/4' # default time signature
+BPB = 4 # beats per bar
+TIMESIG = f'{BPB}/4' # default time signature
 PIANO_RANGE = (21, 108)
 VALTSEP = -1 # separator value for numpy encoding
+VALTCONT = -2 # numpy value for TCONT - needed for compressing chord array
 
 SAMPLE_FREQ = 12
-MAX_NOTE = 128
-MAX_DUR = 130
+NOTE_SIZE = 128
+DUR_SIZE = (6*BPB*SAMPLE_FREQ)+1 # Max length - 8 bars. Or 16 beats/quarternotes
+MAX_NOTE_DUR = (4*BPB*SAMPLE_FREQ)
 
 # Encoding process
 # 1. midi -> music21.Stream
@@ -39,7 +42,7 @@ def npenc2stream(arr, bpm=120):
 ##### ENCODING ######
 
 # 2.
-def stream2chordarr(s, max_note=MAX_NOTE, sample_freq=SAMPLE_FREQ, max_dur=None):
+def stream2chordarr(s, note_size=NOTE_SIZE, sample_freq=SAMPLE_FREQ, max_note_dur=MAX_NOTE_DUR):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
@@ -47,7 +50,7 @@ def stream2chordarr(s, max_note=MAX_NOTE, sample_freq=SAMPLE_FREQ, max_dur=None)
     
     # (AS) TODO: need to order by instruments most played and filter out percussion or include the channel
     maxTimeStep = round(s.flat.highestTime * sample_freq)+1
-    score_arr = np.zeros((maxTimeStep, len(s.parts), max_note))
+    score_arr = np.zeros((maxTimeStep, len(s.parts), NOTE_SIZE))
 
     def note_data(pitch, note):
         return (pitch.midi, round(note.offset*sample_freq), round(note.duration.quarterLength*sample_freq))
@@ -66,39 +69,46 @@ def stream2chordarr(s, max_note=MAX_NOTE, sample_freq=SAMPLE_FREQ, max_dur=None)
         for n in notes_sorted:
             if n is None: continue
             pitch,offset,duration = n
-            if max_dur is not None and duration > max_dur: duration = max_dur
+            if max_note_dur is not None and duration > max_note_dur: duration = max_note_dur
             score_arr[offset, idx, pitch] = duration
+            score_arr[offset+1:offset+duration, idx, pitch] = VALTCONT      # Continue holding note
     return score_arr
 
 def compress_chordarr(chordarr):
     return shorten_chordarr_rests(trim_chordarr_rests(chordarr))
 
-def trim_chordarr_rests(arr, max_rests=16):
+def trim_chordarr_rests(arr, max_rests=4, sample_freq=SAMPLE_FREQ):
+    # max rests is in quarter notes
+    # max 1 bar between song start and end
     start_idx = 0
+    max_sample = max_rests*sample_freq
     for idx,t in enumerate(arr):
-        if t.sum() != 0: break
+        if (t != 0).any(): break
         start_idx = idx+1
         
     end_idx = 0
     for idx,t in enumerate(reversed(arr)):
-        if t.sum() != 0: break
+        if (t != 0).any(): break
         end_idx = idx+1
-    start_idx = start_idx - start_idx % max_rests
-    end_idx = end_idx - end_idx % max_rests
+    start_idx = start_idx - start_idx % max_sample
+    end_idx = end_idx - end_idx % max_sample
 #     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(arr)-end_idx, end_idx)
     return arr[start_idx:(len(arr)-end_idx)]
 
-def shorten_chordarr_rests(arr, max_rests=32):
+def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
+    # max rests is in quarter notes
+    # max 2 bar pause
     rest_count = 0
     result = []
+    max_sample = max_rests*sample_freq
     for timestep in arr:
-        if timestep.sum() == 0: 
+        if (timestep==0).all(): 
             rest_count += 1
         else:
-            if rest_count > max_rests+4:
+            if rest_count > max_sample:
                 old_count = rest_count
-                rest_count = rest_count % 4 + max_rests
-#                 print(f'Compressing rests: {old_count} -> {rest_count}')
+                rest_count = (rest_count % sample_freq) + max_sample
+                print(f'Compressing rests: {old_count} -> {rest_count}')
             for i in range(rest_count): result.append(np.zeros(timestep.shape))
             rest_count = 0
             result.append(timestep)
@@ -147,13 +157,13 @@ def timestep2npenc(timestep, note_range=PIANO_RANGE, enc_type=None):
 ##### DECODING #####
 
 # 1.
-def npenc2chordarr(npenc, max_note=MAX_NOTE):
+def npenc2chordarr(npenc, note_size=NOTE_SIZE):
     max_vals = npenc.max(axis=0)
     num_instruments = 1 if len(npenc.shape) <= 2 else max_vals[-1]
     
     max_len = npenc_len(npenc)
     # score_arr = (steps, inst, note)
-    score_arr = np.zeros((max_len, num_instruments, max_note))
+    score_arr = np.zeros((max_len, num_instruments, note_size))
     
     idx = 0
     for step in npenc:
@@ -231,9 +241,10 @@ def load_chordarr(file):
 
 # Conversion helpers
 
-def is_valid_npenc(npenc, note_range=PIANO_RANGE, max_dur=MAX_DUR, input_path=None, verbose=True):
+def is_valid_npenc(npenc, note_range=PIANO_RANGE, max_dur=DUR_SIZE, 
+                   min_notes=32, input_path=None, verbose=True):
     if len(npenc) < 32:
-        if verbose: print('Sequence too short:', len(seq), input_path)
+        if verbose: print('Sequence too short:', len(npenc), input_path)
         return False
     if (npenc[:,1] >= max_dur).any(): 
         if verbose: print(f'npenc exceeds max {max_dur} duration:', input_path)
