@@ -7,7 +7,7 @@ from fastai.text.models.transformer import *
 
 # DATALOADING AND TRANSFORMATIONS
 
-TaskType = Enum('TaskType', 'MaskOnly, NextSent, Translate, NextWord')
+TaskType = Enum('TaskType', 'MaskOnly, NextWord, Seq2Seq, NextSent')
 
 # BERT Transform
 
@@ -110,7 +110,7 @@ class S2SPreloader(Callback):
 def s2s_tfm(b):
     x,y_s2s = b
     x_mask,y_mask = mask_tfm((x,x))
-    return (x_mask,torch.full_like(x, TaskType.Translate.value),y_s2s[:,:-1]),(y_mask,y_s2s[:,1:])
+    return (x_mask,torch.full_like(x, TaskType.Seq2Seq.value),y_s2s[:,:-1]),(y_mask,y_s2s[:,1:])
 
 # Next Word transform
 def nw_tfm(b):
@@ -263,7 +263,7 @@ class BertHead(nn.Module):
         
         if task_value == TaskType.NextSent.value: # mask, and next sentence task
             return y_mask, task_type, self.ns_decoder(x_enc)
-        if task_value in [TaskType.Translate.value, TaskType.NextWord.value]: 
+        if task_value in [TaskType.Seq2Seq.value, TaskType.NextWord.value]: 
             # use same translation decoder
             return y_mask, task_type, self.s2s_decoder(x_enc, y, task_value)
         return y_mask, task_type
@@ -281,7 +281,7 @@ class BertHead(nn.Module):
 #         if task_value == TaskType.NextSent.value: # mask, and next sentence task
 #             dummy_task = self.s2s_decoder(x_enc, torch.zeros_like(x))*0.0
 #             return x_mask+dummy_task.sum(), task_type, self.ns_decoder(x_enc)
-#         if task_value in [TaskType.Translate.value, TaskType.NextWord.value]: 
+#         if task_value in [TaskType.Seq2Seq.value, TaskType.NextWord.value]: 
 #             # use same translation decoder
 #             dummy_task = self.ns_decoder(x_enc)*0.0
 #             return x_mask+dummy_task.sum(), task_type, self.s2s_decoder(x_enc, y)
@@ -472,6 +472,7 @@ class KVMultiHeadRelativeAttention(nn.Module):
 
 class BertLoss():
     def __init__(self, loss_mult=(1,1,1,1)):
+        "Loss mult - mask, NextWord, Seq2Seq, NextSent"
         self.index_loss = CrossEntropyFlat(ignore_index=vocab.pad_idx)
         self.class_loss = CrossEntropyFlat()
         self.loss_mult=loss_mult
@@ -481,9 +482,9 @@ class BertLoss():
         if task_type is not None: task_type = task_type[0,0].item()
         m = self.index_loss.__call__(x_mask, target, **kwargs) * self.loss_mult[0]
         
-        if task_type == TaskType.NextSent.value: s = self.class_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[1]
-        elif task_type == TaskType.Translate.value: s = self.index_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[2]
-        elif task_type == TaskType.NextWord.value: s = self.index_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[3]
+        if task_type == TaskType.NextWord.value: s = self.index_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[1]
+        elif task_type == TaskType.Seq2Seq.value: s = self.index_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[2]
+        elif task_type == TaskType.NextSent.value: s = self.class_loss.__call__(x_task, target_2, **kwargs) * self.loss_mult[3]
         else: return m
 
         return m + s
@@ -498,14 +499,14 @@ def acc_ignore_pad(input:Tensor, targ:Tensor, pad_idx)->Rank0Tensor:
 def mask_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     return acc_ignore_pad(input[0], t1, vocab.pad_idx)
 
-def s2s_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
-    x_mask, task_type, x_task = input
-    if task_type[0,0].item() != TaskType.Translate.value: return torch.tensor(0, device=x_mask.device)
-    return acc_ignore_pad(x_task, t2, vocab.pad_idx)
-
 def nw_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
     if task_type[0,0].item() != TaskType.NextWord.value: return torch.tensor(0, device=x_mask.device)
+    return acc_ignore_pad(x_task, t2, vocab.pad_idx)
+
+def s2s_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
+    x_mask, task_type, x_task = input
+    if task_type[0,0].item() != TaskType.Seq2Seq.value: return torch.tensor(0, device=x_mask.device)
     return acc_ignore_pad(x_task, t2, vocab.pad_idx)
 
 def ns_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
