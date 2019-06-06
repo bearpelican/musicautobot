@@ -73,7 +73,8 @@ s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache,
 nw_dl_tfms = [nw_tfm]
 nw_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, dl_tfms=nw_dl_tfms, y_offset=1, **config)
 
-datasets = [ns_data, s2s_data, nw_data]
+# datasets = [ns_data, s2s_data, nw_data]
+datasets = [nw_data, s2s_data, ns_data] # ns data takes less memory
 
 full_clip = None if args.half else 0.5
 

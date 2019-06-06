@@ -64,14 +64,14 @@ def v15s_config(vocab):
     
 def unilm_config(vocab):
     config = v15_config(vocab)
-    config['n_layers'] = 10
-    config['dec_layers'] = 6
+    config['n_layers'] = 8
+    config['dec_layers'] = 8
     return config
 
 def unilm_m_config(vocab):
     config = v15_config(vocab)
     config['n_layers'] = 8
-    config['dec_layers'] = 12
+    config['dec_layers'] = 10
     return config
 
     
