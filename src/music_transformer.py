@@ -90,12 +90,7 @@ class MusicLearner(LanguageLearner):
     def __init__(self, *args, config:dict=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.config = config
-        self.bos_idx = config['bos_idx']
-        self.sep_idx = config['sep_idx']
-#         print('Sep_idx:', self.sep_idx)
-
         if config.get('rand_bptt', False): self.callbacks.append(RandBpttCallback(self))
-        print(config.get('rand_bptt'))
 
     def beam_search(self, xb:Tensor, n_words:int, top_k:int=10, beam_sz:int=10, temperature:float=1.,
                     ):
@@ -141,6 +136,9 @@ class MusicLearner(LanguageLearner):
         running_ps = 1.0
         sep_count = 0
 
+        bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
+        vocab = self.data.vocab
+
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
 
@@ -154,7 +152,7 @@ class MusicLearner(LanguageLearner):
                     else: res[res < min_p] = 0.
 
                 # bar = 16 beats
-                if (sep_count // 16) <= min_bars: res[self.bos_idx] = 0.
+                if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
 
                 # Use first temperatures value if last prediction was duration
                 temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
@@ -163,10 +161,10 @@ class MusicLearner(LanguageLearner):
                 idx = torch.multinomial(res, 1).item()
 
 
-                if new_idx and new_idx[-1]==self.sep_idx: 
-                    duration = (idx - 3 - 130) + 1
+                if new_idx and new_idx[-1]==vocab.sep_idx: 
+                    duration = idx - vocab.dur_range[0]
                     sep_count += duration
-        #                 print('Bars', duration, sep_count // 16)
+                    # print('Bars', duration, sep_count // 16)
 
                 if idx==self.bos_idx: 
                     print('Predicted BOS token. Returning prediction...')
