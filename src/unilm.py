@@ -1,5 +1,5 @@
 from .fastai_data import *
-from .music_transformer import MusicLearner, lm_mask, window_mask
+from .music_transformer import MusicLearner, lm_mask, window_mask, rand_window_mask
 from fastai.basics import *
 from fastai.text.models.transformer import _line_shift, init_transformer
 from fastai.text.models.awd_lstm import *
@@ -100,7 +100,7 @@ class S2SPreloader(Callback):
         if random.randint(0,1) == 1: x,y = y,x # switch translation order around
         
         x = np.pad(x, (0,max(0,self.bptt-len(x))), 'constant', constant_values=vocab.pad_idx)[:self.bptt]
-        y = np.pad(y, (self.y_offset,max(0,self.bptt-len(y))), 'constant', constant_values=vocab.pad_idx)[:self.bptt+1]
+        y = np.pad(y, (self.y_offset,max(0,self.bptt-len(y))), 'constant', constant_values=(vocab.stoi[CLS], vocab.pad_idx))[:self.bptt+self.y_offset]
         return x, y
     
     def __len__(self):
@@ -130,9 +130,11 @@ class BertTrainer(LearnerCallback):
     def on_epoch_begin(self, **kwargs):
         "Reset the hidden state of the model."
         self.learn.model.reset()
+        self.learn.model.s2s_decoder.s2s_mask_size = max(self.count+1, 100)
     
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
+        # data switching happens on end because dataloader is set before epoch begin happends
         self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
         self.count += 1
         
@@ -152,7 +154,7 @@ def get_bert_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
     mask_decoder = BertLinearDecoder(n_hid, vocab_sz, output_p, tie_encoder=embed.embed, bias=out_bias)
     ns_decoder = BertLinearDecoder(n_hid, 16, output_p, tie_encoder=None, bias=out_bias) # hardcoded max number of next sentence shifts
     s2s_decoder = S2SDecoder(embed, n_hid, vocab_sz, **config)
-    model = BertHead(encoder, mask_decoder, ns_decoder, s2s_decoder)
+    model = BertHead(encoder, mask_decoder, ns_decoder, s2s_decoder, mem_len=config['mem_len'])
     return model.apply(init_transformer)
 
 
@@ -189,7 +191,6 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         self.mem_len = mem_len
         self.prev_k = None
         self.prev_v = None
-#         print('Mem len:', self.mem_len)
         
     def forward(self, q:Tensor, k:Tensor=None, v:Tensor=None, 
                 r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
@@ -199,6 +200,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
 
     def mem_k(self, k):
+        if self.mem_len == 0: return k
         if self.prev_k is None or (self.prev_k.shape[0] != k.shape[0]): # reset if wrong batch size
             self.prev_k = k
             return k
@@ -207,6 +209,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         return k_ext.detach()
 
     def mem_v(self, v):
+        if self.mem_len == 0: return v
         if self.prev_v is None or (self.prev_v.shape[0] != v.shape[0]): # reset if wrong batch size
             self.prev_v = v
             return v
@@ -247,16 +250,19 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
     
     
 class BertHead(nn.Module):
-    def __init__(self, encoder, mask_decoder, ns_decoder, s2s_decoder):
+    def __init__(self, encoder, mask_decoder, ns_decoder, s2s_decoder, mem_len):
         super().__init__()
         self.encoder = encoder
         self.mask_decoder = mask_decoder
         self.ns_decoder = ns_decoder
         self.s2s_decoder = s2s_decoder
+        self.default_mem_len = mem_len
+        self.current_mem_len = None
         
     
     def forward(self, x, task_type=None, y=None):
         task_value = task_type[0,0].item() if task_type is not None else task_type
+        self.update_mem_len(task_value)
         self.encoder.mask = task_value == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
         x_enc = self.encoder(x)
         y_mask = self.mask_decoder(x_enc) # all tasks include mask decoding
@@ -287,8 +293,6 @@ class BertHead(nn.Module):
 #             return x_mask+dummy_task.sum(), task_type, self.s2s_decoder(x_enc, y)
 #         return x_mask, task_type
     
-    
-    
     def __getitem__(self, idx):
         return [self.encoder, self.mask_decoder, self.ns_decoder, self.s2s_decoder][idx]
         
@@ -297,11 +301,27 @@ class BertHead(nn.Module):
         for module in self.children(): 
             reset_children(module)
             
+    def update_mem_len(self, task_value):
+        # Seq2Seq Translation does not need memory
+        next_mem_len = 0 if task_value == TaskType.Seq2Seq.value else self.default_mem_len
+        if self.current_mem_len == next_mem_len: return
+        print('Updating mem length to:', next_mem_len)
+        for module in self.children(): 
+            update_mem_len(module, next_mem_len)
+        self.current_mem_len = next_mem_len
+        self.reset()
+        
+            
 
 def reset_children(mod):
     if hasattr(mod, 'reset'): mod.reset()
     for module in mod.children(): 
         reset_children(module)
+        
+def update_mem_len(mod, mem_len):
+    if hasattr(mod, 'mem_len'): mod.mem_len = mem_len
+    for module in mod.children(): 
+        update_mem_len(module, mem_len)
 
 # COMPONENTS
 
@@ -333,7 +353,7 @@ class BertEncoder(nn.Module):
                  act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MemMultiHeadRelativeAttentionKV,
                  learned_pos_enc:bool=False, mask:bool=True, **kwargs):
         super().__init__()
-        self.encoder = embed
+        self.embed = embed
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.n_layers,self.d_model,self.mask = n_layers,d_model,mask
@@ -346,7 +366,7 @@ class BertEncoder(nn.Module):
     
     def forward(self, x):
         bs,x_len = x.size()
-        inp, pos_enc, mask = self.encoder(x)
+        inp, pos_enc, mask = self.embed(x)
         mask = mask if self.mask else None
         
         for i, layer in enumerate(self.layers):
@@ -379,7 +399,7 @@ class S2SDecoder(nn.Module):
                  act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MemMultiHeadRelativeAttentionKV,
                  learned_pos_enc:bool=False, mask:bool=True, **kwargs):
         super().__init__()
-        self.encoder = embed
+        self.embed = embed
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.dec_layers,self.d_model,self.mask = dec_layers,d_model,mask
@@ -387,6 +407,7 @@ class S2SDecoder(nn.Module):
                       ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, 
                       attn_cls=attn_cls) for k in range(dec_layers)])
         self.head = BertLinearDecoder(d_model, vocab_sz, tie_encoder=embed.embed, **kwargs)
+        self.s2s_mask_size = 1
     
         nn.init.normal_(self.u, 0., 0.02)
         nn.init.normal_(self.v, 0., 0.02)
@@ -395,12 +416,16 @@ class S2SDecoder(nn.Module):
         # x = encoder, y = target
         bs,targ_len = targ.size()
         
-        targ_emb, pos_enc, mask = self.encoder(targ)
+        targ_emb, pos_enc, mask = self.embed(targ)
 
 #         mask = window_mask(x_len, x.device) if self.mask else None
-
-        mask_out = mask
-        mask_in = mask if task_value == TaskType.NextWord.value else None 
+        if task_value == TaskType.Seq2Seq.value:
+            x_len = targ.shape[-1]
+            mask_out = rand_window_mask(x_len, self.embed.mem_len, targ.device, max_size=self.s2s_mask_size,p=0.5)
+            mask_in = None
+        elif task_value == TaskType.NextWord.value:
+            mask_out = mask
+            mask_in = mask
         
         for i, layer in enumerate(self.layers):
             targ_emb = layer(targ_emb, enc, mask_out=mask_out, mask_in=mask_in,
@@ -422,51 +447,6 @@ class S2SDecoderBlock(nn.Module):
                 mask_in:Tensor=None, mask_out:Tensor=None): 
         y = self.mha1(targ, targ, targ, r, g_u, g_v, mask=mask_out)
         return self.ff(self.mha2(y, enc, enc, r, g_u, g_v, mask=mask_in))
-    
-class KVMultiHeadRelativeAttention(nn.Module):
-    "MutiHeadAttention with relative positional encoding."
-    def __init__(self, n_heads:int, d_model:int, d_head:int=None, resid_p:float=0., attn_p:float=0., bias:bool=True,
-                 scale:bool=True):
-        super().__init__()
-        d_head = ifnone(d_head, d_model//n_heads)
-        self.n_heads,self.d_head,self.scale = n_heads,d_head,scale
-        
-        self.q_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
-        self.k_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
-        self.v_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
-        
-        self.out = nn.Linear(n_heads * d_head, d_model, bias=bias)
-        self.drop_att,self.drop_res = nn.Dropout(attn_p),nn.Dropout(resid_p)
-        self.ln = nn.LayerNorm(d_model)
-        self.r_attn = nn.Linear(d_model, n_heads * d_head, bias=bias)
-        
-    def forward(self, q:Tensor, k:Tensor, v:Tensor, 
-                r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
-                mask:Tensor=None, **kwargs):
-        return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
-    
-    def _apply_attention(self, q:Tensor, k:Tensor, v:Tensor, 
-                         r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
-                         mask:Tensor=None):
-        #Notations from the paper: x input, r vector of relative distance between two elements, u et v learnable
-        #parameters of the model common between all layers, mask to avoid cheating and mem the previous hidden states.
-        bs,x_len,seq_len = q.size(0),q.size(1),r.size(0)
-        wq,wk,wv = self.q_wgt(q),self.k_wgt(k),self.v_wgt(v)
-        wq = wq[:,-x_len:]
-        wq,wk,wv = map(lambda x:x.view(bs, x.size(1), self.n_heads, self.d_head), (wq,wk,wv))
-        wq,wk,wv = wq.permute(0, 2, 1, 3),wk.permute(0, 2, 3, 1),wv.permute(0, 2, 1, 3)
-        wkr = self.r_attn(r)
-        wkr = wkr.view(seq_len, self.n_heads, self.d_head)
-        wkr = wkr.permute(1,2,0)
-        #### compute attention score (AC is (a) + (c) and BS is (b) + (d) in the paper)
-        AC = torch.matmul(wq+g_u,wk)
-        BD = _line_shift(torch.matmul(wq+g_v, wkr))
-        if self.scale: attn_score = (AC + BD).mul_(1/(self.d_head ** 0.5))
-        if mask is not None: 
-            attn_score = attn_score.float().masked_fill(mask, -float('inf')).type_as(attn_score)
-        attn_prob = self.drop_att(F.softmax(attn_score, dim=-1))
-        attn_vec = torch.matmul(attn_prob, wv)
-        return attn_vec.permute(0, 2, 1, 3).contiguous().view(bs, x_len, -1)
     
 # LOSS AND METRICS
 
@@ -513,3 +493,52 @@ def ns_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
     if task_type[0,0].item() != TaskType.NextSent.value: return torch.tensor(0, device=x_mask.device)
     return accuracy(input[-1], t2)
+
+
+# Old Attention
+
+class KVMultiHeadRelativeAttention(nn.Module):
+    "MutiHeadAttention with relative positional encoding. - No memory"
+    def __init__(self, n_heads:int, d_model:int, d_head:int=None, resid_p:float=0., attn_p:float=0., bias:bool=True,
+                 scale:bool=True):
+        super().__init__()
+        d_head = ifnone(d_head, d_model//n_heads)
+        self.n_heads,self.d_head,self.scale = n_heads,d_head,scale
+        
+        self.q_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
+        self.k_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
+        self.v_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
+        
+        self.out = nn.Linear(n_heads * d_head, d_model, bias=bias)
+        self.drop_att,self.drop_res = nn.Dropout(attn_p),nn.Dropout(resid_p)
+        self.ln = nn.LayerNorm(d_model)
+        self.r_attn = nn.Linear(d_model, n_heads * d_head, bias=bias)
+        
+    def forward(self, q:Tensor, k:Tensor, v:Tensor, 
+                r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
+                mask:Tensor=None, **kwargs):
+        return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
+    
+    def _apply_attention(self, q:Tensor, k:Tensor, v:Tensor, 
+                         r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
+                         mask:Tensor=None):
+        #Notations from the paper: x input, r vector of relative distance between two elements, u et v learnable
+        #parameters of the model common between all layers, mask to avoid cheating and mem the previous hidden states.
+        bs,x_len,seq_len = q.size(0),q.size(1),r.size(0)
+        wq,wk,wv = self.q_wgt(q),self.k_wgt(k),self.v_wgt(v)
+        wq = wq[:,-x_len:]
+        wq,wk,wv = map(lambda x:x.view(bs, x.size(1), self.n_heads, self.d_head), (wq,wk,wv))
+        wq,wk,wv = wq.permute(0, 2, 1, 3),wk.permute(0, 2, 3, 1),wv.permute(0, 2, 1, 3)
+        wkr = self.r_attn(r)
+        wkr = wkr.view(seq_len, self.n_heads, self.d_head)
+        wkr = wkr.permute(1,2,0)
+        #### compute attention score (AC is (a) + (c) and BS is (b) + (d) in the paper)
+        AC = torch.matmul(wq+g_u,wk)
+        BD = _line_shift(torch.matmul(wq+g_v, wkr))
+        if self.scale: attn_score = (AC + BD).mul_(1/(self.d_head ** 0.5))
+        if mask is not None: 
+            attn_score = attn_score.float().masked_fill(mask, -float('inf')).type_as(attn_score)
+        attn_prob = self.drop_att(F.softmax(attn_score, dim=-1))
+        attn_vec = torch.matmul(attn_prob, wv)
+        return attn_vec.permute(0, 2, 1, 3).contiguous().view(bs, x_len, -1)
+    

@@ -11,7 +11,7 @@ from fastai.text.data import LMLabelList
 BOS = 'xxbos'
 PAD = 'xxpad'
 EOS = 'xxeos'
-CLS = 'xxcls'
+CLS = 'xxcls' # used for sequence2sequence start of translation
 MASK = 'xxmask'
 CSEQ = 'xxcseq'
 MSEQ = 'xxmseq'
