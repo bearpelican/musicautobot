@@ -16,6 +16,7 @@ VALTSEP = -1 # separator value for numpy encoding
 
 MAX_NOTE = 128
 MAX_DUR = 130
+SAMPLE_FREQ = 4
 
 # Encoding process
 # 1. midi -> music21.Stream
@@ -38,7 +39,7 @@ def npenc2stream(arr, bpm=120):
 ##### ENCODING ######
 
 # 2.
-def stream2chordarr(s, max_note=MAX_NOTE, sample_freq=4, max_dur=None):
+def stream2chordarr(s, max_note=MAX_NOTE, sample_freq=SAMPLE_FREQ, max_dur=None):
     "Converts music21.Stream to 1-hot numpy array"
     # assuming 4/4 time
     # note x instrument x pitch
@@ -172,7 +173,7 @@ def npenc_len(npenc):
 
 
 # 2.
-def chordarr2stream(arr, sample_freq=4, bpm=120):
+def chordarr2stream(arr, sample_freq=SAMPLE_FREQ, bpm=120):
     duration = music21.duration.Duration(1. / sample_freq)
     stream = music21.stream.Stream()
     stream.append(music21.meter.TimeSignature(TIMESIG))
