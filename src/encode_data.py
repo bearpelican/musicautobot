@@ -14,9 +14,9 @@ TIMESIG = '4/4' # default time signature
 PIANO_RANGE = (21, 108)
 VALTSEP = -1 # separator value for numpy encoding
 
+SAMPLE_FREQ = 12
 MAX_NOTE = 128
 MAX_DUR = 130
-SAMPLE_FREQ = 4
 
 # Encoding process
 # 1. midi -> music21.Stream
