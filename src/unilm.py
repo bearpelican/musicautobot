@@ -144,7 +144,7 @@ def get_bert_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
 #     tie_weights,output_p,out_bias = map(config.pop, ['tie_weights', 'output_p', 'out_bias'])
     tie_weights,output_p,out_bias = map(config.get, ['tie_weights', 'output_p', 'out_bias'])
     n_hid = config['d_model']
-    embed = TransformerEmbedding(vocab_sz, n_hid, inp_p=config['embed_p'])
+    embed = TransformerEmbedding(vocab_sz, n_hid, embed_p=config['embed_p'], mem_len=config['mem_len'])
     encoder = BertEncoder(embed=embed, **config)
     mask_decoder = BertLinearDecoder(n_hid, vocab_sz, output_p, tie_encoder=embed.embed, bias=out_bias)
     ns_decoder = BertLinearDecoder(n_hid, 16, output_p, tie_encoder=None, bias=out_bias) # hardcoded max number of next sentence shifts
@@ -157,21 +157,9 @@ def bert_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pre
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
     model = get_bert_model(config['vocab_size'], config=config, drop_mult=drop_mult)
-    learn = MusicLearner(data, model, config=config, split_func=tfmerXL_lm_split,
+#     learn = MusicLearner(data, model, config=config, split_func=tfmerXL_lm_split,
+    learn = MusicLearner(data, model, config=config, split_func=None,
                         **learn_kwargs)
-    
-    if pretrained:
-        if 'url' not in meta: 
-            warn("There are no pretrained weights for that architecture yet!")
-            return learn
-        model_path = untar_data(meta['url'], data=False)
-        fnames = [list(model_path.glob(f'*.{ext}'))[0] for ext in ['pth', 'pkl']]
-        learn.load_pretrained(*fnames)
-        learn.freeze()
-    if pretrained_fnames is not None:
-        fnames = [learn.path/learn.model_dir/f'{fn}.{ext}' for fn,ext in zip(pretrained_fnames, ['pth', 'pkl'])]
-        learn.load_pretrained(*fnames)
-        learn.freeze()
     return learn
 
 # Attn
@@ -270,14 +258,14 @@ class BertHead(nn.Module):
         task_value = task_type[0,0].item() if task_type is not None else task_type
         self.encoder.mask = task_value == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
         x_enc = self.encoder(x)
-        x_mask = self.mask_decoder(x_enc) # all tasks include mask decoding
+        y_mask = self.mask_decoder(x_enc) # all tasks include mask decoding
         
         if task_value == TaskType.NextSent.value: # mask, and next sentence task
-            return x_mask, task_type, self.ns_decoder(x_enc)
+            return y_mask, task_type, self.ns_decoder(x_enc)
         if task_value in [TaskType.Translate.value, TaskType.NextWord.value]: 
             # use same translation decoder
-            return x_mask, task_type, self.s2s_decoder(x_enc, y, task_value)
-        return x_mask, task_type
+            return y_mask, task_type, self.s2s_decoder(x_enc, y, task_value)
+        return y_mask, task_type
     
     # Forward for DDP - however sill gets slow results
 #     def forward(self, x, task_type=None, y=None):
@@ -318,18 +306,20 @@ def reset_children(mod):
 
 class TransformerEmbedding(nn.Module):
     "Embedding + positional encoding + dropout"
-    def __init__(self, vocab_sz:int, emb_sz:int, inp_p:float=0., mem_len=512):
+    def __init__(self, vocab_sz:int, emb_sz:int, embed_p:float=0., mem_len=512):
         super().__init__()
         self.emb_sz = emb_sz
         self.embed = embedding(vocab_sz, emb_sz)
         self.pos_enc = PositionalEncoding(emb_sz)
-        self.drop = nn.Dropout(inp_p)
+        self.drop = nn.Dropout(embed_p)
         self.mem_len = mem_len
     
     def forward(self, inp):
         emb = self.drop(self.embed(inp))
-        pos = torch.arange(0, inp.size(1)+self.mem_len, device=inp.device, dtype=emb.dtype)
         x_len = inp.shape[-1]
+        seq_len = x_len + self.mem_len
+        pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=emb.dtype) # backwards
+#         pos = torch.arange(0, seq_len, device=inp.device, dtype=emb.dtype) # forwards
         mask = window_mask(x_len, inp.device, m_len=self.mem_len)
         return emb, self.pos_enc(pos), mask
 
