@@ -13,99 +13,26 @@ from math import ceil
 TIMESIG = '4/4' # default time signature
 PIANO_RANGE = (21, 108)
 VALTSEP = -1 # separator value for numpy encoding
-VALTSTART = -1 # numpy value for TSTART
-VALTCONT = -2 # numpy value for TCONT
-
-
-NPRE = 'n' # note value encoding prefix
-OPRE = 'o' # octave encoding prefix
-IPRE = 'i' # instrument encoding prefix
-TPRE = 't' # note type encoding prefix - negative means duration encoded
 
 # Encoding process
 # 1. midi -> music21.Stream
 # 2. Stream -> numpy chord array (timestep X instrument X noterange)
 # 3. numpy array -> List[Timestep][NoteEnc]
-# 4. NoteEnc -> string
+def midi2npenc(midi_file, midi_source=None):
+    "Converts midi file to numpy encoding for language model"
+    stream = file2stream(midi_file) # 1.
+    chordarr = stream2chordarr(stream) # 2.
+    return chordarr2npenc(chordarr) # 3.
 
 # Decoding process
-# 1. string -> NoteEnc
-# 2. NoteEnc -> numpy array
-# 3. numpy array -> music21.Stream
-# 4. Stream -> midi
-
-class NoteEnc():
-    # dur = note start/continue, note = midi value, inst = instrument
-    def __init__(self, note, dur, inst=None):
-        assert(dur != 0)
-        self.note,self.dur,self.inst = note,int(dur),inst
-        if self.inst is not None: self.inst = str(self.inst)
-            
-    @property
-    def pitch(self):
-        return music21.pitch.Pitch(self.note)
-    
-    # continuous format is -1 for note strike, -2 for note continued
-    def continuous_repr(self, short=True, instrument=False):
-        dur = self.dur if self.dur == VALTCONT else VALTSTART
-        tname = f'{TPRE}{dur}' # ts=note start, tc=note continue
-        if short: 
-            nname = NPRE + self.pitch.nameWithOctave
-            return [nname, tname]
-        nname = NPRE + self.pitch.name
-        oname = OPRE + str(self.pitch.octave)
-        if instrument:
-            iname = IPRE+self.inst
-            return [nname,oname,tname,iname]
-        return [nname,oname,tname]
-    
-    # duration format is tX for note duration, Return nothing if continued note
-    def duration_repr(self, short=True, instrument=False):
-        if self.dur == VALTCONT: return []
-        tname = f'{TPRE}{self.dur}'
-        if short: 
-            nname = NPRE + self.pitch.nameWithOctave
-            return [nname, tname]
-        nname = NPRE + self.pitch.name
-        oname = OPRE + str(self.pitch.octave)
-        if instrument:
-            iname = IPRE+self.inst
-            return [nname,oname,tname,iname]
-        return [nname,oname,tname]
-    
-#     def joined_repr(self):
-#         # returns something like 'nG:o2:ts:i1'
-#         return NOTE_SEP.join(self.long_comp())
-    
-    def __repr__(self):
-        kname = self.pitch.nameWithOctave
-        tname = f'{TPRE}{self.dur}' # ts=note start, tc=note continue
-        return kname+tname
-    
-    def ival(self): # instrument number value
-        if self.inst is None: return 0
-        return int(self.inst)
-    
-    def m21_note(self):
-        return music21.note.Note(self.note)
-        
-    @classmethod
-    def parse_arr(self, arr):
-        kv = {s[0]:s[1:] for s in arr if s}
-        if NPRE not in kv: return None
-        note = kv[NPRE]
-        if OPRE in kv: note += kv[OPRE]
-        dur = int(kv[TPRE])
-        assert(re.fullmatch(RENOTE, note))
-        return NoteEnc(note=note, dur=dur, inst=kv.get(IPRE))
+# 1. NoteEnc -> numpy chord array
+# 2. numpy array -> music21.Stream
+def npenc2stream(arr, bpm=120):
+    "Converts numpy encoding to music21 stream"
+    chordarr = npenc2chordarr(np.array(arr)) # 1.
+    return chordarr2stream(chordarr, bpm=bpm) # 2.
 
 ##### ENCODING ######
-
-def midi2seq(midi_file):
-    "Converts midi file to string representation for language model"
-    stream = file2stream(midi_file) # 1.
-    s_arr = stream2chordarr(stream) # 2.
-    return chordarr2seq(s_arr) # 3.
 
 # 2.
 def stream2chordarr(s, note_range=128, sample_freq=4, max_dur=None):
@@ -137,7 +64,6 @@ def stream2chordarr(s, note_range=128, sample_freq=4, max_dur=None):
             pitch,offset,duration = n
             if max_dur is not None and duration > max_dur: duration = max_dur
             score_arr[offset, idx, pitch] = duration
-            score_arr[offset+1:offset+duration, idx, pitch] = VALTCONT      # Continue holding note
     return score_arr
 
 def compress_chordarr(chordarr):
@@ -175,30 +101,74 @@ def shorten_chordarr_rests(arr, max_rests=32):
     for i in range(rest_count): result.append(np.zeros(timestep.shape))
     return np.array(result)
 
-# 3a.
-def chordarr2seq(score_arr):
-    # note x instrument x pitch
-    return [timestep2seq(t) for t in score_arr]
+def chordarr2npenc(chordarr):
+    # combine instruments
+    result = []
+    wait_count = 0
+    for idx,timestep in enumerate(chordarr):
+        flat_time = timestep2npenc(timestep)
+        if len(flat_time) == 0:
+            wait_count += 1
+        else:
+            # pitch, octave, duration, instrument
+            if wait_count > 0: result.append([VALTSEP, wait_count])
+            result.extend(flat_time)
+            wait_count = 1
+    if wait_count > 0: result.append([VALTSEP, wait_count])
+    return np.array(result, dtype=int)
 
-# 3b.
-def timestep2seq(timestep):
-    # int x pitch
-    notes = [NoteEnc(n,timestep[i,n],i) for i,n in zip(*timestep.nonzero())]
-    sorted_keys = sorted(notes, key=lambda x: x.pitch, reverse=True)
-    return sorted_keys
+# Note: not worrying about overlaps - as notes will still play. just look tied
+# http://web.mit.edu/music21/doc/moduleReference/moduleStream.html#music21.stream.Stream.getOverlaps
+def timestep2npenc(timestep, note_range=PIANO_RANGE, enc_type=None):
+    # inst x pitch
+    notes = []
+    for i,n in zip(*timestep.nonzero()):
+        d = timestep[i,n]
+        if d < 0: continue # only supporting short duration encoding for now
+        if n < note_range[0] or n >= note_range[1]: continue # must be within midi range
+        notes.append([n,d,i])
+        
+    notes = sorted(notes, key=lambda x: x[0], reverse=True) # sort by note (highest to lowest)
+    
+    if enc_type is None: 
+        # note, duration
+        return [n[:2] for n in notes] 
+    if enc_type == 'parts':
+        # note, duration, part
+        return [n for n in notes]
+    if enc_type == 'full':
+        # note_class, duration, octave, instrument
+        return [[n%12, d, n//12, i] for n,d,i in notes] 
 
 ##### DECODING #####
 
-# 2.
-def seq2chordarr(seq, note_range=128): # 128 = default midi range
-    num_parts = max([n.ival() for t in seq for n in t]) + 1
-    score_arr = np.zeros((len(seq), num_parts, note_range))
-    for idx,ts in enumerate(seq):
-        for note in ts:
-            score_arr[idx,note.ival(),note.pitch.midi] = note.dur
+# 1.
+def npenc2chordarr(npenc, note_range=128):
+    max_vals = npenc.max(axis=0)
+    num_instruments = 1 if len(npenc.shape) <= 2 else max_vals[-1]
+    
+    max_len = npenc_len(npenc)
+    # score_arr = (steps, inst, note)
+    score_arr = np.zeros((max_len, num_instruments, note_range))
+    
+    idx = 0
+    for step in npenc:
+        n,d,i = (step.tolist()+[0])[:3] # or n,d,i
+        if n < VALTSEP: continue # special token
+        if n == VALTSEP:
+            idx += d
+            continue
+        score_arr[idx,i,n] = d
     return score_arr
 
-# 3.
+def npenc_len(npenc):
+    duration = 0
+    for t in npenc:
+        if t[0] == VALTSEP: duration += t[1]
+    return duration
+
+
+# 2.
 def chordarr2stream(arr, sample_freq=4, bpm=120):
     duration = music21.duration.Duration(1. / sample_freq)
     stream = music21.stream.Stream()
@@ -211,43 +181,16 @@ def chordarr2stream(arr, sample_freq=4, bpm=120):
     stream = stream.transpose(0)
     return stream
 
-# 3b.
+# 2b.
 def partarr2stream(part, duration, stream=None):
     "convert instrument part to music21 chords"
     if stream is None: stream = music21.stream.Stream()
     stream.append(music21.instrument.Piano())
-    if np.any(part > 0): part_append_duration_notes(part, duration, stream) # notes already have duration calculated
-    else: part_append_continuous_notes(part, duration, stream) # notes are either start or continued 
+    part_append_duration_notes(part, duration, stream) # notes already have duration calculated
 
     return stream
 
-# 3b
-def part_append_continuous_notes(part, duration, stream):
-    starts = part == VALTSTART
-    durations = calc_note_durations(part)
-    for tidx,t in enumerate(starts):
-        note_idxs = np.where(t < 0)[0]
-        if len(note_idxs) == 0: continue
-        notes = []
-        for nidx in note_idxs:
-            note = music21.note.Note(nidx)
-            tnext = durations[tidx+1,nidx] if tidx+1 < len(part) else 0
-            note.duration = music21.duration.Duration((tnext+1)*duration.quarterLength)
-            notes.append(note)
-        for g in group_notes_by_duration(notes):
-            chord = music21.chord.Chord(g)
-            stream.insert(tidx*duration.quarterLength, chord)
-    return stream
-        
-# 3c.
-def calc_note_durations(part):
-    "calculate midi note durations from TCONT notes"
-    cnotes = (part == VALTCONT).astype(int)
-    for i in reversed(range(cnotes.shape[0]-1)):
-        cnotes[i] += cnotes[i+1]*cnotes[i]
-    return cnotes
-
-# 3alt.
+# 2c.
 def part_append_duration_notes(part, duration, stream=None):
     "convert instrument part to music21 chords"
     for tidx,t in enumerate(part):
@@ -281,67 +224,3 @@ def load_chordarr(file):
     np_arr = np.array(sparse_matrix.todense())
     return np_arr.reshape((np_arr.shape[0], -1, 127))
 
-
-
-# npenc functions
-
-def npenc2stream(arr, bpm=120):
-    "Converts numpy encoding to music21 stream"
-    seq = npenc2seq(np.array(arr))
-    chordarr = seq2chordarr(seq)
-    return chordarr2stream(chordarr, bpm=bpm)
-
-def midi2npenc(midi_file, midi_source=None):
-    "Converts midi file to numpy encoding for language model"
-    stream = file2stream(midi_file) # 1.
-    s_arr = stream2chordarr(stream) # 2.
-    seq = chordarr2seq(s_arr) # 3.
-    return seq2npenc(seq)
-
-# 4.
-def npenc_func(n, num_comps=2):
-    if num_comps == 2: return [n.pitch.midi, n.dur]
-    raise ValueError('Unhandled number of components')
-
-def seq2npenc(seq):
-    "Note function returns a list of note components for separation"
-    result = []
-    wait_count = 1
-    for idx,timestep in enumerate(seq):
-        flat_time = [npenc_func(n) for n in timestep if n.pitch.octave and n.dur > 0]
-        if len(flat_time) == 0:
-            wait_count += 1
-        else:
-            # pitch, octave, duration, instrument
-            result.append([VALTSEP, wait_count])
-            result.extend(flat_time)
-            wait_count = 1
-    return np.array(result, dtype=int)
-
-def npdec_func(step):
-    n,d,o,i = pad_array(step, 0, final_length=4)
-    return NoteEnc(n+o*12,d,i)
-    
-def npenc2seq(npenc, dec_func=npdec_func):
-    seq = []
-    tstep = []
-    npenc = npenc.copy()
-    for x in npenc:
-        n,d = x[:2]
-        if n < VALTSEP: continue # special tokens
-        if n == VALTSEP: 
-            if len(tstep) > 0: seq.append(tstep) # add notes if they exists
-            tstep = []
-            for i in range(1, d): seq.append([])
-        else:
-            if d == 0: 
-                print('Note with 0 duration. continuing')
-                continue
-            tstep.append(dec_func(x))
-    if len(tstep) > 0: seq.append(tstep)
-    return seq
-
-def pad_array(arr, fill_value, final_length):
-    if isinstance(arr, np.ndarray): arr = arr.tolist()
-    padding = [fill_value] * max(0, final_length - len(arr))
-    return arr+padding
