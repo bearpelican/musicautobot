@@ -67,7 +67,7 @@ ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=v
 
 s2s_dl_tfms = [s2s_tfm]
 s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
-                           preloader_cls=S2SPreloader, dl_tfms=[mask_s2s_tfm], y_offset=1,
+                           preloader_cls=S2SPreloader, dl_tfms=s2s_dl_tfms, y_offset=1,
                            shuffle_dl=True, **config)
 
 nw_dl_tfms = [nw_tfm]
@@ -86,7 +86,7 @@ if args.lamb:
     
 # Load Learner
 learn = bert_model_learner(datasets[0], config.copy(), 
-                           loss_func=BertLoss(),
+                           loss_func=BertLoss(loss_mult=(1,1,1,0.7)),
                            clip=full_clip, drop_mult=1.5, opt_func=opt_func)
 
 # Load custom data trainer - overwrite RNNTrainer
