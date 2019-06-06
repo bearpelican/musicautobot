@@ -96,8 +96,8 @@ class S2SPreloader(Callback):
         x = self.single_tfm(x, start_seq=melody_meta)
         y = self.single_tfm(y, start_seq=chord_meta)
         
-        if random.randint(0,1) == 1: x,y = y,x # switch translation order around
         x,y = self.transpose_tfm((x,y))
+        if random.randint(0,1) == 1: x,y = y,x # switch translation order around
         
         x = np.pad(x, (0,max(0,self.bptt-len(x))), 'constant', constant_values=vocab.pad_idx)[:self.bptt]
         y = np.pad(y, (self.y_offset,max(0,self.bptt-len(y))), 'constant', constant_values=vocab.pad_idx)[:self.bptt+1]
@@ -107,11 +107,10 @@ class S2SPreloader(Callback):
         return len(self.dataset)
     
 # preloader itself contains all the transforms
-def mask_s2s_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
-             mask_idx=vocab.mask_idx, p=0.1, double=False, mask_last=False):
+def s2s_tfm(b):
     x,y_s2s = b
     x_mask,y_mask = mask_tfm((x,x))
-    return (x,torch.full_like(x, TaskType.Translate.value),y_s2s[:,:-1]),(y_mask,y_s2s[:,1:])
+    return (x_mask,torch.full_like(x, TaskType.Translate.value),y_s2s[:,:-1]),(y_mask,y_s2s[:,1:])
 
 # Next Word transform
 def nw_tfm(b):

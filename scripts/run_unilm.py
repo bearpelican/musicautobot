@@ -65,7 +65,7 @@ ns_dl_tfms = [partial(mask_tfm, p=0.35), partial(next_sentence_tfm, max_cls=conf
 ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
                           y_offset=0, dl_tfms=ns_dl_tfms, **config)
 
-s2s_dl_tfms = [mask_s2s_tfm]
+s2s_dl_tfms = [s2s_tfm]
 s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
                            preloader_cls=S2SPreloader, dl_tfms=[mask_s2s_tfm], y_offset=1,
                            shuffle_dl=True, **config)
