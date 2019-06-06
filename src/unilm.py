@@ -127,6 +127,10 @@ class BertTrainer(LearnerCallback):
         super().__init__(learn)
         self.dataloaders = dataloaders
         self.count = 1
+        
+    def on_epoch_begin(self, **kwargs):
+        "Reset the hidden state of the model."
+        self.learn.model.reset()
     
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
@@ -196,19 +200,17 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
 
     def mem_k(self, k):
-        if self.prev_k is None:
+        if self.prev_k is None or (self.prev_k.shape[0] != k.shape[0]): # reset if wrong batch size
             self.prev_k = k
             return k
-#         print('K shape:', k.shape)
         k_ext = torch.cat([self.prev_k, k], dim=1)
         self.prev_k = k_ext[:, -self.mem_len:]
         return k_ext.detach()
 
     def mem_v(self, v):
-        if self.prev_v is None:
+        if self.prev_v is None or (self.prev_v.shape[0] != v.shape[0]): # reset if wrong batch size
             self.prev_v = v
             return v
-#         print('K shape:', v.shape)
         v_ext = torch.cat([self.prev_v, v], dim=1)
         self.prev_v = v_ext[:, -self.mem_len:]
         return v_ext.detach()
@@ -314,12 +316,14 @@ class TransformerEmbedding(nn.Module):
         self.drop = nn.Dropout(embed_p)
         self.mem_len = mem_len
     
-    def forward(self, inp):
+    def forward(self, inp, pos_forward=False):
         emb = self.drop(self.embed(inp))
         x_len = inp.shape[-1]
         seq_len = x_len + self.mem_len
-        pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=emb.dtype) # backwards
-#         pos = torch.arange(0, seq_len, device=inp.device, dtype=emb.dtype) # forwards
+        if pos_forward:
+            pos = torch.arange(0, seq_len, device=inp.device, dtype=emb.dtype) # forwards
+        else:
+            pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=emb.dtype) # backwards (txl pos encoding)
         mask = window_mask(x_len, inp.device, m_len=self.mem_len)
         return emb, self.pos_enc(pos), mask
 
@@ -344,8 +348,7 @@ class BertEncoder(nn.Module):
     def forward(self, x):
         bs,x_len = x.size()
         inp, pos_enc, mask = self.encoder(x)
-
-        if not self.mask: mask = None
+        mask = mask if self.mask else None
         
         for i, layer in enumerate(self.layers):
             inp = layer(inp, r=pos_enc, g_u=self.u, g_v=self.v, mask=mask, mem=None)
@@ -398,7 +401,7 @@ class S2SDecoder(nn.Module):
 #         mask = window_mask(x_len, x.device) if self.mask else None
 
         mask_out = mask
-        mask_in = mask if task_value == TaskType.NextWord else None 
+        mask_in = mask if task_value == TaskType.NextWord.value else None 
         
         for i, layer in enumerate(self.layers):
             targ_emb = layer(targ_emb, enc, mask_out=mask_out, mask_in=mask_in,
