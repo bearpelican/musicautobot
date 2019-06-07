@@ -61,7 +61,7 @@ config['max_cls'] = args.ns_max_cls
 if args.no_transpose: config['transpose_range'] = (0, 1)
 
 # Next Sentence Data
-ns_dl_tfms = [partial(mask_tfm, p=0.35), partial(next_sentence_tfm, max_cls=config['max_cls'])]
+ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['max_cls'])]
 ns_config = config.copy()
 ns_config['bs'] *= 2
 ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
