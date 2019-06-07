@@ -16,7 +16,7 @@ from src.unilm import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v15/')
+parser.add_argument('--path', type=str, default='../data/midi/v16/')
 parser.add_argument('--cache', type=str, default='tmp/all')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
@@ -62,8 +62,10 @@ if args.no_transpose: config['transpose_range'] = (0, 1)
 
 # Next Sentence Data
 ns_dl_tfms = [partial(mask_tfm, p=0.35), partial(next_sentence_tfm, max_cls=config['max_cls'])]
+ns_config = config.copy()
+ns_config['bs'] *= 2
 ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
-                          y_offset=0, dl_tfms=ns_dl_tfms, **config)
+                          y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
 
 s2s_dl_tfms = [s2s_tfm]
 s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
@@ -71,7 +73,8 @@ s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache,
                            shuffle_dl=True, **config)
 
 nw_dl_tfms = [nw_tfm]
-nw_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, dl_tfms=nw_dl_tfms, y_offset=1, **config)
+nw_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
+                          dl_tfms=nw_dl_tfms, y_offset=1, **config)
 
 # datasets = [ns_data, s2s_data, nw_data]
 datasets = [nw_data, s2s_data, ns_data] # ns data takes less memory
@@ -86,8 +89,8 @@ if args.lamb:
     
 # Load Learner
 learn = bert_model_learner(datasets[0], config.copy(), 
-                           loss_func=BertLoss(loss_mult=(1,1,1,0.7)),
-                           clip=full_clip, drop_mult=1.5, opt_func=opt_func)
+                           loss_func=BertLoss(),
+                           clip=full_clip, opt_func=opt_func)
 
 # Load custom data trainer - overwrite RNNTrainer
 learn.metrics = [mask_acc, ns_acc, s2s_acc, nw_acc]
