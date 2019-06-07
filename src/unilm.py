@@ -107,6 +107,15 @@ class S2SPreloader(Callback):
     def __len__(self):
         return len(self.dataset)
     
+def partenc2seq2seq(part_np, part_type=MSEQ, vocab=vocab, bptt=512, translate=False):
+    part_meta = np.array([vocab.stoi[part_type], vocab.stoi[avg_tempo(part_np)]])
+    s2s_out = to_single_stream(part_np, start_seq=part_meta)
+    if translate:
+        s2s_out = np.pad(s2s_out, (1,bptt), 'constant', constant_values=(vocab.stoi[CLS], vocab.pad_idx))[:bptt]
+    else:
+        s2s_out = np.pad(s2s_out, (0,bptt), 'constant', constant_values=vocab.pad_idx)[:bptt]
+    return s2s_out
+
 # preloader itself contains all the transforms
 def s2s_tfm(b):
     x,y_s2s = b
@@ -138,8 +147,70 @@ class BertTrainer(LearnerCallback):
         # data switching happens on end because dataloader is set before epoch begin happends
         self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
         self.count += 1
+
+class UnilmLearner(MusicLearner):
+    
+    def predict_nw(self, xb:Tensor, n_words:int=128,
+                   temperature:float=1.0, min_p:float=None):
+        if xb.shape[0] > 1: xb = xb[0][None]
+        seed = xb.cpu().numpy().squeeze()
+        yb = torch.ones_like(xb)
+        new_idx = []
+        self.model.reset()
+
+        for i in progress_bar(range(n_words), leave=True):
+            task_type = torch.full_like(xb, TaskType.NextWord.value)
+
+            # Next Word
+            res = self.pred_batch(batch=((xb,task_type,xb),xb))[-1][0, -1] # task1, task2 - (bs x ts x vocab)
+ 
+            if min_p is not None: 
+                if (res >= min_p).float().sum() == 0: warn(f"No item w/ probability >= {min_p}.")
+                else: res[res < min_p] = 0.
+                        
+            # Use first temperatures value if last prediction was duration
+            res.pow_(1 / temperature)
+            idx = torch.multinomial(res, 1).item()
+
+            new_idx.append(idx)
+    #         t_idx = torch.tensor(idx, device=xb.device).view(1, 1)
+    #         xb = torch.cat((xb, t_idx), dim=-1)
+            xb = xb.new_tensor([idx])[None]
+
+    #     self.mask = True
+        return np.array(new_idx), seed
+
         
-        
+    def predict_s2s(self, xb:Tensor, yb:Tensor, n_words:int=128,
+                    temperature:float=1.0, min_p:float=None):
+        if xb.shape[0] > 1: xb = xb[0][None]
+        yb_seed = yb[:, :5]
+        self.model.reset()
+        self.model.update_mem_len(TaskType.Seq2Seq.value)
+
+        for i in progress_bar(range(n_words), leave=True):
+            task_type = torch.full_like(xb, TaskType.Seq2Seq.value)
+            pad = xb.shape[-1]-yb_seed.shape[-1]
+            yb_inp = F.pad(yb_seed, (0,pad), value=vocab.pad_idx)
+
+            # Sequence 2 Sequence
+            pred_idx = yb_seed.shape[-1]-1
+            res = self.pred_batch(batch=((xb,task_type,yb_inp),yb_inp))[-1][0, pred_idx] # task1, task2 - (bs x ts x vocab)
+
+            if min_p is not None: 
+                if (res >= min_p).float().sum() == 0: warn(f"No item w/ probability >= {min_p}.")
+                else: res[res < min_p] = 0.
+                    
+            # Use first temperatures value if last prediction was duration
+            res.pow_(1 / temperature)
+            idx = torch.multinomial(res, 1).item()
+    #         idx = res.argmax()
+
+            t_idx = torch.tensor(idx, device=xb.device).view(1, 1)
+            yb_seed = torch.cat((yb_seed, t_idx), dim=-1)
+
+        return yb_seed
+
         
 # MODEL LOADING
 
@@ -163,10 +234,12 @@ def bert_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pre
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
     model = get_bert_model(config['vocab_size'], config=config, drop_mult=drop_mult)
-#     learn = MusicLearner(data, model, config=config, split_func=tfmerXL_lm_split,
-    learn = MusicLearner(data, model, config=config, split_func=None,
+#     learn = UnilmLearner(data, model, config=config, split_func=tfmerXL_lm_split,
+    learn = UnilmLearner(data, model, config=config, split_func=None,
                         **learn_kwargs)
     return learn
+
+
 
 # Attn
 
