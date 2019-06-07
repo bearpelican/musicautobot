@@ -34,6 +34,8 @@ parser.add_argument('--config', type=str, default='unilm_config', help='serve.py
 parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
 parser.add_argument("--ns_max_cls", type=int, default=4)
 parser.add_argument('--data_parallel', action='store_true', help='DataParallel instead of DDP')
+parser.add_argument('--s2s_mask_window', type=int, default=1,
+                    help='Starting mask window size for sequence2sequence task. Basically teacher forcing'
 
 args = parser.parse_args()
 args.path = Path(args.path)
@@ -97,7 +99,7 @@ learn.metrics = [mask_acc, nw_acc, s2s_acc, ns_acc]
 
 from fastai.callbacks.rnn import RNNTrainer
 learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
-learn.callbacks.append(BertTrainer(learn, datasets))
+learn.callbacks.append(BertTrainer(learn, datasets, s2s_starting_mask_window=args.s2s_mask_window))
 
 if args.load:
     load_path = Path(args.path)/args.load

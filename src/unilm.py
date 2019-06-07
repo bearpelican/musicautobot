@@ -134,16 +134,17 @@ def nw_tfm(b):
 
 class BertTrainer(LearnerCallback):
     "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
-    def __init__(self, learn:Learner, dataloaders):
+    def __init__(self, learn:Learner, dataloaders, s2s_starting_mask_window=1):
         super().__init__(learn)
         self.dataloaders = dataloaders
         self.count = 1
+        self.mw_start=s2s_starting_mask_window
 
     def on_epoch_begin(self, **kwargs):
         "Reset the hidden state of the model."
         model = get_model(self.learn.model)
         model.reset()
-        model.s2s_decoder.s2s_mask_size = max(self.count+1, 100)
+        model.s2s_decoder.s2s_mask_size = max(self.count+self.mw_start, 100)
         
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
@@ -504,7 +505,7 @@ class S2SDecoder(nn.Module):
 #         mask = window_mask(x_len, x.device) if self.mask else None
         if task_value == TaskType.Seq2Seq.value:
             x_len = targ.shape[-1]
-            mask_out = rand_window_mask(x_len, self.embed.mem_len, targ.device, max_size=self.s2s_mask_size,p=0.5)
+            mask_out = rand_window_mask(x_len, self.embed.mem_len, targ.device, max_size=self.s2s_mask_size,p=0.75)
             mask_in = None
         elif task_value == TaskType.NextWord.value:
             mask_out = mask
