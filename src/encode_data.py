@@ -18,8 +18,8 @@ VALTCONT = -2 # numpy value for TCONT - needed for compressing chord array
 
 SAMPLE_FREQ = 12
 NOTE_SIZE = 128
-DUR_SIZE = (6*BPB*SAMPLE_FREQ)+1 # Max length - 8 bars. Or 16 beats/quarternotes
-MAX_NOTE_DUR = (4*BPB*SAMPLE_FREQ)
+DUR_SIZE = (10*BPB*SAMPLE_FREQ)+1 # Max length - 8 bars. Or 16 beats/quarternotes
+MAX_NOTE_DUR = (8*BPB*SAMPLE_FREQ)
 
 # Encoding process
 # 1. midi -> music21.Stream
@@ -106,9 +106,9 @@ def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
             rest_count += 1
         else:
             if rest_count > max_sample:
-                old_count = rest_count
+#                 old_count = rest_count
                 rest_count = (rest_count % sample_freq) + max_sample
-                print(f'Compressing rests: {old_count} -> {rest_count}')
+#                 print(f'Compressing rests: {old_count} -> {rest_count}')
             for i in range(rest_count): result.append(np.zeros(timestep.shape))
             rest_count = 0
             result.append(timestep)
@@ -244,10 +244,10 @@ def load_chordarr(file):
 def is_valid_npenc(npenc, note_range=PIANO_RANGE, max_dur=DUR_SIZE, 
                    min_notes=32, input_path=None, verbose=True):
     if len(npenc) < 32:
-        if verbose: print('Sequence too short:', len(npenc), input_path)
+#         if verbose: print('Sequence too short:', len(npenc), input_path)
         return False
     if (npenc[:,1] >= max_dur).any(): 
-        if verbose: print(f'npenc exceeds max {max_dur} duration:', input_path)
+        if verbose: print(f'npenc exceeds max {max_dur} duration:', npenc[:,1].max(), input_path)
         return False
     # https://en.wikipedia.org/wiki/Scientific_pitch_notation - 88 key range - 21 = A0, 108 = C8
     if ((npenc[...,0] > VALTSEP) & ((npenc[...,0] < note_range[0]) | (npenc[...,0] >= note_range[1]))).any(): 

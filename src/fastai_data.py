@@ -75,6 +75,8 @@ class MusicVocab():
     def create(cls) -> 'Vocab':
         "Create a vocabulary from a set of `tokens`."
         itos = SPECIAL_TOKS + NOTE_TOKS + DUR_TOKS + MTEMPO_TOKS
+        if len(itos)%8 != 0:
+            itos = itos + [f'dummy{i}' for i in range(len(itos)%8)]
         return cls(itos)
     
     @classmethod
