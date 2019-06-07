@@ -5,6 +5,8 @@ from fastai.text.models.transformer import _line_shift, init_transformer
 from fastai.text.models.awd_lstm import *
 from fastai.text.models.transformer import *
 
+from .encode_data import VALTSEP, SAMPLE_FREQ
+
 # DATALOADING AND TRANSFORMATIONS
 
 TaskType = Enum('TaskType', 'MaskOnly, NextWord, Seq2Seq, NextSent')
@@ -75,9 +77,13 @@ class S2SFileProcessor(PreProcessor):
         ds.items = [i for i in ds.items if i is not None]
 #         ds.items = array([self.process_one(item) for item in ds.items], dtype=np.object)
 
-def avg_tempo(t, sep_idx=0):
+def avg_tempo(t, sep_idx=VALTSEP):
     avg = t[t[:, 0] == sep_idx][:, 1].sum()/t.shape[0]
-    return 'mt'+str(int(max(round(avg), 4)))
+    avg = int(round(avg/SAMPLE_FREQ))
+    return 'mt'+str(min(avg, MTEMPO_SIZE-1))
+
+def avg_pitch(t, sep_idx=VALTSEP):
+    return t[t[:, 0] > sep_idx][:, 0].mean()
 
 class S2SPreloader(Callback):
     def __init__(self, dataset:LabelList, bptt:int=512, y_offset=1, **kwargs):
@@ -91,17 +97,12 @@ class S2SPreloader(Callback):
     def __getitem__(self, k:int):
         item,_ = self.dataset[k]
         x,y = item
-        
-        melody_meta = np.array([self.vocab.stoi[MSEQ], self.vocab.stoi[avg_tempo(x)]]) # pad should be average notes - tempo
-        chord_meta = np.array([self.vocab.stoi[CSEQ], self.vocab.stoi[avg_tempo(y)]])
-        x = self.single_tfm(x, start_seq=melody_meta)
-        y = self.single_tfm(y, start_seq=chord_meta)
-        
-        x,y = self.transpose_tfm((x,y))
         if random.randint(0,1) == 1: x,y = y,x # switch translation order around
+            
+        part_order = [MSEQ, CSEQ] if avg_pitch(x) > avg_pitch(y) else [CSEQ, MSEQ] # Assuming melody has higher pitch
+        x = partenc2seq2seq(x, part_type=part_order[0], bptt=self.bptt)
+        y = partenc2seq2seq(y, part_type=part_order[1], bptt=self.bptt+1, translate=True) # offset bptt for decoder shift
         
-        x = np.pad(x, (0,max(0,self.bptt-len(x))), 'constant', constant_values=vocab.pad_idx)[:self.bptt]
-        y = np.pad(y, (self.y_offset,max(0,self.bptt-len(y))), 'constant', constant_values=(vocab.stoi[CLS], vocab.pad_idx))[:self.bptt+self.y_offset]
         return x, y
     
     def __len__(self):
@@ -110,10 +111,11 @@ class S2SPreloader(Callback):
 def partenc2seq2seq(part_np, part_type=MSEQ, vocab=vocab, bptt=512, translate=False):
     part_meta = np.array([vocab.stoi[part_type], vocab.stoi[avg_tempo(part_np)]])
     s2s_out = to_single_stream(part_np, start_seq=part_meta)
-    if translate:
-        s2s_out = np.pad(s2s_out, (1,bptt), 'constant', constant_values=(vocab.stoi[CLS], vocab.pad_idx))[:bptt]
-    else:
-        s2s_out = np.pad(s2s_out, (0,bptt), 'constant', constant_values=vocab.pad_idx)[:bptt]
+    
+    pad_first = 1 if translate else 0
+    s2s_out = np.pad(s2s_out, (pad_first,1), 'constant', constant_values=(vocab.stoi[CLS], vocab.stoi[EOS]))
+    
+    s2s_out = np.pad(s2s_out, (0,bptt), 'constant', constant_values=vocab.pad_idx)[:bptt]
     return s2s_out
 
 # preloader itself contains all the transforms

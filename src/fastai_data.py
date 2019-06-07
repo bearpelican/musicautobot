@@ -23,8 +23,9 @@ DUR_TOKS = [f'd{i}' for i in range(DUR_SIZE)]
 NOTE_START, NOTE_END = NOTE_TOKS[0], NOTE_TOKS[-1]
 DUR_START, DUR_END = DUR_TOKS[0], DUR_TOKS[-1]
 
+MTEMPO_SIZE = 10
 MTEMPO_OFF = 'mt0'
-MTEMPO_TOKS = [f'mt{i}' for i in range(10)]
+MTEMPO_TOKS = [f'mt{i}' for i in range(MTEMPO_SIZE)]
 
 # Vocab - token to index mapping
 class MusicVocab():
