@@ -49,7 +49,8 @@ def stream2chordarr(s, note_size=NOTE_SIZE, sample_freq=SAMPLE_FREQ, max_note_du
     # FYI: midi middle C value=60
     
     # (AS) TODO: need to order by instruments most played and filter out percussion or include the channel
-    maxTimeStep = round(s.flat.highestTime * sample_freq)+1
+    highest_time = max(s.flat.getElementsByClass('Note').highestTime, s.flat.getElementsByClass('Chord').highestTime)
+    maxTimeStep = round(highest_time * sample_freq)+1
     score_arr = np.zeros((maxTimeStep, len(s.parts), NOTE_SIZE))
 
     def note_data(pitch, note):
