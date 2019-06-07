@@ -138,12 +138,13 @@ class BertTrainer(LearnerCallback):
         super().__init__(learn)
         self.dataloaders = dataloaders
         self.count = 1
-        
+
     def on_epoch_begin(self, **kwargs):
         "Reset the hidden state of the model."
-        self.learn.model.reset()
-        self.learn.model.s2s_decoder.s2s_mask_size = max(self.count+1, 100)
-    
+        model = get_model(self.learn.model)
+        model.reset()
+        model.s2s_decoder.s2s_mask_size = max(self.count+1, 100)
+        
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
         # data switching happens on end because dataloader is set before epoch begin happends
@@ -383,7 +384,7 @@ class BertHead(nn.Module):
         # Seq2Seq Translation does not need memory
         next_mem_len = 0 if task_value == TaskType.Seq2Seq.value else self.default_mem_len
         if self.current_mem_len == next_mem_len: return
-        print('Updating mem length to:', next_mem_len)
+        # print('Updating mem length to:', next_mem_len)
         for module in self.children(): 
             update_mem_len(module, next_mem_len)
         self.current_mem_len = next_mem_len
