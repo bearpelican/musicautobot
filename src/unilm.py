@@ -242,7 +242,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         wkr = wkr.permute(1,2,0)
         #### compute attention score (AC is (a) + (c) and BS is (b) + (d) in the paper)
         AC = torch.matmul(wq+g_u,wk)
-        BD = _line_shift(torch.matmul(wq+g_v, wkr))
+        BD = _line_shift(torch.matmul(wq+g_v, wkr), mask=True)
         if self.scale: attn_score = (AC + BD).mul_(1/(self.d_head ** 0.5))
         if mask is not None: 
             mask = mask[...,-seq_len:]
@@ -333,7 +333,11 @@ class TransformerEmbedding(nn.Module):
     def __init__(self, vocab_sz:int, emb_sz:int, embed_p:float=0., mem_len=512):
         super().__init__()
         self.emb_sz = emb_sz
-        self.embed = embedding(vocab_sz, emb_sz)
+        
+        self.embed = nn.Embedding(vocab_sz, emb_sz, padding_idx=vocab.pad_idx)
+        # See https://arxiv.org/abs/1711.09160
+        with torch.no_grad(): trunc_normal_(self.embed.weight, std=0.01)
+#         self.embed = embedding(vocab_sz, emb_sz)
         self.pos_enc = PositionalEncoding(emb_sz)
         self.drop = nn.Dropout(embed_p)
         self.mem_len = mem_len
