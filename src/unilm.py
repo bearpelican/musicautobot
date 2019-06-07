@@ -48,6 +48,7 @@ def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx,
     x,y = x.clone(),y.clone()
     rand = torch.rand(x.shape, device=x.device)
     rand[x < word_range[0]] = 1.0
+    rand[x >= word_range[1]] = 1.0
     if mask_last: rand[:, -1] = 0.0
     y[rand > p] = pad_idx
     x[rand <= (p*.8)] = mask_idx # 80% = mask
@@ -204,8 +205,9 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         if self.prev_k is None or (self.prev_k.shape[0] != k.shape[0]): # reset if wrong batch size
             self.prev_k = k
             return k
-        k_ext = torch.cat([self.prev_k, k], dim=1)
-        self.prev_k = k_ext[:, -self.mem_len:]
+        with torch.no_grad():
+            k_ext = torch.cat([self.prev_k, k], dim=1)
+            self.prev_k = k_ext[:, -self.mem_len:]
         return k_ext.detach()
 
     def mem_v(self, v):
@@ -213,8 +215,9 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         if self.prev_v is None or (self.prev_v.shape[0] != v.shape[0]): # reset if wrong batch size
             self.prev_v = v
             return v
-        v_ext = torch.cat([self.prev_v, v], dim=1)
-        self.prev_v = v_ext[:, -self.mem_len:]
+        with torch.no_grad():
+            v_ext = torch.cat([self.prev_v, v], dim=1)
+            self.prev_v = v_ext[:, -self.mem_len:]
         return v_ext.detach()
         
     def reset(self):
