@@ -180,7 +180,7 @@ def npenc_len(npenc):
     duration = 0
     for t in npenc:
         if t[0] == VALTSEP: duration += t[1]
-    return duration
+    return duration + 1
 
 
 # 2.

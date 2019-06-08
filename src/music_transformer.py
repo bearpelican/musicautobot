@@ -9,6 +9,8 @@ from fastai.text.models.transformer import init_transformer
 from fastai.text.learner import language_model_learner, get_language_model, _model_meta
 from fastai.callbacks.tracker import *
 
+from .encode_data import SAMPLE_FREQ
+
 def window_mask(x_len, device, m_len=0, size=(1,1)):
     win_size,k = size
     mem_mask = np.zeros((x_len,m_len))
@@ -167,7 +169,7 @@ class MusicLearner(LanguageLearner):
                     sep_count += duration
                     # print('Bars', duration, sep_count // 16)
 
-                if idx==self.bos_idx: 
+                if idx==vocab.bos_idx: 
                     print('Predicted BOS token. Returning prediction...')
                     break
 
