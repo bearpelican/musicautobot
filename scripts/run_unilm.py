@@ -35,7 +35,7 @@ parser.add_argument('--no_transpose', action='store_true', help='No transpose da
 parser.add_argument("--ns_max_cls", type=int, default=4)
 parser.add_argument('--data_parallel', action='store_true', help='DataParallel instead of DDP')
 parser.add_argument('--s2s_mask_window', type=int, default=1,
-                    help='Starting mask window size for sequence2sequence task. Basically teacher forcing'
+                    help='Starting mask window size for sequence2sequence task. Basically teacher forcing')
 
 args = parser.parse_args()
 args.path = Path(args.path)
