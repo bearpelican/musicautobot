@@ -127,7 +127,7 @@ class MusicLearner(LanguageLearner):
         return [i.item() for i in nodes[node_idx][xb_length:] ]
 
     def predict(self, xb:Tensor, n_words:int=128,
-            temperatures:float=(1.0,1.0), min_p:float=None, min_bars=4):
+            temperatures:float=(1.0,1.0), min_ps:float=None, min_bars=4):
         "Return the `n_words` that come after `text`."
         self.model.reset()
         self.model.mask = False
@@ -149,7 +149,8 @@ class MusicLearner(LanguageLearner):
 
                 res = self.pred_batch(batch=(xb,yb))[0][-1]
                 #if len(new_idx) == 0: self.model[0].select_hidden([0])
-                if min_p is not None: 
+                if min_ps is not None: 
+                    min_p = min_ps[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else min_ps[1]
                     if (res >= min_p).float().sum() == 0:
                         warn(f"There is no item with probability >= {min_p}, try a lower value.")
                     else: res[res < min_p] = 0.
