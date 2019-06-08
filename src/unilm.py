@@ -252,7 +252,7 @@ def bert_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pre
 class MemMultiHeadRelativeAttentionKV(nn.Module):
     "MutiHeadAttention with relative positional encoding."
     def __init__(self, n_heads:int, d_model:int, d_head:int=None, resid_p:float=0., attn_p:float=0., bias:bool=True,
-                 scale:bool=True, mem_len:int=512):
+                 scale:bool=True, mem_len:int=512, r_mask=True):
         super().__init__()
         d_head = ifnone(d_head, d_model//n_heads)
         self.n_heads,self.d_head,self.scale = n_heads,d_head,scale
@@ -265,6 +265,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         self.drop_att,self.drop_res = nn.Dropout(attn_p),nn.Dropout(resid_p)
         self.ln = nn.LayerNorm(d_model)
         self.r_attn = nn.Linear(d_model, n_heads * d_head, bias=bias)
+        self.r_mask = r_mask
 
         self.mem_len = mem_len
         self.prev_k = None
@@ -319,7 +320,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         wkr = wkr.permute(1,2,0)
         #### compute attention score (AC is (a) + (c) and BS is (b) + (d) in the paper)
         AC = torch.matmul(wq+g_u,wk)
-        BD = _line_shift(torch.matmul(wq+g_v, wkr), mask=True)
+        BD = _line_shift(torch.matmul(wq+g_v, wkr), mask=self.r_mask)
         if self.scale: attn_score = (AC + BD).mul_(1/(self.d_head ** 0.5))
         if mask is not None: 
             mask = mask[...,-seq_len:]
@@ -430,6 +431,19 @@ class TransformerEmbedding(nn.Module):
         mask = window_mask(x_len, inp.device, m_len=self.mem_len)
         return emb, self.pos_enc(pos), mask
 
+    
+class BertEncoderBlock(nn.Module):
+    "Basic block of a Transformer model."
+    #Can't use Sequential directly cause more than one input...
+    def __init__(self, n_heads:int, d_model:int, d_head:int, d_inner:int, resid_p:float=0., attn_p:float=0., ff_p:float=0.,
+                 bias:bool=True, scale:bool=True, act:Activation=Activation.ReLU, double_drop:bool=True,
+                 attn_cls:Callable=MemMultiHeadRelativeAttentionKV, r_mask=False):
+        super().__init__()
+        self.mhra = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, r_mask=r_mask)
+        self.ff   = feed_forward(d_model, d_inner, ff_p=ff_p, act=act, double_drop=double_drop)
+    
+    def forward(self, x:Tensor, mask:Tensor=None, **kwargs): return self.ff(self.mhra(x, mask=mask, **kwargs))
+
 class BertEncoder(nn.Module):
     "TransformerXL model: https://arxiv.org/abs/1901.02860."
     def __init__(self, embed:nn.Module, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
@@ -441,9 +455,9 @@ class BertEncoder(nn.Module):
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.n_layers,self.d_model,self.mask = n_layers,d_model,mask
-        self.layers = nn.ModuleList([DecoderLayer(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
+        self.layers = nn.ModuleList([BertEncoderBlock(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
                       ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, 
-                      attn_cls=attn_cls) for k in range(n_layers)])
+                      attn_cls=attn_cls, r_mask=False) for k in range(n_layers)])
         
         nn.init.normal_(self.u, 0., 0.02)
         nn.init.normal_(self.v, 0., 0.02)
@@ -481,14 +495,14 @@ class S2SDecoder(nn.Module):
     def __init__(self, embed:nn.Module, n_hid:int, vocab_sz:int, dec_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
                  resid_p:float=0., attn_p:float=0., ff_p:float=0., bias:bool=False, scale:bool=True,
                  act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MemMultiHeadRelativeAttentionKV,
-                 learned_pos_enc:bool=False, mask:bool=True, **kwargs):
+                 learned_pos_enc:bool=False, mask:bool=True, mem_len:int=512, **kwargs):
         super().__init__()
         self.embed = embed
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.dec_layers,self.d_model,self.mask = dec_layers,d_model,mask
         self.layers = nn.ModuleList([S2SDecoderBlock(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
-                      ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, 
+                      ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, mem_len=mem_len,
                       attn_cls=attn_cls) for k in range(dec_layers)])
         self.head = BertLinearDecoder(d_model, vocab_sz, tie_encoder=embed.embed, **kwargs)
         self.s2s_mask_size = 1
@@ -503,13 +517,16 @@ class S2SDecoder(nn.Module):
         targ_emb, pos_enc, mask = self.embed(targ)
 
 #         mask = window_mask(x_len, x.device) if self.mask else None
+        x_len = targ.shape[-1]
         if task_value == TaskType.Seq2Seq.value:
-            x_len = targ.shape[-1]
-            mask_out = rand_window_mask(x_len, self.embed.mem_len, targ.device, max_size=self.s2s_mask_size,p=0.75)
+#             mask_out = rand_window_mask(x_len, self.embed.mem_len, targ.device, max_size=self.s2s_mask_size,p=0.5)
+            mask_out = rand_window_mask(x_len, self.embed.mem_len, targ.device, max_size=self.s2s_mask_size,p=0.75,is_eval=not self.train)
             mask_in = None
         elif task_value == TaskType.NextWord.value:
-            mask_out = mask
+            mask_out = rand_window_mask(x_len, self.embed.mem_len, targ.device, max_size=16,p=0.3,is_eval=not self.train)
+#             mask_out = mask
             mask_in = mask
+#             mask_in = None
         
         for i, layer in enumerate(self.layers):
             targ_emb = layer(targ_emb, enc, mask_out=mask_out, mask_in=mask_in,
@@ -520,10 +537,11 @@ class S2SDecoderBlock(nn.Module):
     "Decoder block of a Transformer model."
     #Can't use Sequential directly cause more than one input...
     def __init__(self, n_heads:int, d_model:int, d_head:int, d_inner:int, resid_p:float=0., attn_p:float=0., ff_p:float=0.,
-                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512, **kwargs):
+                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512,
+                 attn_cls=MemMultiHeadRelativeAttentionKV, **kwargs):
         super().__init__()
-        self.mha1 = MemMultiHeadRelativeAttentionKV(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len)
-        self.mha2 = MemMultiHeadRelativeAttentionKV(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len)
+        self.mha1 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=True)
+        self.mha2 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=True)
         self.ff   = feed_forward(d_model, d_inner, ff_p=ff_p, double_drop=double_drop)
     
     def forward(self, targ:Tensor, enc:Tensor, 
@@ -577,52 +595,3 @@ def ns_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
     if task_type[0,0].item() != TaskType.NextSent.value: return torch.tensor(0, device=x_mask.device)
     return accuracy(input[-1], t2)
-
-
-# Old Attention
-
-class KVMultiHeadRelativeAttention(nn.Module):
-    "MutiHeadAttention with relative positional encoding. - No memory"
-    def __init__(self, n_heads:int, d_model:int, d_head:int=None, resid_p:float=0., attn_p:float=0., bias:bool=True,
-                 scale:bool=True):
-        super().__init__()
-        d_head = ifnone(d_head, d_model//n_heads)
-        self.n_heads,self.d_head,self.scale = n_heads,d_head,scale
-        
-        self.q_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
-        self.k_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
-        self.v_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
-        
-        self.out = nn.Linear(n_heads * d_head, d_model, bias=bias)
-        self.drop_att,self.drop_res = nn.Dropout(attn_p),nn.Dropout(resid_p)
-        self.ln = nn.LayerNorm(d_model)
-        self.r_attn = nn.Linear(d_model, n_heads * d_head, bias=bias)
-        
-    def forward(self, q:Tensor, k:Tensor, v:Tensor, 
-                r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
-                mask:Tensor=None, **kwargs):
-        return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
-    
-    def _apply_attention(self, q:Tensor, k:Tensor, v:Tensor, 
-                         r:Tensor=None, g_u:Tensor=None, g_v:Tensor=None, 
-                         mask:Tensor=None):
-        #Notations from the paper: x input, r vector of relative distance between two elements, u et v learnable
-        #parameters of the model common between all layers, mask to avoid cheating and mem the previous hidden states.
-        bs,x_len,seq_len = q.size(0),q.size(1),r.size(0)
-        wq,wk,wv = self.q_wgt(q),self.k_wgt(k),self.v_wgt(v)
-        wq = wq[:,-x_len:]
-        wq,wk,wv = map(lambda x:x.view(bs, x.size(1), self.n_heads, self.d_head), (wq,wk,wv))
-        wq,wk,wv = wq.permute(0, 2, 1, 3),wk.permute(0, 2, 3, 1),wv.permute(0, 2, 1, 3)
-        wkr = self.r_attn(r)
-        wkr = wkr.view(seq_len, self.n_heads, self.d_head)
-        wkr = wkr.permute(1,2,0)
-        #### compute attention score (AC is (a) + (c) and BS is (b) + (d) in the paper)
-        AC = torch.matmul(wq+g_u,wk)
-        BD = _line_shift(torch.matmul(wq+g_v, wkr))
-        if self.scale: attn_score = (AC + BD).mul_(1/(self.d_head ** 0.5))
-        if mask is not None: 
-            attn_score = attn_score.float().masked_fill(mask, -float('inf')).type_as(attn_score)
-        attn_prob = self.drop_att(F.softmax(attn_score, dim=-1))
-        attn_vec = torch.matmul(attn_prob, wv)
-        return attn_vec.permute(0, 2, 1, 3).contiguous().view(bs, x_len, -1)
-    

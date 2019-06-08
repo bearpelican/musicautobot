@@ -14,9 +14,10 @@ def window_mask(x_len, device, m_len=0, size=(1,1)):
     mem_mask = np.zeros((x_len,m_len))
     tri_mask = np.triu(np.ones((x_len//win_size+1,x_len//win_size+1)),k=k)
     window_mask = tri_mask.repeat(win_size,axis=0).repeat(win_size,axis=1)[:x_len,:x_len]
+    window_mask[...,0] = 0 # Always allowing first index to see. Otherwise you'll get NaN loss
     np_mask = np.concatenate((mem_mask, window_mask), axis=1)
     mask = torch.tensor(np_mask, device=device).byte()[None,None]
-    if m_len == 0: mask[...,0] = 0 # attention needs to see at least first column otherwise NaN
+#     if m_len == 0: mask[...,0] = 0 # attention needs to see at least first column otherwise NaN
     return mask
     
 def rand_window_mask(x_len,m_len,device,max_size=3,p=0.2,is_eval=False):
