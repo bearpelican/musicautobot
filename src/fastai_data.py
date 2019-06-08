@@ -35,13 +35,13 @@ class MusicVocab():
 #         self.stoi = collections.defaultdict(int,{v:k for k,v in enumerate(self.itos)})
         self.stoi = {v:k for k,v in enumerate(self.itos)}
 
-#     def numericalize(self, t:Collection[str]) -> List[int]:
-#         "Convert a list of tokens `t` to their ids."
-#         return [self.stoi[w] for w in t]
+    def numericalize(self, t:Collection[str]) -> List[int]:
+        "Convert a list of tokens `t` to their ids."
+        return [self.stoi[w] for w in t]
 
-#     def textify(self, nums:Collection[int], sep=' ') -> List[str]:
-#         "Convert a list of `nums` to their tokens."
-#         return sep.join([self.itos[i] for i in nums]) if sep is not None else [self.itos[i] for i in nums]
+    def textify(self, nums:Collection[int], sep=' ') -> List[str]:
+        "Convert a list of `nums` to their tokens."
+        return sep.join([self.itos[i] for i in nums]) if sep is not None else [self.itos[i] for i in nums]
     @property 
     def mask_idx(self): return self.stoi[MASK]
     @property 
@@ -95,7 +95,7 @@ def to_single_stream(t, vocab=vocab, start_seq=None):
     t = t.copy()
     t[:, 0] = t[:, 0] + vocab.note_range[0]
     t[:, 1] = t[:, 1] + vocab.dur_range[0]
-    if start_seq is None: start_seq = np.array([vocab.stoi[BOS], vocab.stoi[PAD]])
+    if start_seq is None: start_seq = np.array([vocab.bos_idx, vocab.pad_idx])
     return np.concatenate([start_seq, t.reshape(-1)])
 
 def to_double_stream(t, vocab=vocab):
