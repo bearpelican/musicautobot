@@ -244,7 +244,7 @@ def load_chordarr(file):
 
 def is_valid_npenc(npenc, note_range=PIANO_RANGE, max_dur=DUR_SIZE, 
                    min_notes=32, input_path=None, verbose=True):
-    if len(npenc) < 32:
+    if len(npenc) < min_notes:
 #         if verbose: print('Sequence too short:', len(npenc), input_path)
         return False
     if (npenc[:,1] >= max_dur).any(): 
