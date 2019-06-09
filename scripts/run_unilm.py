@@ -16,7 +16,7 @@ from src.unilm import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v16/')
+parser.add_argument('--path', type=str, default='../data/midi/v16/sf4/')
 parser.add_argument('--cache', type=str, default='tmp/all')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
