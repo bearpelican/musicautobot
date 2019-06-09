@@ -176,3 +176,77 @@ class MusicLearner(LanguageLearner):
                 new_idx.append(idx)
                 xb = xb.new_tensor([idx])[None]
         return np.array(new_idx), seed
+
+    def predict_topk(self, xb:Tensor, n_words:int=128,
+                     temperatures:float=(1.0,1.0), min_bars=4,
+                     top_k=40, top_p=0.0):
+        "Return the `n_words` that come after `text`."
+        self.model.reset()
+        if xb.shape[0] > 1: xb = xb[0][None]
+        seed = xb.cpu().numpy().squeeze()
+        yb = torch.ones_like(xb)
+        new_idx = []
+
+        sep_count = 0
+
+        bar_len = 4 * 4 # assuming 4/4 time
+        vocab = self.data.vocab
+
+        with torch.no_grad():
+            for i in progress_bar(range(n_words), leave=True):
+
+                res = self.pred_batch(batch=(xb,yb))[0][-1]
+
+                # bar = 16 beats
+                if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
+
+                # Use first temperatures value if last prediction was duration
+                temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
+                if temperature != 1.: res.pow_(1 / temperature)
+
+                res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
+                idx = torch.multinomial(res, 1).item()
+
+                if new_idx and new_idx[-1]==vocab.sep_idx: 
+                    duration = idx - vocab.dur_range[0]
+                    sep_count += duration
+                    # print('Bars', duration, sep_count // 16)
+
+                if idx==vocab.bos_idx: 
+                    print('Predicted BOS token. Returning prediction...')
+                    break
+
+
+                new_idx.append(idx)
+                xb = xb.new_tensor([idx])[None]
+        return np.array(new_idx), seed
+    
+# top_k + nucleus filter - https://twitter.com/thom_wolf/status/1124263861727760384?lang=en
+# https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
+def top_k_top_p_filtering(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
+    """ Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
+        Args:
+            logits: logits distribution shape (vocabulary size)
+            top_k >0: keep only top k tokens with highest probability (top-k filtering).
+            top_p >0.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
+    """
+    assert logits.dim() == 1  # batch size 1 for now - could be updated for more but the code would be less clear
+    top_k = min(top_k, logits.size(-1))  # Safety check
+    if top_k > 0:
+        # Remove all tokens with a probability less than the last token of the top-k
+        indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+        logits[indices_to_remove] = filter_value
+
+    if top_p > 0.0:
+        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+        cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+        # Remove tokens with cumulative probability above the threshold
+        sorted_indices_to_remove = cumulative_probs > top_p
+        # Shift the indices to the right to keep also the first token above the threshold
+        sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+        sorted_indices_to_remove[..., 0] = 0
+
+        indices_to_remove = sorted_indices[sorted_indices_to_remove]
+        logits[indices_to_remove] = filter_value
+    return logits
