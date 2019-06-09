@@ -16,7 +16,7 @@ from src.serve import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v16/midi_encode/')
+parser.add_argument('--path', type=str, default='../data/midi/v16/midi_encode/sf4/')
 parser.add_argument('--cache', type=str, default='tmp/dmp')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
@@ -81,6 +81,6 @@ if args.local_rank == 0 and args.save_every: learn.callbacks.append(SaveModelCal
 # learn.callbacks.append(EarlyStoppingCallback(learn))
 
 if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.15, final_div=50, wd=args.wd)
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.2, final_div=200, wd=args.wd)
 
 if args.local_rank == 0: learn.save(f'{args.save}')
