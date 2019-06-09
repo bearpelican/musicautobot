@@ -345,6 +345,7 @@ class BertHead(nn.Module):
         task_value = task_type[0,0].item() if task_type is not None else task_type
         self.update_mem_len(task_value)
         self.encoder.mask = task_value == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
+        # self.encoder.mask = False
         x_enc = self.encoder(x)
         y_mask = self.mask_decoder(x_enc) # all tasks include mask decoding
         

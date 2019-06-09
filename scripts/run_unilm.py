@@ -16,7 +16,7 @@ from src.unilm import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v16/')
+parser.add_argument('--path', type=str, default='../data/midi/v16/sf4/')
 parser.add_argument('--cache', type=str, default='tmp/all')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
@@ -63,23 +63,23 @@ config['max_cls'] = args.ns_max_cls
 if args.no_transpose: config['transpose_range'] = (0, 1)
 
 # Next Sentence Data
-ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['max_cls'])]
-ns_config = config.copy()
-ns_config['bs'] *= 2
-ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
-                          y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
+# ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['max_cls'])]
+# ns_config = config.copy()
+# ns_config['bs'] *= 2
+# ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
+#                           y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
 
-s2s_dl_tfms = [s2s_tfm]
-s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
-                           preloader_cls=S2SPreloader, dl_tfms=s2s_dl_tfms, y_offset=1,
-                           shuffle_dl=True, **config)
+# s2s_dl_tfms = [s2s_tfm]
+# s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
+#                            preloader_cls=S2SPreloader, dl_tfms=s2s_dl_tfms, y_offset=1,
+#                            shuffle_dl=True, **config)
 
 nw_dl_tfms = [nw_tfm]
 nw_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
                           dl_tfms=nw_dl_tfms, y_offset=1, **config)
 
-# datasets = [ns_data, s2s_data, nw_data]
-datasets = [nw_data, s2s_data, ns_data] # ns data takes less memory
+#datasets = [nw_data, s2s_data, ns_data] # ns data takes less memory
+datasets = [nw_data] # ns data takes less memory
 
 full_clip = None if args.half else 0.5
 
@@ -117,6 +117,6 @@ if args.data_parallel: learn = learn.to_parallel()
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.5, final_div=50, wd=args.wd)
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.2, final_div=50, wd=args.wd)
 
 if args.local_rank == 0: learn.save(f'{args.save}')
