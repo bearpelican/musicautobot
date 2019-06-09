@@ -16,7 +16,7 @@ PIANO_RANGE = (21, 108)
 VALTSEP = -1 # separator value for numpy encoding
 VALTCONT = -2 # numpy value for TCONT - needed for compressing chord array
 
-SAMPLE_FREQ = 12
+SAMPLE_FREQ = 4
 NOTE_SIZE = 128
 DUR_SIZE = (10*BPB*SAMPLE_FREQ)+1 # Max length - 8 bars. Or 16 beats/quarternotes
 MAX_NOTE_DUR = (8*BPB*SAMPLE_FREQ)
@@ -245,7 +245,7 @@ def load_chordarr(file):
 def is_valid_npenc(npenc, note_range=PIANO_RANGE, max_dur=DUR_SIZE, 
                    min_notes=32, input_path=None, verbose=True):
     if len(npenc) < min_notes:
-#         if verbose: print('Sequence too short:', len(npenc), input_path)
+        if verbose: print('Sequence too short:', len(npenc), input_path)
         return False
     if (npenc[:,1] >= max_dur).any(): 
         if verbose: print(f'npenc exceeds max {max_dur} duration:', npenc[:,1].max(), input_path)
