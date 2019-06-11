@@ -25,11 +25,11 @@ MAX_NOTE_DUR = (8*BPB*SAMPLE_FREQ)
 # 1. midi -> music21.Stream
 # 2. Stream -> numpy chord array (timestep X instrument X noterange)
 # 3. numpy array -> List[Timestep][NoteEnc]
-def midi2npenc(midi_file, midi_source=None):
+def midi2npenc(midi_file, midi_source=None, skip_last_rest=False):
     "Converts midi file to numpy encoding for language model"
     stream = file2stream(midi_file) # 1.
     chordarr = stream2chordarr(stream) # 2.
-    return chordarr2npenc(chordarr) # 3.
+    return chordarr2npenc(chordarr, skip_last_rest=skip_last_rest) # 3.
 
 # Decoding process
 # 1. NoteEnc -> numpy chord array
@@ -116,7 +116,7 @@ def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
     for i in range(rest_count): result.append(np.zeros(timestep.shape))
     return np.array(result)
 
-def chordarr2npenc(chordarr):
+def chordarr2npenc(chordarr, skip_last_rest=False):
     # combine instruments
     result = []
     wait_count = 0
@@ -129,7 +129,7 @@ def chordarr2npenc(chordarr):
             if wait_count > 0: result.append([VALTSEP, wait_count])
             result.extend(flat_time)
             wait_count = 1
-    if wait_count > 0: result.append([VALTSEP, wait_count])
+    if wait_count > 0 and not skip_last_rest: result.append([VALTSEP, wait_count])
     return np.array(result, dtype=int)
 
 # Note: not worrying about overlaps - as notes will still play. just look tied
