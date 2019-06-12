@@ -25,7 +25,7 @@ MAX_NOTE_DUR = (8*BPB*SAMPLE_FREQ)
 # 1. midi -> music21.Stream
 # 2. Stream -> numpy chord array (timestep X instrument X noterange)
 # 3. numpy array -> List[Timestep][NoteEnc]
-def midi2npenc(midi_file, midi_source=None, skip_last_rest=False):
+def midi2npenc(midi_file, midi_source=None, skip_last_rest=True):
     "Converts midi file to numpy encoding for language model"
     stream = file2stream(midi_file) # 1.
     chordarr = stream2chordarr(stream) # 2.
@@ -116,7 +116,7 @@ def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
     for i in range(rest_count): result.append(np.zeros(timestep.shape))
     return np.array(result)
 
-def chordarr2npenc(chordarr, skip_last_rest=False):
+def chordarr2npenc(chordarr, skip_last_rest=True):
     # combine instruments
     result = []
     wait_count = 0
