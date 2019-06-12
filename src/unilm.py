@@ -1,5 +1,6 @@
 from .fastai_data import *
-from .music_transformer import MusicLearner, lm_mask, window_mask, rand_window_mask
+from .encode_data import *
+from .music_transformer import *
 from fastai.basics import *
 from fastai.text.models.transformer import _line_shift, init_transformer
 from fastai.text.models.awd_lstm import *
@@ -118,6 +119,25 @@ def partenc2seq2seq(part_np, part_type=MSEQ, vocab=vocab, bptt=512, translate=Fa
     s2s_out = np.pad(s2s_out, (0,bptt), 'constant', constant_values=vocab.pad_idx)[:bptt]
     return s2s_out
 
+def s2s_file2parts(file, pred_melody=False):
+    melody_np, chord_np = np.load(file, allow_pickle=True)
+    mpart = partenc2seq2seq(melody_np, part_type=MSEQ, translate=pred_melody)
+    cpart = partenc2seq2seq(chord_np, part_type=CSEQ, translate=not pred_melody)
+    return mpart, cpart
+
+def combined_npenc2chordarr(np1, np2):
+    if len(np1.shape) == 1: np1 = to_double_stream(np1)
+    if len(np2.shape) == 1: np1 = to_double_stream(np2)
+    p1 = npenc2chordarr(np1)
+    p2 = npenc2chordarr(np2)
+    max_ts = max(p1.shape[0], p2.shape[0])
+    p1w = ((0,max_ts-p1.shape[0]),(0,0),(0,0))
+    p1_pad = np.pad(p1, p1w, 'constant')
+    p2w = ((0,max_ts-p2.shape[0]),(0,0),(0,0))
+    p2_pad = np.pad(p2, p2w, 'constant')
+    chordarr_comb = np.concatenate((p1_pad, p2_pad), axis=1)
+    return chordarr_comb
+
 # preloader itself contains all the transforms
 def s2s_tfm(b):
     x,y_s2s = b
@@ -154,39 +174,58 @@ class BertTrainer(LearnerCallback):
 
 class UnilmLearner(MusicLearner):
     
+
     def predict_nw(self, xb:Tensor, n_words:int=128,
-                   temperature:float=1.0, min_p:float=None):
+                     temperatures:float=(1.0,1.0), min_bars=4,
+                     top_k=40, top_p=0.9):
+        "Return the `n_words` that come after `text`."
+        self.model.reset()
         if xb.shape[0] > 1: xb = xb[0][None]
         seed = xb.cpu().numpy().squeeze()
         yb = torch.ones_like(xb)
         new_idx = []
-        self.model.reset()
 
-        for i in progress_bar(range(n_words), leave=True):
-            task_type = torch.full_like(xb, TaskType.NextWord.value)
+        sep_count = 0
 
-            # Next Word
-            res = self.pred_batch(batch=((xb,task_type,xb),xb))[-1][0, -1] # task1, task2 - (bs x ts x vocab)
- 
-            if min_p is not None: 
-                if (res >= min_p).float().sum() == 0: warn(f"No item w/ probability >= {min_p}.")
-                else: res[res < min_p] = 0.
-                        
-            # Use first temperatures value if last prediction was duration
-            res.pow_(1 / temperature)
-            idx = torch.multinomial(res, 1).item()
+        bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
+        vocab = self.data.vocab
 
-            new_idx.append(idx)
-    #         t_idx = torch.tensor(idx, device=xb.device).view(1, 1)
-    #         xb = torch.cat((xb, t_idx), dim=-1)
-            xb = xb.new_tensor([idx])[None]
+        with torch.no_grad():
+            for i in progress_bar(range(n_words), leave=True):
+                task_type = torch.full_like(xb, TaskType.NextWord.value)
 
-    #     self.mask = True
+                res = self.pred_batch(batch=((xb,task_type,xb),yb))[-1][0, -1]
+
+                # bar = 16 beats
+                if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
+
+                # Use first temperatures value if last prediction was duration
+                temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
+                if temperature != 1.: res.pow_(1 / temperature)
+
+                res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
+                idx = torch.multinomial(res, 1).item()
+
+                if new_idx and new_idx[-1]==vocab.sep_idx: 
+                    duration = idx - vocab.dur_range[0]
+                    sep_count += duration
+                    # print('Bars', duration, sep_count // 16)
+
+                if idx==vocab.bos_idx: 
+                    print('Predicted BOS token. Returning prediction...')
+                    break
+
+
+                new_idx.append(idx)
+                xb = xb.new_tensor([idx])[None]
         return np.array(new_idx), seed
 
+
         
+
     def predict_s2s(self, xb:Tensor, yb:Tensor, n_words:int=128,
-                    temperature:float=1.0, min_p:float=None):
+                    temperatures:float=(1.0,1.0),
+                    top_k=40, top_p=0.9):
         if xb.shape[0] > 1: xb = xb[0][None]
         yb_seed = yb[:, :5]
         self.model.reset()
@@ -197,18 +236,24 @@ class UnilmLearner(MusicLearner):
             pad = xb.shape[-1]-yb_seed.shape[-1]
             yb_inp = F.pad(yb_seed, (0,pad), value=vocab.pad_idx)
 
-            # Sequence 2 Sequence
+            # Next Word
             pred_idx = yb_seed.shape[-1]-1
             res = self.pred_batch(batch=((xb,task_type,yb_inp),yb_inp))[-1][0, pred_idx] # task1, task2 - (bs x ts x vocab)
 
-            if min_p is not None: 
-                if (res >= min_p).float().sum() == 0: warn(f"No item w/ probability >= {min_p}.")
-                else: res[res < min_p] = 0.
-                    
+            # Encoder only - nw
+    #         res = self.pred_batch(batch=((xb,task_type,xb),xb))[0][0, -1] # task1, task2 - (bs x ts x vocab)
+
             # Use first temperatures value if last prediction was duration
-            res.pow_(1 / temperature)
+            temperature = temperatures[0] if (len(yb_seed)==0 or self.data.vocab.is_duration(yb_seed[0, -1])) else temperatures[1]
+            if temperature != 1.: res.pow_(1 / temperature)
+
+            res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
             idx = torch.multinomial(res, 1).item()
-    #         idx = res.argmax()
+            #         idx = res.argmax()
+
+            if idx == vocab.bos_idx | idx == vocab.stoi[EOS]: 
+                print('Predicting BOS/EOS')
+                break
 
             t_idx = torch.tensor(idx, device=xb.device).view(1, 1)
             yb_seed = torch.cat((yb_seed, t_idx), dim=-1)
