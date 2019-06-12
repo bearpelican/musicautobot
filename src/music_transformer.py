@@ -181,7 +181,7 @@ class MusicLearner(LanguageLearner):
 
     def predict_topk(self, xb:Tensor, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
-                     top_k=40, top_p=0.0):
+                     top_k=40, top_p=0.9):
         "Return the `n_words` that come after `text`."
         self.model.reset()
         if xb.shape[0] > 1: xb = xb[0][None]

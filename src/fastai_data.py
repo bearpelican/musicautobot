@@ -2,7 +2,7 @@
 # from fastai.text import *
 from fastai.basics import *
 from fastai.text.data import LMLabelList
-from .encode_data import NOTE_SIZE, DUR_SIZE
+from .encode_data import NOTE_SIZE, DUR_SIZE, VALTSEP
 # Additional encoding
 
 BOS = 'xxbos'
@@ -102,6 +102,12 @@ def to_double_stream(t, vocab=vocab):
     t = t.copy().reshape(-1, 2)
     t[:, 0] = t[:, 0] - vocab.note_range[0]
     t[:, 1] = t[:, 1] - vocab.dur_range[0]
+    
+    is_note = (t[:, 0] < VALTSEP) | (t[:, 0] >= NOTE_SIZE)
+    invalid_note_idx = is_note.argmax()
+    if invalid_note_idx > 0: 
+        print('Non midi note detected. Only returning valid portion. Index, seed', invalid_note_idx, t.shape)
+        return t[:invalid_note_idx]
     return t
 
 def tfm_transpose(x, value, note_range=vocab.note_range):
