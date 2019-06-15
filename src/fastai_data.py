@@ -98,7 +98,15 @@ def to_single_stream(t, vocab=vocab, start_seq=None):
     if start_seq is None: start_seq = np.array([vocab.bos_idx, vocab.pad_idx])
     return np.concatenate([start_seq, t.reshape(-1)])
 
-def to_double_stream(t, vocab=vocab):
+def to_npenc(t, vocab=vocab):
+    r = vocab.npenc_range
+    return t[np.where((t >= r[0]) & (t < r[1]))]
+
+def to_double_stream(t, vocab=vocab, normalize=True):
+    if normalize:
+        t = to_npenc(t, vocab=vocab)
+        if t.shape[-1] % 2 == 1:
+            t = t[..., :-1]
     t = t.copy().reshape(-1, 2)
     t[:, 0] = t[:, 0] - vocab.note_range[0]
     t[:, 1] = t[:, 1] - vocab.dur_range[0]
