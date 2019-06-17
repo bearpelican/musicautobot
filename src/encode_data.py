@@ -197,28 +197,30 @@ def chordarr2stream(arr, sample_freq=SAMPLE_FREQ, bpm=120):
     return stream
 
 # 2b.
-def partarr2stream(part, duration, stream=None):
+def partarr2stream(partarr, duration, stream=None):
     "convert instrument part to music21 chords"
     if stream is None: stream = music21.stream.Stream()
     stream.append(music21.instrument.Piano())
-    part_append_duration_notes(part, duration, stream) # notes already have duration calculated
+    part_append_duration_notes(partarr, duration, stream) # notes already have duration calculated
 
     return stream
 
-# 2c.
-def part_append_duration_notes(part, duration, stream=None):
+def part_append_duration_notes(partarr, duration, stream):
     "convert instrument part to music21 chords"
-    for tidx,t in enumerate(part):
+    for tidx,t in enumerate(partarr):
         note_idxs = np.where(t > 0)[0] # filter out any negative values (continuous mode)
         if len(note_idxs) == 0: continue
         notes = []
         for nidx in note_idxs:
             note = music21.note.Note(nidx)
-            note.duration = music21.duration.Duration(part[tidx,nidx]*duration.quarterLength)
+            note.duration = music21.duration.Duration(partarr[tidx,nidx]*duration.quarterLength)
             notes.append(note)
         for g in group_notes_by_duration(notes):
-            chord = music21.chord.Chord(g)
-            stream.insert(tidx*duration.quarterLength, chord)
+            if len(g) == 1:
+                stream.insert(tidx*duration.quarterLength, g[0])
+            else:
+                chord = music21.chord.Chord(g)
+                stream.insert(tidx*duration.quarterLength, chord)
     return stream
 
 from itertools import groupby
@@ -255,3 +257,24 @@ def is_valid_npenc(npenc, note_range=PIANO_RANGE, max_dur=DUR_SIZE,
         print(f'npenc out of piano note range {note_range}:', input_path)
         return False
     return True
+
+# seperates overlapping notes to different tracks
+def remove_overlaps(stream, separate_chords=True):
+    if not separate_chords:
+        return stream.flat.makeVoices().voicesToParts()
+    return separate_melody_chord(stream)
+
+# seperates notes and chords to different tracks
+def separate_melody_chord(stream):
+    new_stream = music21.stream.Stream()
+    new_stream.append(stream.timeSignature)
+    new_stream.append(stream.metronomeMarkBoundaries()[0][-1])
+    new_stream.append(stream.keySignature)
+    
+    melody_part = music21.stream.Part(stream.flat.getElementsByClass('Note'))
+    melody_part.insert(0, stream.getInstrument())
+    chord_part = music21.stream.Part(stream.flat.getElementsByClass('Chord'))
+    chord_part.insert(0, stream.getInstrument())
+    new_stream.append(melody_part)
+    new_stream.append(chord_part)
+    return new_stream
