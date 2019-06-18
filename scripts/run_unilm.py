@@ -32,7 +32,6 @@ parser.add_argument('--div_factor', type=int, default=10, help='learning rate di
 parser.add_argument('--save_every', action='store_true', help='Save every epoch')
 parser.add_argument('--config', type=str, default='unilm_config', help='serve.py config name')
 parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
-parser.add_argument("--ns_max_cls", type=int, default=4)
 parser.add_argument('--data_parallel', action='store_true', help='DataParallel instead of DDP')
 parser.add_argument('--s2s_mask_window', type=int, default=1,
                     help='Starting mask window size for sequence2sequence task. Basically teacher forcing')
@@ -58,14 +57,13 @@ config = getattr(serve, args.config)(vocab)
 
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size
-config['max_cls'] = args.ns_max_cls
 
 if args.no_transpose: config['transpose_range'] = (0, 1)
 
 # Next Sentence Data
-ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['max_cls'])]
 ns_config = config.copy()
 ns_config['bs'] *= 2
+ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['bptt']//100)]
 ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
                           y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
 

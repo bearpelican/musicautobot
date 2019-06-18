@@ -55,12 +55,6 @@ def v15m_config(vocab):
     config = v15_config(vocab)
     config['embed_p'] = 0.2
     return config
-
-def v15s_config(vocab):
-    config = v15_config(vocab)
-    config['d_head'] = 32
-    config['d_model'] = 256
-    return config
     
 def unilm_config(vocab):
     config = v15_config(vocab)
@@ -72,14 +66,6 @@ def unilm_m_config(vocab):
     config = v15_config(vocab)
     config['n_layers'] = 8
     config['dec_layers'] = 10
-    return config
-
-    
-def unilm_sm_config(vocab):
-    config = v15_config(vocab)
-    config['n_layers'] = 4
-    config['dec_layers'] = 2
-    config['n_heads'] = 4
     return config
 
 def load_music_data(path, cache_name, vocab, **kwargs):

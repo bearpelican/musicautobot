@@ -33,14 +33,15 @@ def next_sentence_ranges(x, y, max_cls=4):
 
 def next_sentence_tfm(b, max_cls=4, nscls_idx=vocab.stoi[NSCLS], pad_idx=vocab.pad_idx):
     x, y = b
+    x = F.pad(x.clone(), (1,0), value=nscls_idx)[:, :-1]
+    y = F.pad(y.clone(), (1,0), value=pad_idx)[:, :-1]
+
     x_new = x.clone()
     y_new = y.clone()
 
-    x_new = F.pad(x_new, (1,0), value=nscls_idx)
-    y_new = F.pad(y_new, (1,0), value=pad_idx)
 
-    z = torch.zeros_like(x)
-    ranges = next_sentence_ranges(x, y, max_cls)
+    z = torch.zeros_like(x_new)
+    ranges = next_sentence_ranges(x_new, y_new, max_cls)
     for i,shift,s,e in ranges:
         if i == 0: continue
         x_new[:, s:e] = torch.roll(x, shifts=shift, dims=0)[:, s:e]
