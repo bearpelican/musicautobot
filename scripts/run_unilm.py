@@ -70,6 +70,9 @@ ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=v
                           y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
 
 s2s_dl_tfms = [s2s_tfm]
+s2s_config = config.copy()
+s2s_config['bs'] = s2s_config['bs'] // 2
+s2s_config['bptt'] *= 2
 s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
                            preloader_cls=S2SPreloader, dl_tfms=s2s_dl_tfms, y_offset=1,
                            shuffle_dl=True, **config)
