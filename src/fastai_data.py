@@ -8,15 +8,15 @@ from .encode_data import NOTE_SIZE, DUR_SIZE, VALTSEP
 BOS = 'xxbos'
 PAD = 'xxpad'
 EOS = 'xxeos'
-CLS = 'xxcls' # used for sequence2sequence start of translation
+S2SCLS = 'xxs2scls' # used for sequence2sequence start of translation
 MASK = 'xxmask'
 CSEQ = 'xxcseq'
 MSEQ = 'xxmseq'
-FSEQ = 'xxfseq'
+NSCLS = 'xxnscls'
 
 SEP = 'xxsep' # separator idx = -1 (part of notes)
 
-SPECIAL_TOKS = [BOS, PAD, EOS, CLS, MASK, CSEQ, MSEQ, FSEQ, SEP] # Important: SEP token must be last
+SPECIAL_TOKS = [BOS, PAD, EOS, S2SCLS, MASK, CSEQ, MSEQ, NSCLS, SEP] # Important: SEP token must be last
 
 NOTE_TOKS = [f'n{i}' for i in range(NOTE_SIZE)] 
 DUR_TOKS = [f'd{i}' for i in range(DUR_SIZE)]

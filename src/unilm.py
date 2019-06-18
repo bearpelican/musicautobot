@@ -31,10 +31,14 @@ def next_sentence_ranges(x, y, max_cls=4):
         accum = end
     return ranges
 
-def next_sentence_tfm(b, max_cls=4):
+def next_sentence_tfm(b, max_cls=4, nscls_idx=vocab.stoi[NSCLS], pad_idx=vocab.pad_idx):
     x, y = b
     x_new = x.clone()
     y_new = y.clone()
+
+    x_new = F.pad(x_new, (1,0), value=nscls_idx)
+    y_new = F.pad(y_new, (1,0), value=pad_idx)
+
     z = torch.zeros_like(x)
     ranges = next_sentence_ranges(x, y, max_cls)
     for i,shift,s,e in ranges:
@@ -114,7 +118,7 @@ def partenc2seq2seq(part_np, part_type=MSEQ, vocab=vocab, bptt=512, translate=Fa
     s2s_out = to_single_stream(part_np, start_seq=part_meta)
     
     pad_first = 1 if translate else 0
-    s2s_out = np.pad(s2s_out, (pad_first,1), 'constant', constant_values=(vocab.stoi[CLS], vocab.stoi[EOS]))
+    s2s_out = np.pad(s2s_out, (pad_first,1), 'constant', constant_values=(vocab.stoi[S2SCLS], vocab.stoi[EOS]))
     
     s2s_out = np.pad(s2s_out, (0,bptt), 'constant', constant_values=vocab.pad_idx)[:bptt]
     return s2s_out
@@ -141,7 +145,7 @@ def combined_npenc2chordarr(np1, np2):
 # preloader itself contains all the transforms
 def s2s_tfm(b):
     x,y_s2s = b
-    x_mask,y_mask = mask_tfm((x,x))
+    x_mask,y_mask = mask_tfm((x,x), p=0.12)
     return (x_mask,torch.full_like(x, TaskType.Seq2Seq.value),y_s2s[:,:-1]),(y_mask,y_s2s[:,1:])
 
 # Next Word transform
