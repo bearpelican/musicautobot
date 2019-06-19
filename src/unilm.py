@@ -435,8 +435,8 @@ class BertHead(nn.Module):
             reset_children(module)
             
     def update_mem_len(self, task_value):
-        # Seq2Seq Translation does not need memory
-        next_mem_len = self.default_mem_len if task_value == TaskType.NextSent.value else 0
+        # Only Next word predictions should have memory
+        next_mem_len = self.default_mem_len if task_value == TaskType.NextWord.value else 0
         if self.current_mem_len == next_mem_len: return
         # print('Updating mem length to:', next_mem_len)
         for module in self.children(): 
