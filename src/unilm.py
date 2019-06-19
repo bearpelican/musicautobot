@@ -95,7 +95,7 @@ class S2SPreloader(Callback):
     def __init__(self, dataset:LabelList, bptt:int=512, y_offset=1, **kwargs):
         # y_offset = extra padding for translation
         self.dataset,self.bptt = dataset,bptt
-        self.vocab = vocab
+        self.np = vocab
         self.y_offset = y_offset
         self.single_tfm = partial(to_single_stream, vocab=vocab)
         self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=(0,12))
@@ -104,24 +104,24 @@ class S2SPreloader(Callback):
         item,_ = self.dataset[k]
         x,y = item
         if random.randint(0,1) == 1: x,y = y,x # switch translation order around
-            
         part_order = [MSEQ, CSEQ] if avg_pitch(x) > avg_pitch(y) else [CSEQ, MSEQ] # Assuming melody has higher pitch
         x = partenc2seq2seq(x, part_type=part_order[0], bptt=self.bptt)
         y = partenc2seq2seq(y, part_type=part_order[1], bptt=self.bptt+1, translate=True) # offset bptt for decoder shift
-        
+        x,y = self.transpose_tfm([x,y])
         return x, y
     
     def __len__(self):
         return len(self.dataset)
     
 def partenc2seq2seq(part_np, part_type=MSEQ, vocab=vocab, bptt=512, translate=False):
-    part_meta = np.array([vocab.stoi[part_type], vocab.stoi[avg_tempo(part_np)]])
+    part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
+#     part_meta = np.array([vocab.stoi[part_type], vocab.stoi[avg_tempo(part_np)]])
     s2s_out = to_single_stream(part_np, start_seq=part_meta)
     
     pad_first = 1 if translate else 0
     s2s_out = np.pad(s2s_out, (pad_first,1), 'constant', constant_values=(vocab.stoi[S2SCLS], vocab.stoi[EOS]))
     
-    s2s_out = np.pad(s2s_out, (0,bptt), 'constant', constant_values=vocab.pad_idx)[:bptt]
+    s2s_out = np.pad(s2s_out, (0,max(bptt-s2s_out.shape[0],0)), 'constant', constant_values=vocab.pad_idx)[:bptt]
     return s2s_out
 
 def s2s_file2parts(file, pred_melody=False):
