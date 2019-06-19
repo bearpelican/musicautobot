@@ -88,6 +88,8 @@ if args.train_type[2] == '1':
                           y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
     datasets.append(ns_data)
 
+datasets.append(s2s_data) # let's train on it twice
+
 combined_data = CombinedData(datasets)
 
 full_clip = None if args.half else 0.5
@@ -101,7 +103,7 @@ if args.lamb:
     
 # Load Learner
 learn = bert_model_learner(combined_data, config.copy(), 
-                           loss_func=BertLoss(),
+                           loss_func=BertLoss((0.5, 0.9, 1.1, 0.3)),
                            clip=full_clip, opt_func=opt_func)
 
 # Load custom data trainer - overwrite RNNTrainer
@@ -127,6 +129,6 @@ if args.data_parallel: learn = learn.to_parallel()
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
 # if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
-learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.5, final_div=50, wd=args.wd)
+learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.3, final_div=50, wd=args.wd)
 
 if args.local_rank == 0: learn.save(f'{args.save}')

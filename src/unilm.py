@@ -31,8 +31,10 @@ def next_sentence_ranges(x, y, max_cls=4):
         accum = end
     return ranges
 
-def next_sentence_tfm(b, max_cls=4, nscls_idx=vocab.stoi[NSCLS], pad_idx=vocab.pad_idx):
+def next_sentence_tfm(b, max_cls=4, p=0.6, nscls_idx=vocab.stoi[NSCLS], pad_idx=vocab.pad_idx):
     x, y = b
+    if np.random.rand() > p:
+        return (x, torch.full_like(x, TaskType.NextSent.value)), (y, torch.zeros_like(x))
     x = F.pad(x.clone(), (1,0), value=nscls_idx)[:, :-1]
     y = F.pad(y.clone(), (1,0), value=pad_idx)[:, :-1]
 
