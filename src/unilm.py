@@ -373,13 +373,13 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
                  scale:bool=True, mem_len:int=512, r_mask=True):
         super().__init__()
         d_head = ifnone(d_head, d_model//n_heads)
+        assert(d_model == d_head * n_heads)
         self.n_heads,self.d_head,self.scale = n_heads,d_head,scale
         
         self.q_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
         self.k_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
         self.v_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
         
-        self.out = nn.Linear(n_heads * d_head, d_model, bias=bias)
         self.drop_att,self.drop_res = nn.Dropout(attn_p),nn.Dropout(resid_p)
         self.ln = nn.LayerNorm(d_model)
         self.r_attn = nn.Linear(d_model, n_heads * d_head, bias=bias)
@@ -394,7 +394,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
                 mask:Tensor=None, **kwargs):
         if k is None: k = q
         if v is None: v = q
-        return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
+        return self.ln(q + self.drop_res(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs)))
 
     def mem_k(self, k):
         if self.mem_len == 0: return k
