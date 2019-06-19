@@ -127,7 +127,7 @@ def partenc2seq2seq(part_np, part_type=MSEQ, vocab=vocab, bptt=512, translate=Fa
 def s2s_file2parts(file, pred_melody=False):
     melody_np, chord_np = np.load(file, allow_pickle=True)
 
-    melody_np, chord_np = melody_np, chord_np if avg_pitch(melody_np) > avg_pitch(chord_np) else chord_np, melody_np # Assuming melody has higher pitch
+    melody_np, chord_np = (melody_np, chord_np) if avg_pitch(melody_np) > avg_pitch(chord_np) else (chord_np, melody_np) # Assuming melody has higher pitch
     mpart = partenc2seq2seq(melody_np, part_type=MSEQ, translate=pred_melody)
     cpart = partenc2seq2seq(chord_np, part_type=CSEQ, translate=not pred_melody)
     return mpart, cpart
