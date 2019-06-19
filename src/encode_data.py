@@ -25,7 +25,7 @@ MAX_NOTE_DUR = (8*BPB*SAMPLE_FREQ)
 # 1. midi -> music21.Stream
 # 2. Stream -> numpy chord array (timestep X instrument X noterange)
 # 3. numpy array -> List[Timestep][NoteEnc]
-def midi2npenc(midi_file, midi_source=None, skip_last_rest=True):
+def midi2npenc(midi_file, skip_last_rest=True):
     "Converts midi file to numpy encoding for language model"
     stream = file2stream(midi_file) # 1.
     chordarr = stream2chordarr(stream) # 2.
@@ -267,9 +267,9 @@ def remove_overlaps(stream, separate_chords=True):
 # seperates notes and chords to different tracks
 def separate_melody_chord(stream):
     new_stream = music21.stream.Stream()
-    new_stream.append(stream.timeSignature)
+    if stream.timeSignature: new_stream.append(stream.timeSignature)
     new_stream.append(stream.metronomeMarkBoundaries()[0][-1])
-    new_stream.append(stream.keySignature)
+    if stream.keySignature: new_stream.append(stream.keySignature)
     
     melody_part = music21.stream.Part(stream.flat.getElementsByClass('Note'))
     melody_part.insert(0, stream.getInstrument())

@@ -88,64 +88,15 @@ def load_music_learner(data, config, load_path=None):
 # NOTE: looks like npenc does not include the separator. 
 # This means we don't have to remove the last (separator) step from the seed in order to keep predictions
 def predict_from_midi(learn, midi=None, n_words=600, 
-                      temperatures=(1.0,1.0), min_ps=(1/128, 1/512), **kwargs):
+                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, **kwargs):
     seed_np = midi2npenc(midi, skip_last_rest=True) # music21 can handle bytes directly
     xb = torch.tensor(to_single_stream(seed_np))[None]
-    pred, seed = learn.predict_topk(xb, n_words=n_words, temperatures=temperatures, top_k=24, top_p=0.7)
+    pred, seed = learn.predict_topk(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
     seed = to_double_stream(seed)
     pred = to_double_stream(pred)
     full = np.concatenate((seed,pred), axis=0)
     
     return pred, seed, full
-
-
-
-# Deprecated song list - moved to s3
-
-import pandas as pd
-def get_htlist(path, source_dir, use_cache=True):
-    json_path = path/'htlist.json'
-    if use_cache and json_path.exists():
-        with open(json_path, 'r') as fp:
-            htlist = json.load(fp)
-    else:
-        df = pd.read_csv(path/'midi_encode.csv')
-        df = df.loc[df[source_dir].notna()] # make sure it exists
-        df = df.loc[df.source == 'hooktheory'] # hooktheory only
-        df = df.rename(index=str, columns={source_dir: 'numpy'}) # shortdur -> numpy
-        df = df.reindex(index=df.index[::-1]) # A's first
-        df = df.where((pd.notnull(df)), None) # nan values break json
-
-        htlist = df.to_dict('records') # row format
-        htlist = [format_htsong(s) for s in htlist] # normalize artist, title, create song ID
-        htlist = { s['sid']:s for s in htlist}
-        with open(json_path, 'w') as fp:
-            json.dump(htlist, fp)
-    return htlist
-
-def format_htsong(s):
-    s = s.copy()
-    s['title'] = s['title'].title().replace('-', ' ')
-    s['artist'] = s['artist'].title().replace('-', ' ')
-    s['sid'] = str(hash(s['midi']))
-    return s
-
-def search_htlist(htlist, keywords='country road', max_results=10):
-    keywords = keywords.split(' ')
-    def contains_keywords(f): return all([k in str(f) for k in keywords])
-    res = []
-    for k,s in htlist.items():
-        if contains_keywords(s['numpy']): res.append(s)
-        if len(res) >= max_results: break
-    return res
-
-def get_filelist(path):
-    files = get_files(path/'hooktheory', extensions=['.npy'], recurse=True)
-    return files
-
-
-
-
 
 # New way 
 
