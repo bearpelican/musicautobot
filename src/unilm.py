@@ -159,11 +159,30 @@ def nw_tfm(b):
     
 # DataLoading
 
+# class BertTrainer(LearnerCallback):
+#     "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
+#     def __init__(self, learn:Learner, dataloaders, s2s_starting_mask_window=1):
+#         super().__init__(learn)
+#         self.dataloaders = dataloaders
+#         self.count = 1
+#         self.mw_start=s2s_starting_mask_window
+
+#     def on_epoch_begin(self, **kwargs):
+#         "Reset the hidden state of the model."
+#         model = get_model(self.learn.model)
+#         model.reset()
+#         model.s2s_decoder.s2s_mask_size = max(self.count+self.mw_start, 100)
+        
+#     def on_epoch_end(self, last_metrics, **kwargs):
+#         "Finish the computation and sends the result to the Recorder."
+#         # data switching happens on end because dataloader is set before epoch begin happends
+#         self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
+#         self.count += 1
+
 class BertTrainer(LearnerCallback):
     "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
-    def __init__(self, learn:Learner, dataloaders, s2s_starting_mask_window=1):
+    def __init__(self, learn:Learner, s2s_starting_mask_window=1):
         super().__init__(learn)
-        self.dataloaders = dataloaders
         self.count = 1
         self.mw_start=s2s_starting_mask_window
 
@@ -176,9 +195,55 @@ class BertTrainer(LearnerCallback):
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
         # data switching happens on end because dataloader is set before epoch begin happends
-        self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
         self.count += 1
 
+class CombinedDS(Callback):
+    def __init__(self, dss):
+        self.dss = self.dss
+    def __getattr__(self, attr):
+        def redirected(self, *args, **kwargs):
+            for ds in self.dss:
+                if hasattr(ds, attr):
+                    getattr(ds, attr)(*args, **kwargs)
+        return redirected
+
+class CombinedDL():
+    def __init__(self, dls, num_it=100):
+        self.dls = dls
+        self.dataset = CombinedDS([dl.dataset for dl in dls if hasattr(dl, 'dataset')])
+        self.num_it = num_it
+    def __len__(self)->int: return sum([len(dl) for dl in self.dls])
+        
+    def __iter__(self):
+        "Process and returns items from `DataLoader`."
+        iters = [iter(dl) for dl in self.dls]
+        dl_idx = -1
+        while len(iters):
+            dl_idx = (dl_idx+1) % len(iters)
+            for b in range(self.num_it):
+                try:
+                    yield next(iters[dl_idx])
+                except StopIteration as e:
+                    iters.remove(iters[dl_idx])
+                    break
+#         raise StopIteration
+
+class CombinedData():
+    def __init__(self, dbs, num_it=100):
+        self.dbs = dbs
+        self.train_dl = CombinedDL([db.train_dl for db in self.dbs], num_it)
+        self.valid_dl = CombinedDL([db.valid_dl for db in self.dbs], num_it)
+        
+        self.train_ds = None
+        self.path = dbs[0].path
+        self.device = dbs[0].device
+
+    def add_tfm(self,tfm:Callable)->None:
+        for dl in self.dbs: dl.add_tfm(tfm)
+
+    def remove_tfm(self,tfm:Callable)->None:
+        for dl in self.dbs: dl.remove_tfm(tfm)
+        
 class UnilmLearner(MusicLearner):
     
 

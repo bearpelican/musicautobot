@@ -88,6 +88,8 @@ if args.train_type[2] == '1':
                           y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
     datasets.append(ns_data)
 
+combined_data = CombinedData(datasets)
+
 full_clip = None if args.half else 0.5
 
 # Load Optimizer
@@ -98,7 +100,7 @@ if args.lamb:
     opt_func = partial(Lamb, eps=eps)
     
 # Load Learner
-learn = bert_model_learner(datasets[0], config.copy(), 
+learn = bert_model_learner(combined_data, config.copy(), 
                            loss_func=BertLoss(),
                            clip=full_clip, opt_func=opt_func)
 
@@ -107,7 +109,7 @@ learn.metrics = [mask_acc, nw_acc, s2s_acc, ns_acc]
 
 from fastai.callbacks.rnn import RNNTrainer
 learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
-learn.callbacks.append(BertTrainer(learn, datasets, s2s_starting_mask_window=args.s2s_mask_window))
+learn.callbacks.append(BertTrainer(learn, s2s_starting_mask_window=args.s2s_mask_window))
 
 if args.load:
     load_path = Path(args.path)/args.load
