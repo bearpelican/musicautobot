@@ -16,7 +16,7 @@ from src.unilm import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v16/sf4/')
+parser.add_argument('--path', type=str, default='../data/midi/v17/sf4/')
 parser.add_argument('--cache', type=str, default='tmp/all')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
@@ -83,7 +83,7 @@ if args.train_type[1] == '1':
 if args.train_type[2] == '1':
     ns_config = config.copy()
     ns_config['bs'] *= 2
-    ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['bptt']//100)]
+    ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['bptt']//128)]
     ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
                           y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
     datasets.append(ns_data)

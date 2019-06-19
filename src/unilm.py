@@ -701,15 +701,15 @@ def mask_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
 
 def nw_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
-    if task_type[0,0].item() != TaskType.NextWord.value: return torch.tensor(0, device=x_mask.device).float()
+    if task_type[0,0].item() != TaskType.NextWord.value: return None # torch.tensor(0, device=x_mask.device).float()
     return acc_ignore_pad(x_task, t2, vocab.pad_idx)
 
 def s2s_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
-    if task_type[0,0].item() != TaskType.Seq2Seq.value: return torch.tensor(0, device=x_mask.device).float()
+    if task_type[0,0].item() != TaskType.Seq2Seq.value: return None # torch.tensor(0, device=x_mask.device).float()
     return acc_ignore_pad(x_task, t2, vocab.pad_idx)
 
 def ns_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
-    if task_type[0,0].item() != TaskType.NextSent.value: return torch.tensor(0, device=x_mask.device).float()
+    if task_type[0,0].item() != TaskType.NextSent.value: return None # torch.tensor(0, device=x_mask.device).float()
     return accuracy(input[-1], t2)
