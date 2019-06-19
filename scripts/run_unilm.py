@@ -35,6 +35,7 @@ parser.add_argument('--no_transpose', action='store_true', help='No transpose da
 parser.add_argument('--data_parallel', action='store_true', help='DataParallel instead of DDP')
 parser.add_argument('--s2s_mask_window', type=int, default=1,
                     help='Starting mask window size for sequence2sequence task. Basically teacher forcing')
+parser.add_argument('--train_type', type=str, default='111')
 
 args = parser.parse_args()
 args.path = Path(args.path)
@@ -60,35 +61,41 @@ config['bs'] = args.batch_size
 
 if args.no_transpose: config['transpose_range'] = (0, 1)
 
-# Next Sentence Data
-ns_config = config.copy()
-ns_config['bs'] *= 2
-ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['bptt']//100)]
-ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
-                          y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
+datasets = []
 
-s2s_dl_tfms = [s2s_tfm]
-s2s_config = config.copy()
-s2s_config['bs'] = s2s_config['bs'] // 2
-s2s_config['bptt'] *= 2
-s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
-                           preloader_cls=S2SPreloader, dl_tfms=s2s_dl_tfms, y_offset=1,
-                           shuffle_dl=True, **config)
-
-nw_dl_tfms = [nw_tfm]
-nw_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
+if args.train_type[0] == '1':
+    nw_dl_tfms = [nw_tfm]
+    nw_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
                           dl_tfms=nw_dl_tfms, y_offset=1, **config)
+    datasets.append(nw_data)
 
-# datasets = [ns_data, s2s_data, nw_data]
-datasets = [nw_data, s2s_data, ns_data] # ns data takes less memory
+if args.train_type[1] == '1':
+    s2s_dl_tfms = [s2s_tfm]
+    s2s_config = config.copy()
+    s2s_config['bs'] = s2s_config['bs'] // 2
+    s2s_config['bptt'] *= 2
+    s2s_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
+                                   preloader_cls=S2SPreloader, dl_tfms=s2s_dl_tfms, y_offset=1,
+                                   shuffle_dl=True, **config)
+    datasets.append(s2s_data)
+
+# Next Sentence Data
+if args.train_type[2] == '1':
+    ns_config = config.copy()
+    ns_config['bs'] *= 2
+    ns_dl_tfms = [partial(mask_tfm, p=0.30), partial(next_sentence_tfm, max_cls=config['bptt']//100)]
+    ns_data = load_music_data(args.path/'piano_duet', cache_name=args.cache, vocab=vocab, 
+                          y_offset=0, dl_tfms=ns_dl_tfms, **ns_config)
+    datasets.append(ns_data)
 
 full_clip = None if args.half else 0.5
 
 # Load Optimizer
-opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=1e-4)
+eps = 1e-3 if args.half else 1e-6
+opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=eps)
 if args.lamb:
     from src.lamb import Lamb
-    opt_func = partial(Lamb, eps=1e-4)
+    opt_func = partial(Lamb, eps=eps)
     
 # Load Learner
 learn = bert_model_learner(datasets[0], config.copy(), 
@@ -117,7 +124,7 @@ if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=args.
 if args.data_parallel: learn = learn.to_parallel()
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
-if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
+# if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.5, final_div=50, wd=args.wd)
 
 if args.local_rank == 0: learn.save(f'{args.save}')
