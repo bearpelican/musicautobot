@@ -66,6 +66,12 @@ def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx,
     x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()], device=x.device)
     return x, y
 
+# Utility for predictions
+def mask_input(xb, mask_range=vocab.note_range, mask_idx=vocab.mask_idx):
+    xb = xb.clone()
+    xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = mask_idx
+    return xb
+
 # Sequence 2 Sequence Translate
 
 class S2SFileProcessor(PreProcessor):
@@ -94,13 +100,13 @@ def avg_pitch(t, sep_idx=VALTSEP):
     return t[t[:, 0] > sep_idx][:, 0].mean()
 
 class S2SPreloader(Callback):
-    def __init__(self, dataset:LabelList, bptt:int=512, y_offset=1, **kwargs):
+    def __init__(self, dataset:LabelList, bptt:int=512, y_offset=1, transpose_range=(0,12), **kwargs):
         # y_offset = extra padding for translation
         self.dataset,self.bptt = dataset,bptt
         self.np = vocab
         self.y_offset = y_offset
         self.single_tfm = partial(to_single_stream, vocab=vocab)
-        self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=(0,12))
+        self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=transpose_range)
     
     def __getitem__(self, k:int):
         item,_ = self.dataset[k]
@@ -294,9 +300,34 @@ class UnilmLearner(MusicLearner):
                 new_idx.append(idx)
                 xb = xb.new_tensor([idx])[None]
         return np.array(new_idx), seed
+    
+    def predict_mask(self, xb:Tensor,
+                    temperatures:float=(1.0,1.0),
+                    top_k=20, top_p=0.8):
+        if xb.shape[0] > 1: xb = xb[0][None]
+        xb = xb.clone()
+        self.model.reset()
+        self.model.update_mem_len(TaskType.NextSent.value)
 
+        mask_idxs = (xb == vocab.mask_idx).nonzero()
+        for midx in progress_bar(mask_idxs, leave=True):
+            task_type = torch.full_like(xb, TaskType.NextSent.value)
 
-        
+            # Next Word
+            res = self.pred_batch(batch=((xb,task_type),xb))[0]
+            res = res[tuple(midx)] # task1, task2 - (bs x ts x vocab)
+
+            # Use first temperatures value if last prediction was duration
+            temperature = temperatures[0]
+            if temperature != 1.: res.pow_(1 / temperature)
+
+            res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
+            idx = torch.multinomial(res, 1).item()
+            #         idx = res.argmax()
+
+            xb[tuple(midx)] = idx
+
+        return xb
 
     def predict_s2s(self, xb:Tensor, yb:Tensor, n_words:int=128,
                     temperatures:float=(1.0,1.0),
@@ -367,17 +398,16 @@ def bert_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pre
 
 # Attn
 
-
-
 class MemMultiHeadRelativeAttentionKV(nn.Module):
     "MutiHeadAttention with relative positional encoding."
     def __init__(self, n_heads:int, d_model:int, d_head:int=None, resid_p:float=0., attn_p:float=0., bias:bool=True,
                  scale:bool=True, mem_len:int=512, r_mask=True):
         super().__init__()
         d_head = ifnone(d_head, d_model//n_heads)
-        assert(d_model == d_head * n_heads)
         self.n_heads,self.d_head,self.scale = n_heads,d_head,scale
         
+        assert(d_model == d_head * n_heads)
+#         self.out = nn.Linear(n_heads * d_head, d_model, bias=bias)
         self.q_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
         self.k_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
         self.v_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
@@ -396,6 +426,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
                 mask:Tensor=None, **kwargs):
         if k is None: k = q
         if v is None: v = q
+#         return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
         return self.ln(q + self.drop_res(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs)))
 
     def mem_k(self, k):
