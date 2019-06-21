@@ -309,7 +309,7 @@ class UnilmLearner(MusicLearner):
 
             xb[tuple(midx)] = idx
 
-        return xb
+        return xb.cpu().numpy()
 
     def predict_s2s(self, xb:Tensor, yb:Tensor, n_words:int=128,
                     temperatures:float=(1.0,1.0),
@@ -346,7 +346,7 @@ class UnilmLearner(MusicLearner):
             t_idx = torch.tensor(idx, device=xb.device).view(1, 1)
             yb_seed = torch.cat((yb_seed, t_idx), dim=-1)
 
-        return yb_seed
+        return yb_seed.cpu().numpy()
 
 # High level serve api
 def part_enc(chordarr, part):
@@ -393,7 +393,7 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
 
 def nw_predict_from_midi(learn, midi=None, n_words=600, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, **kwargs):
-    seed_np = midi2npenc(midi, skip_last_rest=True) # music21 can handle bytes directly
+    seed_np = midi2npenc(midi) # music21 can handle bytes directly
     xb = torch.tensor(to_single_stream(seed_np))[None]
     if torch.cuda.is_available(): xb = xb.cuda()
     pred, seed = learn.predict_nw(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
@@ -401,6 +401,20 @@ def nw_predict_from_midi(learn, midi=None, n_words=600,
     pred = to_double_stream(pred)
     full = np.concatenate((seed,pred), axis=0)
     return full
+
+
+def mask_predict_from_midi(learn, midi=None,
+                           temperatures=(1.0,1.0), top_k=20, top_p=0.8, 
+                           predict_notes=True,
+                           **kwargs):
+    seed_np = midi2npenc(midi) # music21 can handle bytes directly
+    xb = torch.tensor(to_single_stream(seed_np))[None]
+    mask_range = vocab.note_range if predict_notes else vocab.dur_range
+    xb = mask_input(xb, mask_range=mask_range)
+    if torch.cuda.is_available(): xb = xb.cuda()
+    pred = learn.predict_mask(xb, temperatures=temperatures, top_k=top_k, top_p=top_p)
+    pred = to_double_stream(pred)
+    return pred
         
 # MODEL LOADING
 
