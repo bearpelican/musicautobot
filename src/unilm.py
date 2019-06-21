@@ -167,30 +167,11 @@ def nw_tfm(b):
     
 # DataLoading
 
-# class BertTrainer(LearnerCallback):
-#     "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
-#     def __init__(self, learn:Learner, dataloaders, s2s_starting_mask_window=1):
-#         super().__init__(learn)
-#         self.dataloaders = dataloaders
-#         self.count = 1
-#         self.mw_start=s2s_starting_mask_window
-
-#     def on_epoch_begin(self, **kwargs):
-#         "Reset the hidden state of the model."
-#         model = get_model(self.learn.model)
-#         model.reset()
-#         model.s2s_decoder.s2s_mask_size = max(self.count+self.mw_start, 100)
-        
-#     def on_epoch_end(self, last_metrics, **kwargs):
-#         "Finish the computation and sends the result to the Recorder."
-#         # data switching happens on end because dataloader is set before epoch begin happends
-#         self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
-#         self.count += 1
-
 class BertTrainer(LearnerCallback):
     "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
-    def __init__(self, learn:Learner, s2s_starting_mask_window=1):
+    def __init__(self, learn:Learner, dataloaders=None, s2s_starting_mask_window=1):
         super().__init__(learn)
+        self.dataloaders = dataloaders
         self.count = 1
         self.mw_start=s2s_starting_mask_window
 
@@ -203,6 +184,7 @@ class BertTrainer(LearnerCallback):
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
         # data switching happens on end because dataloader is set before epoch begin happends
+        if self.dataloaders is not None: self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
         self.count += 1
 
 class CombinedDS(Callback):
@@ -241,7 +223,7 @@ class CombinedData():
         self.dbs = dbs
         self.train_dl = CombinedDL([db.train_dl for db in self.dbs], num_it)
         self.valid_dl = CombinedDL([db.valid_dl for db in self.dbs], num_it)
-        
+        self.vocab = vocab
         self.train_ds = None
         self.path = dbs[0].path
         self.device = dbs[0].device
@@ -366,6 +348,59 @@ class UnilmLearner(MusicLearner):
 
         return yb_seed
 
+# High level serve api
+def part_enc(chordarr, part):
+    partarr = chordarr[:,part:part+1,:]
+    npenc = chordarr2npenc(partarr)
+    return npenc
+    
+def s2s_predict_from_midi(learn, midi=None, n_words=200, 
+                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, pred_melody=True, **kwargs):
+
+    stream = file2stream(midi) # 1.
+    chordarr = stream2chordarr(stream) # 2.
+    _,num_parts,_ = chordarr.shape
+    melody_np, chord_np = [part_enc(chordarr, i) for i in range(num_parts)]
+    
+
+    melody_np, chord_np = (melody_np, chord_np) if avg_pitch(melody_np) > avg_pitch(chord_np) else (chord_np, melody_np) # Assuming melody has higher pitch
+    
+    offset = 3
+    original_shape = melody_np.shape[0] * 2 if pred_melody else chord_np.shape[0] * 2 
+    bptt = original_shape + n_words + offset
+    bptt = max(bptt, melody_np.shape[0] * 2, chord_np.shape[0] * 2 )
+    mpart = partenc2seq2seq(melody_np, part_type=MSEQ, translate=pred_melody, bptt=bptt)
+    cpart = partenc2seq2seq(chord_np, part_type=CSEQ, translate=not pred_melody, bptt=bptt)
+    if pred_melody:
+        xb = torch.tensor(cpart)[None]
+        yb = torch.tensor(mpart)[None][:, :original_shape+offset]
+    else:
+        xb = torch.tensor(mpart)[None]
+        yb = torch.tensor(cpart)[None][:, :original_shape+offset]
+
+
+    if torch.cuda.is_available(): xb, yb = xb.cuda(), yb.cuda()
+    
+    pred = learn.predict_s2s(xb, yb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
+    # pred = yb
+
+    seed_npenc = to_double_stream(xb.cpu().numpy()) # chord
+    yb_npenc = to_double_stream(pred.cpu().numpy()) # melody
+    npenc_order = [yb_npenc, seed_npenc] if pred_melody else [seed_npenc, yb_npenc]
+    chordarr_comb = combined_npenc2chordarr(*npenc_order)
+
+    return chordarr_comb
+
+def nw_predict_from_midi(learn, midi=None, n_words=600, 
+                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, **kwargs):
+    seed_np = midi2npenc(midi, skip_last_rest=True) # music21 can handle bytes directly
+    xb = torch.tensor(to_single_stream(seed_np))[None]
+    if torch.cuda.is_available(): xb = xb.cuda()
+    pred, seed = learn.predict_nw(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
+    seed = to_double_stream(seed)
+    pred = to_double_stream(pred)
+    full = np.concatenate((seed,pred), axis=0)
+    return full
         
 # MODEL LOADING
 
@@ -393,8 +428,6 @@ def bert_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pre
     learn = UnilmLearner(data, model, config=config, split_func=None,
                         **learn_kwargs)
     return learn
-
-
 
 # Attn
 
@@ -746,3 +779,4 @@ def ns_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
     x_mask, task_type, x_task = input
     if task_type[0,0].item() != TaskType.NextSent.value: return None # torch.tensor(0, device=x_mask.device).float()
     return accuracy(input[-1], t2)
+
