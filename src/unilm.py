@@ -298,7 +298,11 @@ class UnilmLearner(MusicLearner):
             # Next Word
             res = self.pred_batch(batch=((xb,task_type),xb))[0]
             res = res[tuple(midx)] # task1, task2 - (bs x ts x vocab)
-
+            
+            # Don't allow any special tokens (as we are only removing notes and durations)
+            res[vocab.bos_idx] = 0.
+            res[vocab.sep_idx] = 0.
+            
             # Use first temperatures value if last prediction was duration
             temperature = temperatures[0]
             if temperature != 1.: res.pow_(1 / temperature)
@@ -385,7 +389,7 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     # pred = yb
 
     seed_npenc = to_double_stream(xb.cpu().numpy()) # chord
-    yb_npenc = to_double_stream(pred.cpu().numpy()) # melody
+    yb_npenc = to_double_stream(pred) # melody
     npenc_order = [yb_npenc, seed_npenc] if pred_melody else [seed_npenc, yb_npenc]
     chordarr_comb = combined_npenc2chordarr(*npenc_order)
 
