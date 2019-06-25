@@ -261,6 +261,10 @@ class MusicPreloader(Callback):
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
 
 class OpenNPFileProcessor(PreProcessor):
+    
+    def __post_init__(self)->None:
+        self.vocab = vocab
+        
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
         return np.load(item, allow_pickle=True) if isinstance(item, Path) else item
