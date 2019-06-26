@@ -118,6 +118,19 @@ def to_double_stream(t, vocab=vocab, normalize=True):
         return t[:invalid_note_idx]
     return t
 
+def position_enc(ssenc, vocab=vocab):
+    sep_idxs = (ssenc == vocab.sep_idx).nonzero()[0]
+    sep_idxs = sep_idxs[sep_idxs+2 < ssenc.shape[0]] # remove any indexes right before out of bounds (sep_idx+2)
+    dur_vals = ssenc[sep_idxs+1] - vocab.dur_range[0]
+    
+    posenc = np.zeros_like(ssenc)
+    posenc[sep_idxs+2] = dur_vals
+    return posenc.cumsum()
+
+def position_tfm(ssenc, vocab=vocab):
+    posenc = -position_enc(ssenc, vocab) # using negative values so we don't interfere with indexes
+    return np.stack([ssenc, posenc], axis=1)
+
 def tfm_transpose(x, value, note_range=vocab.note_range):
     x = x.copy()
     x[(x >= note_range[0]) & (x < note_range[1])] += value
