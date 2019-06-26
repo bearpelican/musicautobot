@@ -564,9 +564,9 @@ class MLMTransformer(nn.Module):
         for module in self.children(): 
             reset_children(module)
             
-    def update_mem_len(self, task_value):
+    def update_mem_len(self, use_mem):
         # Only Next word predictions should have memory
-        next_mem_len = self.default_mem_len if task_value == TaskType.NextWord.value else 0
+        next_mem_len = self.default_mem_len if use_mem else 0
         if self.current_mem_len == next_mem_len: return
         # print('Updating mem length to:', next_mem_len)
         for module in self.children(): 
@@ -600,7 +600,7 @@ class TransformerEmbedding(nn.Module):
         self.beat_len = beat_len
         self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0, max_norm=1.0) # negative pad
         self.bar_enc = nn.Embedding(1024, emb_sz, padding_idx=0, max_norm=1.0) # negative pad
-#         self.bar_enc = PositionalEncoding(emb_sz)
+#        self.bar_enc = PositionalEncoding(emb_sz)
         
         
         self.drop = nn.Dropout(embed_p)
@@ -614,7 +614,8 @@ class TransformerEmbedding(nn.Module):
         
         beat_enc = self.beat_enc(pe % self.beat_len)
         bar_enc = self.bar_enc((pe // self.beat_len))
-        assert((bar_enc < 1024).all())
+#        bar_enc = self.bar_enc((pe // self.beat_len).type(beat_enc.dtype))
+#        assert((pe//self.beat_len < 1024).all())
         emb = self.drop(self.embed(inp) + beat_enc + bar_enc)
         return emb
     
