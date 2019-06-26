@@ -10,11 +10,11 @@ from .encode_data import VALTSEP, SAMPLE_FREQ
 
 # DATALOADING AND TRANSFORMATIONS
 
-TaskType = Enum('TaskType', 'MaskOnly, NextWord, Seq2Seq, NextSent')
+MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
 
-# MLM Transform
-def msklm_mask(shape, p=0.2, tile=1):
-    p = p / tile
+# MLM Transform - DEPRECATED
+def msklm_mask(shape, p, tile):
+    p = p / tile # scale probability
     rand_mask = torch.rand(*shape) < p
     if tile > 1:
         rand_mask = torch.repeat_interleave(rand_mask, tile, dim=1)[:rand_mask.shape[0], :rand_mask.shape[1]]
@@ -24,13 +24,19 @@ def msklm_mask(shape, p=0.2, tile=1):
     lm_mask = rand_mask & lm_mask
     return rand_mask, lm_mask
 
-def msklm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p=0.2, tile=1):
+def msklm_tfm(b, word_range=vocab.npenc_range, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p=0.2, tile=1):
     x,y = b
     
     rand_mask, lm_mask = msklm_mask(y.shape, p, tile)
     
     x_msk = y.clone()
     x_msk[rand_mask] = mask_idx
+    
+    new_rand = torch.rand(*y.shape)
+    unchanged_mask = (new_rand < 0.1) & rand_mask # 10%
+    wrong_mask = (new_rand > 0.9) & rand_mask # 10% = wrong word
+    x_msk[unchanged_mask] = y[unchanged_mask]
+    x_msk[wrong_mask] = torch.randint(*word_range, [wrong_mask.sum().item()], device=x.device)
 
     y_msk = y.clone()
     y_msk[~rand_mask] = pad_idx
@@ -39,6 +45,41 @@ def msklm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p=0.2, tile=1):
     x_lm[lm_mask] = x[lm_mask]
     
     return (x_msk, x_lm), y_msk
+
+def random_msklm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, 
+                     p_lm=0.5, p_mask=0.2, p_tile=0.2, 
+                     tile_range=(1, 5)):
+    if random.random() < p_lm:
+        x,y = b
+#         x_msk = torch.full_like(y, pad_idx)
+        return (None, x), (y, MLMType.NextWord)
+    tile = random.randrange(*tile_range) if random.random() < p_tile else 1
+    x, y = msklm_tfm(b, p=p_mask, tile=tile)
+    return x, (y, MLMType.Mask)
+
+def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
+             mask_idx=vocab.mask_idx, p=0.2):
+    # p = replacement probability
+    x,y = b
+    x,y = x.clone(),y.clone()
+    rand = torch.rand(x.shape, device=x.device)
+    rand[x < word_range[0]] = 1.0
+    rand[x >= word_range[1]] = 1.0
+    y[rand > p] = pad_idx
+    x[rand <= (p*.8)] = mask_idx # 80% = mask
+    wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
+    x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()], device=x.device)
+    return x, y
+
+def mask_or_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, 
+                     p_lm=0.5, p_mask=0.2):
+    x,y = b
+    x,x_pos = x[...,0], x[...,1]
+    y,y_pos = y[...,0], y[...,1]
+    if random.random() < p_lm:
+        return (None, x, None, x_pos), (y, MLMType.NextWord)
+    x, y = mask_tfm((y, y), p=p_mask) # masking instead of x. Not that it matters
+    return (x, None, y_pos, None), (y, MLMType.Mask)
 
 # Utility for predictions
 def mask_input(xb, mask_range=vocab.note_range, mask_idx=vocab.mask_idx):
@@ -74,45 +115,38 @@ def avg_pitch(t, sep_idx=VALTSEP):
     return t[t[:, 0] > sep_idx][:, 0].mean()
 
 class S2SPreloader(Callback):
-    def __init__(self, dataset:LabelList, bptt:int=512, y_offset=1, transpose_range=(0,12), **kwargs):
-        # y_offset = extra padding for translation
+    def __init__(self, dataset:LabelList, bptt:int=512, 
+                 transpose_range=(0,12), **kwargs):
         self.dataset,self.bptt = dataset,bptt
         self.np = vocab
-        self.y_offset = y_offset
-        self.single_tfm = partial(to_single_stream, vocab=vocab)
         self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=transpose_range)
-    
+        
     def __getitem__(self, k:int):
         item,_ = self.dataset[k]
         x,y = item
-        if random.randint(0,1) == 1: x,y = y,x # switch translation order around
-        part_order = [MSEQ, CSEQ] if avg_pitch(x) > avg_pitch(y) else [CSEQ, MSEQ] # Assuming melody has higher pitch
-        x = partenc2seq2seq(x, part_type=part_order[0], bptt=self.bptt)
-        y = partenc2seq2seq(y, part_type=part_order[1], bptt=self.bptt+1, translate=True) # offset bptt for decoder shift
         x,y = self.transpose_tfm([x,y])
-        return x, y
+        # WARNING: we are padding position encodings too. However, pos is negative, so should be fine
+        return pad_seq(x, self.bptt+1), pad_seq(y, self.bptt+1) # offset bptt for decoder shift
     
     def __len__(self):
         return len(self.dataset)
     
-def partenc2seq2seq(part_np, part_type=MSEQ, vocab=vocab, bptt=512, translate=False):
+def part_tfm(b):
+    x,y = b
+    x = partenc2seq2seq(x, part_type=MSEQ)
+    y = partenc2seq2seq(y, part_type=CSEQ)
+    return x, y
+    
+def partenc2seq2seq(part_np, part_type, vocab=vocab):
     part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
-#     part_meta = np.array([vocab.stoi[part_type], vocab.stoi[avg_tempo(part_np)]])
     s2s_out = to_single_stream(part_np, start_seq=part_meta)
-    
-    pad_first = 1 if translate else 0
-    s2s_out = np.pad(s2s_out, (pad_first,1), 'constant', constant_values=(vocab.stoi[S2SCLS], vocab.stoi[EOS]))
-    
-    s2s_out = np.pad(s2s_out, (0,max(bptt-s2s_out.shape[0],0)), 'constant', constant_values=vocab.pad_idx)[:bptt]
+    s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
+    s2s_out = position_tfm(s2s_out)
     return s2s_out
 
-def s2s_file2parts(file, pred_melody=False):
-    melody_np, chord_np = np.load(file, allow_pickle=True)
-
-    melody_np, chord_np = (melody_np, chord_np) if avg_pitch(melody_np) > avg_pitch(chord_np) else (chord_np, melody_np) # Assuming melody has higher pitch
-    mpart = partenc2seq2seq(melody_np, part_type=MSEQ, translate=pred_melody)
-    cpart = partenc2seq2seq(chord_np, part_type=CSEQ, translate=not pred_melody)
-    return mpart, cpart
+def pad_seq(seq, bptt, pad_idx=vocab.pad_idx):
+    pad_len = max(bptt-seq.shape[0], 0)
+    return np.pad(seq, [(0, pad_len),(0,0)], 'constant', constant_values=pad_idx)[:bptt]
 
 def combined_npenc2chordarr(np1, np2):
     if len(np1.shape) == 1: np1 = to_double_stream(np1)
@@ -128,10 +162,13 @@ def combined_npenc2chordarr(np1, np2):
     return chordarr_comb
 
 # preloader itself contains all the transforms
-def s2s_tfm(b):
-    x,y_s2s = b
-    return (x,y_s2s[:,:-1]),y_s2s[:,1:]
-
+def s2s_tfm(b, mlm_type=MLMType.M2C):
+    x,y = b if mlm_type == MLMType.M2C else reversed(b)
+    
+    x,x_pos = x[...,0], x[...,1]
+    y,y_pos = y[...,0], y[...,1]
+    
+    return (x[:,:-1], y[:,:-1], x_pos[:,:-1], y_pos[:,:-1]),(y[:,1:], mlm_type)
 
 # DataLoading
 class CombinedDS(Callback):
@@ -370,14 +407,13 @@ def mask_predict_from_midi(learn, midi=None,
         
 # MODEL LOADING
 
-
 class MLMTrainer(LearnerCallback):
     "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
     def __init__(self, learn:Learner, dataloaders=None, starting_mask_window=1):
         super().__init__(learn)
-        self.dataloaders = dataloaders
         self.count = 1
-        self.mw_start=starting_mask_window
+        self.mw_start = starting_mask_window
+        self.dataloaders = dataloaders
 
     def on_epoch_begin(self, **kwargs):
         "Reset the hidden state of the model."
@@ -387,9 +423,9 @@ class MLMTrainer(LearnerCallback):
         
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
-        # data switching happens on end because dataloader is set before epoch begin happends
         if self.dataloaders is not None: self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
         self.count += 1
+
 
 def get_mlm_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
     "Create a language model from `arch` and its `config`, maybe `pretrained`."
@@ -400,8 +436,9 @@ def get_mlm_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
     n_hid = config['d_model']
     embed = TransformerEmbedding(vocab_sz, n_hid, embed_p=config['embed_p'], mem_len=config['mem_len'])
     encoder = MLMEncoder(embed, n_hid, **config)
-    decoder = MLMLinearDecoder(n_hid, vocab_sz, tie_encoder=embed.embed, **config)
-    model = MLMHead(encoder, decoder, mem_len=config['mem_len'])
+    decoder = MLMEncoder(embed, n_hid, is_decoder=True, **config)
+    head = MLMLinearDecoder(n_hid, vocab_sz, tie_encoder=embed.embed, **config)
+    model = MLMTransformer(encoder, decoder, head, mem_len=config['mem_len'])
     return model.apply(init_transformer)
 
 
@@ -412,7 +449,7 @@ def mlm_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pret
 #     learn = UnilmLearner(data, model, config=config, split_func=tfmerXL_lm_split,
 #     learn = UnilmLearner(data, model, config=config, split_func=None,
 #                         **learn_kwargs)
-    learn = MusicLearner(data, model, config=config, split_func=None,
+    learn = MLMLearner(data, model, config=config, split_func=None,
                         **learn_kwargs)
     return learn
 
@@ -501,20 +538,26 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         return attn_vec.permute(0, 2, 1, 3).contiguous().view(bs, x_len, -1)
     
     
-class MLMHead(nn.Module):
-    def __init__(self, encoder, decoder, mem_len):
+class MLMTransformer(nn.Module):
+    def __init__(self, encoder, decoder, head, mem_len):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
+        self.head = head
         self.default_mem_len = mem_len
         self.current_mem_len = None
     
-    def forward(self, x_msk, x_lm):
-#         self.update_mem_len(task_value)
-#         self.encoder.mask = task_value == TaskType.NextWord.value # mask encoder for next word (so decoder can't cheat)
-        x_enc = self.encoder(x_msk, x_lm)
-        dec = self.decoder(x_enc) # all tasks include mask decoding
-        return dec
+    def forward(self, x_msk, x_lm, msk_pos, lm_pos):
+        if x_msk is None:
+            reset_children(self.encoder)
+            return self.head(self.decoder(x_lm, lm_pos))
+        if x_lm is None:
+            reset_children(self.decoder)
+            return self.head(self.encoder(x_msk, msk_pos))
+        
+        x_msk = self.encoder(x_msk, msk_pos)
+        dec = self.decoder(x_lm, lm_pos, x_msk) # all tasks include mask decoding
+        return self.head(dec)
     
     "A sequential module that passes the reset call to its children."
     def reset(self):
@@ -540,11 +583,11 @@ def update_mem_len(mod, mem_len):
     if hasattr(mod, 'mem_len'): mod.mem_len = mem_len
     for module in mod.children(): 
         update_mem_len(module, mem_len)
-        
-# COMPONENTS
+ # COMPONENTS
+
 class TransformerEmbedding(nn.Module):
     "Embedding + positional encoding + dropout"
-    def __init__(self, vocab_sz:int, emb_sz:int, embed_p:float=0., mem_len=512):
+    def __init__(self, vocab_sz:int, emb_sz:int, embed_p:float=0., mem_len=512, beat_len=32):
         super().__init__()
         self.emb_sz = emb_sz
         
@@ -553,18 +596,32 @@ class TransformerEmbedding(nn.Module):
         with torch.no_grad(): trunc_normal_(self.embed.weight, std=0.01)
 #         self.embed = embedding(vocab_sz, emb_sz)
         self.pos_enc = PositionalEncoding(emb_sz)
+    
+        self.beat_len = beat_len
+        self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0, max_norm=1.0) # negative pad
+        self.bar_enc = nn.Embedding(1024, emb_sz, padding_idx=0, max_norm=1.0) # negative pad
+#         self.bar_enc = PositionalEncoding(emb_sz)
+        
+        
         self.drop = nn.Dropout(embed_p)
         self.mem_len = mem_len
     
-    def forward(self, inp, pos_forward=False):
-        emb = self.drop(self.embed(inp))
-        x_len = inp.shape[-1]
-        seq_len = x_len + self.mem_len
-        if pos_forward:
-            pos = torch.arange(0, seq_len, device=inp.device, dtype=emb.dtype) # forwards
-        else:
-            pos = torch.arange(seq_len-1, -1, -1, device=inp.device, dtype=emb.dtype) # backwards (txl pos encoding)
-        return emb, self.pos_enc(pos)
+    def forward(self, inp, pos_enc):
+#         pdb.set_trace()
+#         return self.drop(self.embed(inp))
+        pe = -pos_enc.clone()
+        pe[pe==-vocab.pad_idx] = 0
+        
+        beat_enc = self.beat_enc(pe % self.beat_len)
+        bar_enc = self.bar_enc((pe // self.beat_len))
+        assert((bar_enc < 1024).all())
+        emb = self.drop(self.embed(inp) + beat_enc + bar_enc)
+        return emb
+    
+    def relative_pos_enc(self, emb):
+        seq_len = emb.shape[1] + self.mem_len
+        pos = torch.arange(seq_len-1, -1, -1, device=emb.device, dtype=emb.dtype) # backwards (txl pos encoding)
+        return self.pos_enc(pos)
 
 class MLMLinearDecoder(nn.Module):
     "To go on top of a RNNCore module and create a Language Model."
@@ -583,13 +640,13 @@ class MLMLinearDecoder(nn.Module):
         decoded = self.decoder(output)
         return decoded
 
-
+    
 # DECODER TRANSLATE BLOCK
 class MLMEncoder(nn.Module):
     def __init__(self, embed:nn.Module, n_hid:int, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
                  resid_p:float=0., attn_p:float=0., ff_p:float=0., bias:bool=True, scale:bool=True,
-                 act:Activation=Activation.ReLU, double_drop:bool=True, attn_cls:Callable=MemMultiHeadRelativeAttentionKV,
-                 learned_pos_enc:bool=False, mask:bool=True, mem_len:int=512, **kwargs):
+                 act:Activation=Activation.ReLU, double_drop:bool=True,
+                 mask:bool=True, mem_len:int=512, is_decoder=False, **kwargs):
         super().__init__()
         self.embed = embed
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
@@ -597,26 +654,27 @@ class MLMEncoder(nn.Module):
         self.n_layers,self.d_model,self.mask = n_layers,d_model,mask
         self.layers = nn.ModuleList([MLMEncoderBlock(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
                       ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, mem_len=mem_len,
-                      attn_cls=attn_cls) for k in range(n_layers)])
+                      is_decoder=is_decoder) for k in range(n_layers)])
         self.mask_size = 1
     
         nn.init.normal_(self.u, 0., 0.02)
         nn.init.normal_(self.v, 0., 0.02)
         
-    def forward(self, x_msk, x_lm):
-        # x = encoder, y = target
+    def forward(self, x_lm, lm_pos, msk_emb=None):
         bs,lm_len = x_lm.size()
         
-        msk_emb, pos_enc = self.embed(x_msk)
-        lm_emb, pos_enc = self.embed(x_lm)
+        lm_emb = self.embed(x_lm, lm_pos)
+        pos_enc = self.embed.relative_pos_enc(lm_emb)
     
         # Masks
-        lm_mask = rand_window_mask(lm_len, self.embed.mem_len, x_lm.device, 
-                                    max_size=self.mask_size,p=0.3,is_eval=not self.train)
-        msk_mask = None
+        if self.mask:
+            lm_mask = rand_window_mask(lm_len, self.embed.mem_len, x_lm.device,
+                                       max_size=self.mask_size, p=0.3, is_eval=not self.train)
+        else:
+            lm_mask = None
         
         for i, layer in enumerate(self.layers):
-            lm_emb = layer(msk_emb, lm_emb, msk_mask=msk_mask, lm_mask=lm_mask,
+            lm_emb = layer(lm_emb, msk_emb, lm_mask=lm_mask,
                         r=pos_enc, g_u=self.u, g_v=self.v)
         return lm_emb
 
@@ -625,42 +683,40 @@ class MLMEncoderBlock(nn.Module):
     #Can't use Sequential directly cause more than one input...
     def __init__(self, n_heads:int, d_model:int, d_head:int, d_inner:int, resid_p:float=0., attn_p:float=0., ff_p:float=0.,
                  bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512,
-                 attn_cls=MemMultiHeadRelativeAttentionKV, **kwargs):
+                 is_decoder=False, **kwargs):
         super().__init__()
+        attn_cls = MemMultiHeadRelativeAttentionKV
         self.mha1 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=False)
         self.mha2 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=True)
+#         self.mha2 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=True)
         self.ff   = feed_forward(d_model, d_inner, ff_p=ff_p, double_drop=double_drop)
     
-    def forward(self, enc_msk:Tensor, enc_lm:Tensor, 
+    def forward(self, enc_lm:Tensor, enc_msk:Tensor,
                 r=None, g_u=None, g_v=None,
                 msk_mask:Tensor=None, lm_mask:Tensor=None): 
-        y = self.mha1(enc_msk, enc_msk, enc_msk, r, g_u, g_v, mask=msk_mask)
-        return self.ff(self.mha2(enc_lm, enc_msk, enc_msk, r, g_u, g_v, mask=lm_mask))
+        
+        y_lm = self.mha1(enc_lm, enc_lm, enc_lm, r, g_u, g_v, mask=lm_mask)
+        if enc_msk is None: return y_lm
+        return self.ff(self.mha2(y_lm, enc_msk, enc_msk, r, g_u, g_v, mask=msk_mask))
     
-
 # LOSS AND METRICS
-def acc_ignore_pad(input:Tensor, targ:Tensor, pad_idx)->Rank0Tensor:
+class MLMLoss():
+    def __init__(self):
+        "Loss mult - Mask, NextWord, Seq2Seq"
+        self.loss = CrossEntropyFlat(ignore_index=vocab.pad_idx)
+        
+    def __call__(self, input:Tensor, target:Tensor, mlm_type:Tensor=None, **kwargs)->Rank0Tensor:
+        return self.loss(input, target)
+    
+def acc_ignore_pad(input:Tensor, targ:Tensor, mlm_type=None, acc_type=None, pad_idx=vocab.pad_idx)->Rank0Tensor:
+    if acc_type is not None and mlm_type != acc_type: return None
     n = targ.shape[0]
     input = input.argmax(dim=-1).view(n,-1)
     targ = targ.view(n,-1)
     mask = targ != pad_idx
     return (input[mask]==targ[mask]).float().mean()
 
-def mask_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
-    return acc_ignore_pad(input[0], t1, vocab.pad_idx)
-
-def nw_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
-    x_mask, task_type, x_task = input
-    if task_type[0,0].item() != TaskType.NextWord.value: return None # torch.tensor(0, device=x_mask.device).float()
-    return acc_ignore_pad(x_task, t2, vocab.pad_idx)
-
-def s2s_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
-    x_mask, task_type, x_task = input
-    if task_type[0,0].item() != TaskType.Seq2Seq.value: return None # torch.tensor(0, device=x_mask.device).float()
-    return acc_ignore_pad(x_task, t2, vocab.pad_idx)
-
-def ns_acc(input:Tensor, t1:Tensor, t2:Tensor)->Rank0Tensor:
-    x_mask, task_type, x_task = input
-    if task_type[0,0].item() != TaskType.NextSent.value: return None # torch.tensor(0, device=x_mask.device).float()
-    return accuracy(input[-1], t2)
-
+def mask_acc(*args): return acc_ignore_pad(*args, acc_type=MLMType.Mask)
+def lm_acc(*args): return acc_ignore_pad(*args, acc_type=MLMType.NextWord)
+def c2m_acc(*args): return acc_ignore_pad(*args, acc_type=MLMType.C2M)
+def m2c_acc(*args): return acc_ignore_pad(*args, acc_type=MLMType.M2C)

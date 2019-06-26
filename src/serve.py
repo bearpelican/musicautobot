@@ -53,7 +53,8 @@ def v15_config(vocab):
 def mlm_config(vocab):
     config = v15_config(vocab)
     config['bias'] = True
-    config['n_layers'] = 12
+    config['n_layers'] = 8
+    config['mem_len'] = 0
     return config
     
 def v15m_config(vocab):
