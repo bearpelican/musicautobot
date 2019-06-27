@@ -79,17 +79,17 @@ s2s_config['bptt'] *= 2
 m2c_dl_tfms = [s2s_tfm]
 m2c_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
                                preloader_cls=S2SPreloader, dl_tfms=m2c_dl_tfms,
-                               shuffle_dl=True, **config)
+                               shuffle_dl=True, **s2s_config)
 
 c2m_dl_tfms = [partial(s2s_tfm, mlm_type=MLMType.C2M)]
 c2m_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
                                preloader_cls=S2SPreloader, dl_tfms=c2m_dl_tfms,
-                               shuffle_dl=True, **config)
+                               shuffle_dl=True, **s2s_config)
 
 datasets.append(m2c_data)
 datasets.append(c2m_data)
 
-# combined_data = CombinedData(datasets)
+combined_data = CombinedData(datasets)
 
 full_clip = None if args.half else 0.5
 
@@ -101,7 +101,7 @@ if args.lamb:
     opt_func = partial(Lamb, eps=eps)
     
 # Load Learner
-learn = mlm_model_learner(datasets[0], config.copy(), 
+learn = mlm_model_learner(combined_data, config.copy(), 
                            loss_func=MLMLoss(),
                            clip=full_clip, opt_func=opt_func)
 
@@ -110,7 +110,7 @@ learn.metrics = [acc_ignore_pad, mask_acc, lm_acc, c2m_acc, m2c_acc]
 
 from fastai.callbacks.rnn import RNNTrainer
 learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
-learn.callbacks.append(MLMTrainer(learn, datasets))
+learn.callbacks.append(MLMTrainer(learn))
 #learn.callbacks.append(MLMTrainer(learn, s2s_starting_mask_window=args.s2s_mask_window))
 
 if args.load:

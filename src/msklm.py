@@ -596,11 +596,14 @@ class TransformerEmbedding(nn.Module):
         with torch.no_grad(): trunc_normal_(self.embed.weight, std=0.01)
 #         self.embed = embedding(vocab_sz, emb_sz)
         self.pos_enc = PositionalEncoding(emb_sz)
-    
+        self.initrange = 0.05
         self.beat_len = beat_len
-        self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0, max_norm=1.0) # negative pad
-        self.bar_enc = nn.Embedding(1024, emb_sz, padding_idx=0, max_norm=1.0) # negative pad
-#        self.bar_enc = PositionalEncoding(emb_sz)
+        self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0) # negative pad
+        self.bar_enc = nn.Embedding(4096, emb_sz, padding_idx=0) # negative pad
+#         self.bar_enc = PositionalEncoding(emb_sz) # positional encoding doesn't work for multi dimensions right now
+
+        self.beat_enc.weight.data.uniform_(-self.initrange, self.initrange)
+        self.bar_enc.weight.data.uniform_(-self.initrange, self.initrange)
         
         
         self.drop = nn.Dropout(embed_p)
@@ -608,12 +611,14 @@ class TransformerEmbedding(nn.Module):
     
     def forward(self, inp, pos_enc):
 #         pdb.set_trace()
-#         return self.drop(self.embed(inp))
+#        return self.drop(self.embed(inp))
         pe = -pos_enc.clone()
         pe[pe==-vocab.pad_idx] = 0
         
         beat_enc = self.beat_enc(pe % self.beat_len)
-        bar_enc = self.bar_enc((pe // self.beat_len))
+        bar_pos = pe // self.beat_len
+        bar_pos[bar_pos > 4096] = 4095
+        bar_enc = self.bar_enc((bar_pos))
 #        bar_enc = self.bar_enc((pe // self.beat_len).type(beat_enc.dtype))
 #        assert((pe//self.beat_len < 1024).all())
         emb = self.drop(self.embed(inp) + beat_enc + bar_enc)
