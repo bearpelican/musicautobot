@@ -554,7 +554,7 @@ class MLMTransformer(nn.Module):
         if x_lm is None:
             reset_children(self.decoder)
             return self.head(self.encoder(x_msk, msk_pos))
-        
+        self.reset()
         x_msk = self.encoder(x_msk, msk_pos)
         dec = self.decoder(x_lm, lm_pos, x_msk) # all tasks include mask decoding
         return self.head(dec)
@@ -599,7 +599,7 @@ class TransformerEmbedding(nn.Module):
         self.initrange = 0.05
         self.beat_len = beat_len
         self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0) # negative pad
-        self.bar_enc = nn.Embedding(4096, emb_sz, padding_idx=0) # negative pad
+        self.bar_enc = nn.Embedding(1024, emb_sz, padding_idx=0) # negative pad
 #         self.bar_enc = PositionalEncoding(emb_sz) # positional encoding doesn't work for multi dimensions right now
 
         self.beat_enc.weight.data.uniform_(-self.initrange, self.initrange)
@@ -616,8 +616,8 @@ class TransformerEmbedding(nn.Module):
         pe[pe==-vocab.pad_idx] = 0
         
         beat_enc = self.beat_enc(pe % self.beat_len)
-        bar_pos = pe // self.beat_len
-        bar_pos[bar_pos > 4096] = 4095
+        bar_pos = pe // self.beat_len % 1024
+#        bar_pos[bar_pos > 4096] = 4095
         bar_enc = self.bar_enc((bar_pos))
 #        bar_enc = self.bar_enc((pe // self.beat_len).type(beat_enc.dtype))
 #        assert((pe//self.beat_len < 1024).all())
