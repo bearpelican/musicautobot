@@ -489,17 +489,17 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
     def mem_k(self, k):
         if self.mem_len == 0: return k
         if self.prev_k is None or (self.prev_k.shape[0] != k.shape[0]): # reset if wrong batch size
-            self.prev_k = k
+            self.prev_k = k[:, -self.mem_len:]
             return k
         with torch.no_grad():
             k_ext = torch.cat([self.prev_k, k], dim=1)
             self.prev_k = k_ext[:, -self.mem_len:]
         return k_ext.detach()
-
+    
     def mem_v(self, v):
         if self.mem_len == 0: return v
         if self.prev_v is None or (self.prev_v.shape[0] != v.shape[0]): # reset if wrong batch size
-            self.prev_v = v
+            self.prev_v = v[:, -self.mem_len:]
             return v
         with torch.no_grad():
             v_ext = torch.cat([self.prev_v, v], dim=1)
