@@ -670,7 +670,10 @@ class MLMEncoder(nn.Module):
         bs,lm_len = x_lm.size()
         
         lm_emb = self.embed(x_lm, lm_pos)
-        pos_enc = self.embed.relative_pos_enc(lm_emb)
+        if msk_emb is not None and msk_emb.shape[1] > lm_emb.shape[1]:
+            pos_enc = self.embed.relative_pos_enc(msk_emb)
+        else:
+            pos_enc = self.embed.relative_pos_enc(lm_emb)
     
         # Masks
         if self.mask:
