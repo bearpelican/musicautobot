@@ -315,6 +315,7 @@ class MLMLearner(MusicLearner):
         return xb.cpu().numpy()
 
 
+
     def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
                     temperatures:float=(1.0,1.0),
                     top_k=40, top_p=0.9):
@@ -328,7 +329,7 @@ class MLMLearner(MusicLearner):
         msk_pos = torch.tensor(-position_enc(xb_msk.cpu().numpy()), device=xb_msk.device)
         x_enc = self.model.encoder(xb_msk.view(1, -1), msk_pos.view(1, -1))
 
-        max_pos = msk_pos[-1] + SAMPLE_FREQ * 4
+        max_pos = msk_pos[-1] - SAMPLE_FREQ * 8
 
         for i in progress_bar(range(n_words), leave=True):
 
@@ -353,7 +354,7 @@ class MLMLearner(MusicLearner):
                 duration = idx - vocab.dur_range[0]
     #             sep_count += duration
                 last_pos = last_pos - duration # position is negative
-                if last_pos < max_pos+SAMPLE_FREQ * 4:
+                if last_pos < max_pos:
                     print('Predicted past counter-part length. Returning early')
                     break
 
@@ -407,19 +408,19 @@ def nw_predict_from_midi(learn, midi=None, n_words=600,
     full = np.concatenate((seed,pred), axis=0)
     return full
 
+
 def mask_predict_from_midi(learn, midi=None,
                            temperatures=(1.0,1.0), top_k=20, top_p=0.8, 
-                           predict_notes=True,
+                           predict_notes=True, dur_seed_len=10,
                            **kwargs):
     seed_np = midi2npenc(midi) # music21 can handle bytes directly
     xb = torch.tensor(to_single_stream(seed_np))[None]
     mask_range = vocab.note_range if predict_notes else vocab.dur_range
-    if predict_notes:
-        mask_input(xb, mask_range=mask_range, clone=False)
-    else:
-        mask_input(xb[10:], mask_range=mask_range, clone=False)
-    if torch.cuda.is_available(): xb = xb.cuda()
-    pred = learn.predict_mask(xb, temperatures=temperatures, top_k=top_k, top_p=top_p)
+    xb_msk = mask_input(xb, mask_range=mask_range)
+    if not predict_notes and dur_seed_len is not None: 
+        xb_msk[..., :dur_seed_len] = xb[..., :dur_seed_len] # Give it a bit of a hint. otherwise way off
+    if torch.cuda.is_available(): xb_msk = xb_msk.cuda()
+    pred = learn.predict_mask(xb_msk, temperatures=temperatures, top_k=top_k, top_p=top_p)
     pred = to_double_stream(pred)
     return pred
         
