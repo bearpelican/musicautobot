@@ -141,7 +141,7 @@ def partenc2seq2seq(part_np, part_type, vocab=vocab):
     part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
     s2s_out = to_single_stream(part_np, start_seq=part_meta)
     s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
-    s2s_out = position_tfm(s2s_out)
+#     s2s_out = position_tfm(s2s_out)
     return s2s_out
 
 def pad_seq(seq, bptt, pad_idx=vocab.pad_idx):
@@ -222,27 +222,25 @@ class CombinedData():
         for dl in self.dbs: dl.remove_tfm(tfm)
         
 class MLMLearner(MusicLearner):
-    
+
     def predict_nw(self, xb:Tensor, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=40, top_p=0.9):
         "Return the `n_words` that come after `text`."
         self.model.reset()
-        if xb.shape[0] > 1: xb = xb[0][None]
+
         seed = xb.cpu().numpy().squeeze()
-        yb = torch.ones_like(xb)
         new_idx = []
+        pos = torch.tensor(position_enc(xb.cpu().numpy()), device=xb.device)
+        last_pos = pos[-1]
 
         sep_count = 0
-
         bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
         vocab = self.data.vocab
 
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
-                task_type = torch.full_like(xb, TaskType.NextWord.value)
-
-                res = self.pred_batch(batch=((xb,task_type,xb),yb))[-1][0, -1]
+                res = self.pred_batch(batch=((None, xb[None], None, pos[None]),xb[None]))[-1][-1]
 
                 # bar = 16 beats
                 if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
@@ -257,37 +255,39 @@ class MLMLearner(MusicLearner):
                 if new_idx and new_idx[-1]==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
                     sep_count += duration
-                    # print('Bars', duration, sep_count // 16)
+    #                 print('Updating positional encoding:', last_pos, last_pos - duration)
+                    last_pos = last_pos - duration # position is negative
+    #                 print('Bars', duration, sep_count // 16)
 
                 if idx==vocab.bos_idx: 
                     print('Predicted BOS token. Returning prediction...')
                     break
 
-
                 new_idx.append(idx)
-                xb = xb.new_tensor([idx])[None]
+                xb = xb.new_tensor([idx])
+                pos = pos.new_tensor([last_pos])
         return np.array(new_idx), seed
-    
+
     def predict_mask(self, xb:Tensor,
                     temperatures:float=(1.0,1.0),
                     top_k=20, top_p=0.8):
-        if xb.shape[0] > 1: xb = xb[0][None]
-        xb = xb.clone()
+        xb = xb.clone().squeeze()[None]
         self.model.reset()
-        self.model.update_mem_len(TaskType.NextSent.value)
-
         mask_idxs = (xb == vocab.mask_idx).nonzero()
         for midx in progress_bar(mask_idxs, leave=True):
-            task_type = torch.full_like(xb, TaskType.NextSent.value)
+
+            pos = torch.tensor(position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
+    #         print(pos)
 
             # Next Word
-            res = self.pred_batch(batch=((xb,task_type),xb))[0]
-            res = res[tuple(midx)] # task1, task2 - (bs x ts x vocab)
-            
+            res = self.pred_batch(batch=((xb, None, pos, None),xb))
+            res = F.softmax(res[tuple(midx)], dim=-1) # task1, task2 - (bs x ts x vocab)
+
             # Don't allow any special tokens (as we are only removing notes and durations)
             res[vocab.bos_idx] = 0.
             res[vocab.sep_idx] = 0.
-            
+            res[vocab.stoi[EOS]] = 0
+
             # Use first temperatures value if last prediction was duration
             temperature = temperatures[0]
             if temperature != 1.: res.pow_(1 / temperature)
@@ -300,28 +300,29 @@ class MLMLearner(MusicLearner):
 
         return xb.cpu().numpy()
 
-    def predict_s2s(self, xb:Tensor, yb:Tensor, n_words:int=128,
+
+    def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
                     temperatures:float=(1.0,1.0),
                     top_k=40, top_p=0.9):
-        if xb.shape[0] > 1: xb = xb[0][None]
-        yb_seed = yb
         self.model.reset()
-        self.model.update_mem_len(TaskType.Seq2Seq.value)
+
+
+        x_lm = xb_lm.tolist()
+        lm_pos = position_enc(xb_lm.cpu().numpy()).tolist()
+        last_pos = lm_pos[-1]
+
+        msk_pos = torch.tensor(position_enc(xb_msk.cpu().numpy()), device=xb_msk.device)
+        x_enc = self.model.encoder(xb_msk.view(1, -1), msk_pos.view(1, -1))
 
         for i in progress_bar(range(n_words), leave=True):
-            task_type = torch.full_like(xb, TaskType.Seq2Seq.value)
-            pad = xb.shape[-1]-yb_seed.shape[-1]
-            yb_inp = F.pad(yb_seed, (0,pad), value=vocab.pad_idx)
 
             # Next Word
-            pred_idx = yb_seed.shape[-1]-1
-            res = self.pred_batch(batch=((xb,task_type,yb_inp),yb_inp))[-1][0, pred_idx] # task1, task2 - (bs x ts x vocab)
-
-            # Encoder only - nw
-    #         res = self.pred_batch(batch=((xb,task_type,xb),xb))[0][0, -1] # task1, task2 - (bs x ts x vocab)
+            x, pos = torch.tensor(x_lm, device=xb_lm.device)[None], torch.tensor(lm_pos, device=xb_lm.device)[None]
+            dec = self.model.decoder(x, pos, x_enc) # all tasks include mask decoding
+            res = F.softmax(self.model.head(dec), dim=-1)[-1, -1]
 
             # Use first temperatures value if last prediction was duration
-            temperature = temperatures[0] if (len(yb_seed)==0 or self.data.vocab.is_duration(yb_seed[0, -1])) else temperatures[1]
+            temperature = temperatures[0] if (len(x_lm)==0 or self.data.vocab.is_duration(x_lm[-1])) else temperatures[1]
             if temperature != 1.: res.pow_(1 / temperature)
 
             res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
@@ -332,10 +333,16 @@ class MLMLearner(MusicLearner):
                 print('Predicting BOS/EOS')
                 break
 
-            t_idx = torch.tensor(idx, device=xb.device).view(1, 1)
-            yb_seed = torch.cat((yb_seed, t_idx), dim=-1)
+            if x_lm and x_lm[-1]==vocab.sep_idx: 
+                duration = idx - vocab.dur_range[0]
+    #             sep_count += duration
+    #             print('Updating positional encoding:', last_pos, last_pos - duration)
+                last_pos = last_pos - duration # position is negative
 
-        return yb_seed.cpu().numpy()
+            lm_pos.append(last_pos)
+            x_lm.append(idx)
+
+        return np.array(x_lm)
 
 # High level serve api
 def part_enc(chordarr, part):
@@ -343,31 +350,21 @@ def part_enc(chordarr, part):
     npenc = chordarr2npenc(partarr)
     return npenc
     
+
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, pred_melody=True, **kwargs):
 
     stream = file2stream(midi) # 1.
     chordarr = stream2chordarr(stream) # 2.
     _,num_parts,_ = chordarr.shape
-    melody_np, chord_np = [part_enc(chordarr, i) for i in range(num_parts)]
+    p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
     
-
-    melody_np, chord_np = (melody_np, chord_np) if avg_pitch(melody_np) > avg_pitch(chord_np) else (chord_np, melody_np) # Assuming melody has higher pitch
+    part_order = (MSEQ, CSEQ) if avg_pitch(p1) > avg_pitch(p2) else (CSEQ, MSEQ)
     
-    offset = 3
-    original_shape = melody_np.shape[0] * 2 if pred_melody else chord_np.shape[0] * 2 
-    bptt = original_shape + n_words + offset
-    bptt = max(bptt, melody_np.shape[0] * 2, chord_np.shape[0] * 2 )
-    mpart = partenc2seq2seq(melody_np, part_type=MSEQ, translate=pred_melody, bptt=bptt)
-    cpart = partenc2seq2seq(chord_np, part_type=CSEQ, translate=not pred_melody, bptt=bptt)
-    if pred_melody:
-        xb = torch.tensor(cpart)[None]
-        yb = torch.tensor(mpart)[None][:, :original_shape+offset]
-    else:
-        xb = torch.tensor(mpart)[None]
-        yb = torch.tensor(cpart)[None][:, :original_shape+offset]
-
-
+    mpart = torch.tensor(partenc2seq2seq(p1, part_type=part_order[0]))[:30]
+    cpart = torch.tensor(partenc2seq2seq(p2, part_type=part_order[1]))
+    
+    xb, yb = (cpart, mpart) if pred_melody else (mpart, cpart)
     if torch.cuda.is_available(): xb, yb = xb.cuda(), yb.cuda()
     
     pred = learn.predict_s2s(xb, yb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
@@ -380,17 +377,17 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
 
     return chordarr_comb
 
+
 def nw_predict_from_midi(learn, midi=None, n_words=600, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, **kwargs):
-    seed_np = midi2npenc(midi) # music21 can handle bytes directly
-    xb = torch.tensor(to_single_stream(seed_np))[None]
+    seed_np = to_single_stream(midi2npenc(midi)) # music21 can handle bytes directly
+    xb = torch.tensor(seed_np)
     if torch.cuda.is_available(): xb = xb.cuda()
     pred, seed = learn.predict_nw(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
     seed = to_double_stream(seed)
     pred = to_double_stream(pred)
     full = np.concatenate((seed,pred), axis=0)
     return full
-
 
 def mask_predict_from_midi(learn, midi=None,
                            temperatures=(1.0,1.0), top_k=20, top_p=0.8, 
@@ -399,7 +396,7 @@ def mask_predict_from_midi(learn, midi=None,
     seed_np = midi2npenc(midi) # music21 can handle bytes directly
     xb = torch.tensor(to_single_stream(seed_np))[None]
     mask_range = vocab.note_range if predict_notes else vocab.dur_range
-    xb = mask_input(xb, mask_range=mask_range)
+    xb = mask_input(xb, mask_range=vocab.note_range)
     if torch.cuda.is_available(): xb = xb.cuda()
     pred = learn.predict_mask(xb, temperatures=temperatures, top_k=top_k, top_p=top_p)
     pred = to_double_stream(pred)

@@ -121,7 +121,9 @@ def to_double_stream(t, vocab=vocab, normalize=True):
 def position_enc(ssenc, vocab=vocab):
     sep_idxs = (ssenc == vocab.sep_idx).nonzero()[0]
     sep_idxs = sep_idxs[sep_idxs+2 < ssenc.shape[0]] # remove any indexes right before out of bounds (sep_idx+2)
-    dur_vals = ssenc[sep_idxs+1] - vocab.dur_range[0]
+    dur_vals = ssenc[sep_idxs+1]
+    dur_vals[dur_vals == vocab.mask_idx] = vocab.dur_range[0] # make sure masked durations are 0
+    dur_vals -= vocab.dur_range[0]
     
     posenc = np.zeros_like(ssenc)
     posenc[sep_idxs+2] = dur_vals
