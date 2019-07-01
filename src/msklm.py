@@ -82,8 +82,19 @@ def mask_or_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx,
     return (x, None, y_pos, None), (y, MLMType.Mask)
 
 # Utility for predictions
-def mask_input(xb, mask_range=vocab.note_range, mask_idx=vocab.mask_idx):
-    xb = xb.clone()
+def mask_note_or_dur(b):
+    x, y = b
+    x,x_pos = x[...,0], x[...,1]
+    y,y_pos = y[...,0], y[...,1]
+    x = x.clone()
+    rand = torch.rand(x.shape, device=x.device) < 0.9
+    mask_range = vocab.dur_range if random.randint(0, 1) == 0 else vocab.note_range
+    x[(x >= mask_range[0]) & (x < mask_range[1]) & rand] = vocab.mask_idx
+    return (x, None, y_pos, None), (y, MLMType.Mask)
+
+# Utility for predictions
+def mask_input(xb, mask_range=vocab.note_range, mask_idx=vocab.mask_idx, clone=True):
+    if clone: xb = xb.clone()
     xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = mask_idx
     return xb
 
@@ -137,10 +148,10 @@ def part_tfm(b):
     y = partenc2seq2seq(y, part_type=CSEQ)
     return x, y
     
-def partenc2seq2seq(part_np, part_type, vocab=vocab):
+def partenc2seq2seq(part_np, part_type, vocab=vocab, add_eos=True):
     part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
     s2s_out = to_single_stream(part_np, start_seq=part_meta)
-    s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
+    if add_eos: s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
 #     s2s_out = position_tfm(s2s_out)
     return s2s_out
 
@@ -223,6 +234,7 @@ class CombinedData():
         
 class MLMLearner(MusicLearner):
 
+
     def predict_nw(self, xb:Tensor, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=40, top_p=0.9):
@@ -231,7 +243,7 @@ class MLMLearner(MusicLearner):
 
         seed = xb.cpu().numpy().squeeze()
         new_idx = []
-        pos = torch.tensor(position_enc(xb.cpu().numpy()), device=xb.device)
+        pos = torch.tensor(-position_enc(xb.cpu().numpy()), device=xb.device)
         last_pos = pos[-1]
 
         sep_count = 0
@@ -241,6 +253,7 @@ class MLMLearner(MusicLearner):
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
                 res = self.pred_batch(batch=((None, xb[None], None, pos[None]),xb[None]))[-1][-1]
+                res = F.softmax(res, dim=-1)
 
                 # bar = 16 beats
                 if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
@@ -268,6 +281,7 @@ class MLMLearner(MusicLearner):
                 pos = pos.new_tensor([last_pos])
         return np.array(new_idx), seed
 
+
     def predict_mask(self, xb:Tensor,
                     temperatures:float=(1.0,1.0),
                     top_k=20, top_p=0.8):
@@ -276,7 +290,7 @@ class MLMLearner(MusicLearner):
         mask_idxs = (xb == vocab.mask_idx).nonzero()
         for midx in progress_bar(mask_idxs, leave=True):
 
-            pos = torch.tensor(position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
+            pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
     #         print(pos)
 
             # Next Word
@@ -308,11 +322,13 @@ class MLMLearner(MusicLearner):
 
 
         x_lm = xb_lm.tolist()
-        lm_pos = position_enc(xb_lm.cpu().numpy()).tolist()
+        lm_pos = (-position_enc(xb_lm.cpu().numpy())).tolist()
         last_pos = lm_pos[-1]
 
-        msk_pos = torch.tensor(position_enc(xb_msk.cpu().numpy()), device=xb_msk.device)
+        msk_pos = torch.tensor(-position_enc(xb_msk.cpu().numpy()), device=xb_msk.device)
         x_enc = self.model.encoder(xb_msk.view(1, -1), msk_pos.view(1, -1))
+
+        max_pos = msk_pos[-1] + SAMPLE_FREQ * 4
 
         for i in progress_bar(range(n_words), leave=True):
 
@@ -336,8 +352,10 @@ class MLMLearner(MusicLearner):
             if x_lm and x_lm[-1]==vocab.sep_idx: 
                 duration = idx - vocab.dur_range[0]
     #             sep_count += duration
-    #             print('Updating positional encoding:', last_pos, last_pos - duration)
                 last_pos = last_pos - duration # position is negative
+                if last_pos < max_pos+SAMPLE_FREQ * 4:
+                    print('Predicted past counter-part length. Returning early')
+                    break
 
             lm_pos.append(last_pos)
             x_lm.append(idx)
@@ -361,8 +379,8 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     
     part_order = (MSEQ, CSEQ) if avg_pitch(p1) > avg_pitch(p2) else (CSEQ, MSEQ)
     
-    mpart = torch.tensor(partenc2seq2seq(p1, part_type=part_order[0]))[:30]
-    cpart = torch.tensor(partenc2seq2seq(p2, part_type=part_order[1]))
+    mpart = torch.tensor(partenc2seq2seq(p1, part_type=MSEQ, add_eos=False))
+    cpart = torch.tensor(partenc2seq2seq(p2, part_type=CSEQ, add_eos=False))
     
     xb, yb = (cpart, mpart) if pred_melody else (mpart, cpart)
     if torch.cuda.is_available(): xb, yb = xb.cuda(), yb.cuda()
@@ -396,7 +414,10 @@ def mask_predict_from_midi(learn, midi=None,
     seed_np = midi2npenc(midi) # music21 can handle bytes directly
     xb = torch.tensor(to_single_stream(seed_np))[None]
     mask_range = vocab.note_range if predict_notes else vocab.dur_range
-    xb = mask_input(xb, mask_range=vocab.note_range)
+    if predict_notes:
+        mask_input(xb, mask_range=mask_range, clone=False)
+    else:
+        mask_input(xb[10:], mask_range=mask_range, clone=False)
     if torch.cuda.is_available(): xb = xb.cuda()
     pred = learn.predict_mask(xb, temperatures=temperatures, top_k=top_k, top_p=top_p)
     pred = to_double_stream(pred)
