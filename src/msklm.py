@@ -282,16 +282,19 @@ class MLMLearner(MusicLearner):
         return np.array(new_idx), seed
 
 
-    def predict_mask(self, xb:Tensor,
+
+    def predict_mask(self, xb:Tensor, pos=None,
                     temperatures:float=(1.0,1.0),
                     top_k=20, top_p=0.8):
         xb = xb.clone().squeeze()[None]
+        if pos is None:
+            pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
         self.model.reset()
         mask_idxs = (xb == vocab.mask_idx).nonzero()
         for midx in progress_bar(mask_idxs, leave=True):
 
-            pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
-    #         print(pos)
+            # Using original positions, otherwise model gets too off track
+    #         pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
 
             # Next Word
             res = self.pred_batch(batch=((xb, None, pos, None),xb))
@@ -415,12 +418,13 @@ def mask_predict_from_midi(learn, midi=None,
                            **kwargs):
     seed_np = midi2npenc(midi) # music21 can handle bytes directly
     xb = torch.tensor(to_single_stream(seed_np))[None]
+    pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
     mask_range = vocab.note_range if predict_notes else vocab.dur_range
     xb_msk = mask_input(xb, mask_range=mask_range)
     if not predict_notes and dur_seed_len is not None: 
         xb_msk[..., :dur_seed_len] = xb[..., :dur_seed_len] # Give it a bit of a hint. otherwise way off
     if torch.cuda.is_available(): xb_msk = xb_msk.cuda()
-    pred = learn.predict_mask(xb_msk, temperatures=temperatures, top_k=top_k, top_p=top_p)
+    pred = learn.predict_mask(xb_msk, pos, temperatures=temperatures, top_k=top_k, top_p=top_p)
     pred = to_double_stream(pred)
     return pred
         
