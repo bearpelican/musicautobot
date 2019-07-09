@@ -281,8 +281,6 @@ class MLMLearner(MusicLearner):
                 pos = pos.new_tensor([last_pos])
         return np.array(new_idx), seed
 
-
-
     def predict_mask(self, xb:Tensor, pos=None,
                     temperatures:float=(1.0,1.0),
                     top_k=20, top_p=0.8):
@@ -423,7 +421,9 @@ def mask_predict_from_midi(learn, midi=None,
     xb_msk = mask_input(xb, mask_range=mask_range)
     if not predict_notes and dur_seed_len is not None: 
         xb_msk[..., :dur_seed_len] = xb[..., :dur_seed_len] # Give it a bit of a hint. otherwise way off
-    if torch.cuda.is_available(): xb_msk = xb_msk.cuda()
+    if torch.cuda.is_available(): 
+        xb_msk = xb_msk.cuda()
+        pos = pos.cuda()
     pred = learn.predict_mask(xb_msk, pos, temperatures=temperatures, top_k=top_k, top_p=top_p)
     pred = to_double_stream(pred)
     return pred
