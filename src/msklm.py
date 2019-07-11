@@ -692,16 +692,15 @@ class MLMLinearDecoder(nn.Module):
 class MLMEncoder(nn.Module):
     def __init__(self, embed:nn.Module, n_hid:int, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
                  resid_p:float=0., attn_p:float=0., ff_p:float=0., bias:bool=True, scale:bool=True,
-                 act:Activation=Activation.ReLU, double_drop:bool=True,
-                 mask:bool=True, mem_len:int=512, is_decoder=False, **kwargs):
+                 act:Activation=Activation.ReLU, double_drop:bool=True, mem_len:int=512, is_decoder=False, **kwargs):
         super().__init__()
         self.embed = embed
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
-        self.n_layers,self.d_model,self.mask = n_layers,d_model,mask
+        self.n_layers,self.d_model = n_layers,d_model
         self.layers = nn.ModuleList([MLMEncoderBlock(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
                       ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, mem_len=mem_len,
-                      is_decoder=is_decoder) for k in range(n_layers)])
+                      ) for k in range(n_layers)])
         self.mask_size = 1
     
         nn.init.normal_(self.u, 0., 0.02)
@@ -717,7 +716,7 @@ class MLMEncoder(nn.Module):
             pos_enc = self.embed.relative_pos_enc(lm_emb)
     
         # Masks
-        if self.mask:
+        if self.is_decoder:
             lm_mask = rand_window_mask(lm_len, self.embed.mem_len, x_lm.device,
                                        max_size=self.mask_size, p=0.3, is_eval=not self.train)
         else:
@@ -732,8 +731,7 @@ class MLMEncoderBlock(nn.Module):
     "Decoder block of a Transformer model."
     #Can't use Sequential directly cause more than one input...
     def __init__(self, n_heads:int, d_model:int, d_head:int, d_inner:int, resid_p:float=0., attn_p:float=0., ff_p:float=0.,
-                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512,
-                 is_decoder=False, **kwargs):
+                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512, **kwargs):
         super().__init__()
         attn_cls = MemMultiHeadRelativeAttentionKV
         self.mha1 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=False)
