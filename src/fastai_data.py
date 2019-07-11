@@ -93,6 +93,7 @@ def to_single_stream(t, vocab=vocab, start_seq=None):
     if isinstance(t, (list, tuple)) and len(t) == 2: 
         return [to_single_stream(x, vocab, start_seq) for x in t]
     t = t.copy()
+    
     t[:, 0] = t[:, 0] + vocab.note_range[0]
     t[:, 1] = t[:, 1] + vocab.dur_range[0]
     if start_seq is None: start_seq = np.array([vocab.bos_idx, vocab.pad_idx])
@@ -108,6 +109,8 @@ def to_double_stream(t, vocab=vocab, normalize=True):
         if t.shape[-1] % 2 == 1:
             t = t[..., :-1]
     t = t.copy().reshape(-1, 2)
+    if t.shape[0] == 0: return
+        
     t[:, 0] = t[:, 0] - vocab.note_range[0]
     t[:, 1] = t[:, 1] - vocab.dur_range[0]
     

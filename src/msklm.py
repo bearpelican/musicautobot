@@ -377,12 +377,16 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     stream = file2stream(midi) # 1.
     chordarr = stream2chordarr(stream) # 2.
     _,num_parts,_ = chordarr.shape
-    p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
-    
-    part_order = (MSEQ, CSEQ) if avg_pitch(p1) > avg_pitch(p2) else (CSEQ, MSEQ)
-    
-    mpart = torch.tensor(partenc2seq2seq(p1, part_type=MSEQ, add_eos=False))
-    cpart = torch.tensor(partenc2seq2seq(p2, part_type=CSEQ, add_eos=False))
+
+    if num_parts == 1:
+        # if predicting melody, assume only track is chord track
+        p1, p2 = part_enc(chordarr, 0), np.zeros((0,2), dtype=int)
+        p1, p2 = (p2, p1) if pred_melody else (p1, p2)
+    else:
+        p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
+        p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
+    mpart = torch.tensor(partenc2seq2seq(p1, part_type=MSEQ, add_eos=not pred_melody))
+    cpart = torch.tensor(partenc2seq2seq(p2, part_type=CSEQ, add_eos=pred_melody))
     
     xb, yb = (cpart, mpart) if pred_melody else (mpart, cpart)
     if torch.cuda.is_available(): xb, yb = xb.cuda(), yb.cuda()
@@ -397,10 +401,22 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
 
     return chordarr_comb
 
+def seed_tfm(npenc, seed_len=None, sample_freq=SAMPLE_FREQ):
+    if seed_len is None: return npenc
+    pos = position_enc(npenc)
+    cutoff = np.searchsorted(pos, (seed_len - 1) * sample_freq) + 1
+    return npenc[:cutoff]
 
 def nw_predict_from_midi(learn, midi=None, n_words=600, 
-                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, **kwargs):
-    seed_np = to_single_stream(midi2npenc(midi)) # music21 can handle bytes directly
+                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, **kwargs):
+    try:
+        seed_np = to_single_stream(midi2npenc(midi)) # music21 can handle bytes directly
+        if seed_len is not None:
+            seed_np = seed_tfm(seed_np, seed_len=seed_len)
+    except IndexError:
+        seed_np = to_single_stream(np.zeros((0, 2), dtype=int))
+    seed = to_double_stream(seed_np)
+    return seed
     xb = torch.tensor(seed_np)
     if torch.cuda.is_available(): xb = xb.cuda()
     pred, seed = learn.predict_nw(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
