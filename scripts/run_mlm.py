@@ -73,8 +73,8 @@ lm_data = MusicDataBunch.load(args.path/'piano_duet', cache_name=args.cache, voc
 datasets.append(lm_data)
 
 s2s_config = config.copy()
-s2s_config['bs'] = s2s_config['bs'] // 24
-s2s_config['bptt'] *= 4
+s2s_config['bs'] = s2s_config['bs'] // 12
+s2s_config['bptt'] *= 2
 
 m2c_dl_tfms = [s2s_tfm]
 m2c_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 

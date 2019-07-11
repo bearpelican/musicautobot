@@ -239,7 +239,7 @@ class MLMLearner(MusicLearner):
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=40, top_p=0.9):
         "Return the `n_words` that come after `text`."
-        self.model.update_mem_len(use_mem=True)
+        self.model.reset()
 
         seed = xb.cpu().numpy().squeeze()
         new_idx = []
@@ -287,7 +287,7 @@ class MLMLearner(MusicLearner):
         xb = xb.clone().squeeze()[None]
         if pos is None:
             pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
-        self.model.update_mem_len(use_mem=False)
+        self.model.reset()
         mask_idxs = (xb == vocab.mask_idx).nonzero()
         for midx in progress_bar(mask_idxs, leave=True):
 
@@ -320,7 +320,7 @@ class MLMLearner(MusicLearner):
     def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
                     temperatures:float=(1.0,1.0),
                     top_k=40, top_p=0.9):
-        self.model.update_mem_len(use_mem=False)
+        self.model.reset()
 
         x_lm = xb_lm.tolist()
         lm_pos = (-position_enc(xb_lm.cpu().numpy())).tolist()
@@ -464,7 +464,8 @@ class MLMTrainer(LearnerCallback):
         
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
-        if self.dataloaders is not None: self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
+        if self.dataloaders is not None: 
+            self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
         self.count += 1
 
 
@@ -475,11 +476,12 @@ def get_mlm_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
 #     tie_weights,output_p,out_bias = map(config.pop, ['tie_weights', 'output_p', 'out_bias'])
     tie_weights,output_p,out_bias = map(config.get, ['tie_weights', 'output_p', 'out_bias'])
     n_hid = config['d_model']
-    embed = TransformerEmbedding(vocab_sz, n_hid, embed_p=config['embed_p'], mem_len=config['mem_len'])
-    encoder = MLMEncoder(embed, n_hid, n_layers=config['enc_layers'], **config)
-    decoder = MLMEncoder(embed, n_hid, is_decoder=True, n_layers=config['dec_layers'], **config)
+    mem_len = config.pop('mem_len')
+    embed = TransformerEmbedding(vocab_sz, n_hid, embed_p=config['embed_p'], mem_len=mem_len)
+    encoder = MLMEncoder(embed, n_hid, n_layers=config['enc_layers'], mem_len=0, **config) # encoder doesn't need memory
+    decoder = MLMEncoder(embed, n_hid, is_decoder=True, n_layers=config['dec_layers'], mem_len=mem_len, **config)
     head = MLMLinearDecoder(n_hid, vocab_sz, tie_encoder=embed.embed, **config)
-    model = MLMTransformer(encoder, decoder, head, mem_len=config['mem_len'])
+    model = MLMTransformer(encoder, decoder, head, mem_len=mem_len)
     return model.apply(init_transformer)
 
 
@@ -590,10 +592,8 @@ class MLMTransformer(nn.Module):
     
     def forward(self, x_msk, x_lm, msk_pos, lm_pos):
         if x_msk is None:
-            reset_children(self.encoder)
             return self.head(self.decoder(x_lm, lm_pos))
         if x_lm is None:
-            reset_children(self.decoder)
             return self.head(self.encoder(x_msk, msk_pos))
         self.reset()
         x_msk = self.encoder(x_msk, msk_pos)
