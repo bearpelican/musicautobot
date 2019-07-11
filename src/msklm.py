@@ -476,8 +476,8 @@ def get_mlm_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
     tie_weights,output_p,out_bias = map(config.get, ['tie_weights', 'output_p', 'out_bias'])
     n_hid = config['d_model']
     embed = TransformerEmbedding(vocab_sz, n_hid, embed_p=config['embed_p'], mem_len=config['mem_len'])
-    encoder = MLMEncoder(embed, n_hid, **config)
-    decoder = MLMEncoder(embed, n_hid, is_decoder=True, **config)
+    encoder = MLMEncoder(embed, n_hid, n_layers=config['enc_layers'], **config)
+    decoder = MLMEncoder(embed, n_hid, is_decoder=True, n_layers=config['dec_layers'], **config)
     head = MLMLinearDecoder(n_hid, vocab_sz, tie_encoder=embed.embed, **config)
     model = MLMTransformer(encoder, decoder, head, mem_len=config['mem_len'])
     return model.apply(init_transformer)
@@ -701,7 +701,9 @@ class MLMEncoder(nn.Module):
         self.layers = nn.ModuleList([MLMEncoderBlock(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
                       ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, mem_len=mem_len,
                       ) for k in range(n_layers)])
+
         self.mask_size = 1
+        self.is_decoder = is_decoder
     
         nn.init.normal_(self.u, 0., 0.02)
         nn.init.normal_(self.v, 0., 0.02)

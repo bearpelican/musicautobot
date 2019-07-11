@@ -111,7 +111,7 @@ learn.metrics = [acc_ignore_pad, mask_acc, lm_acc, c2m_acc, m2c_acc]
 from fastai.callbacks.rnn import RNNTrainer
 learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
 # learn.callbacks.append(MLMTrainer(learn, datasets))
-learn.callbacks.append(MLMTrainer(learn, datasets, s2s_starting_mask_window=args.s2s_mask_window))
+learn.callbacks.append(MLMTrainer(learn, datasets, starting_mask_window=args.s2s_mask_window))
 
 if args.load:
     load_path = Path(args.path)/args.load
