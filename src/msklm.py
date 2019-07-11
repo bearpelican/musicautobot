@@ -460,7 +460,7 @@ class MLMTrainer(LearnerCallback):
         "Reset the hidden state of the model."
         model = get_model(self.learn.model)
         model.reset()
-#         model.encoder.mask_size = max(self.count+self.mw_start, 100)
+        model.encoder.mask_size = max(self.count+self.mw_start, 100)
         
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."

@@ -73,8 +73,8 @@ lm_data = MusicDataBunch.load(args.path/'piano_duet', cache_name=args.cache, voc
 datasets.append(lm_data)
 
 s2s_config = config.copy()
-s2s_config['bs'] = s2s_config['bs'] // 8
-s2s_config['bptt'] *= 2
+s2s_config['bs'] = s2s_config['bs'] // 24
+s2s_config['bptt'] *= 4
 
 m2c_dl_tfms = [s2s_tfm]
 m2c_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache, 
@@ -110,8 +110,8 @@ learn.metrics = [acc_ignore_pad, mask_acc, lm_acc, c2m_acc, m2c_acc]
 
 from fastai.callbacks.rnn import RNNTrainer
 learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
-learn.callbacks.append(MLMTrainer(learn, datasets))
-#learn.callbacks.append(MLMTrainer(learn, s2s_starting_mask_window=args.s2s_mask_window))
+# learn.callbacks.append(MLMTrainer(learn, datasets))
+learn.callbacks.append(MLMTrainer(learn, datasets, s2s_starting_mask_window=args.s2s_mask_window))
 
 if args.load:
     load_path = Path(args.path)/args.load
