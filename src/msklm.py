@@ -239,7 +239,7 @@ class MLMLearner(MusicLearner):
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=40, top_p=0.9):
         "Return the `n_words` that come after `text`."
-        self.model.reset()
+        self.model.update_mem_len(use_mem=True)
 
         seed = xb.cpu().numpy().squeeze()
         new_idx = []
@@ -287,7 +287,7 @@ class MLMLearner(MusicLearner):
         xb = xb.clone().squeeze()[None]
         if pos is None:
             pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
-        self.model.reset()
+        self.model.update_mem_len(use_mem=False)
         mask_idxs = (xb == vocab.mask_idx).nonzero()
         for midx in progress_bar(mask_idxs, leave=True):
 
@@ -320,8 +320,7 @@ class MLMLearner(MusicLearner):
     def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
                     temperatures:float=(1.0,1.0),
                     top_k=40, top_p=0.9):
-        self.model.reset()
-
+        self.model.update_mem_len(use_mem=False)
 
         x_lm = xb_lm.tolist()
         lm_pos = (-position_enc(xb_lm.cpu().numpy())).tolist()
