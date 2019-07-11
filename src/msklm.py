@@ -330,7 +330,7 @@ class MLMLearner(MusicLearner):
         msk_pos = torch.tensor(-position_enc(xb_msk.cpu().numpy()), device=xb_msk.device)
         x_enc = self.model.encoder(xb_msk.view(1, -1), msk_pos.view(1, -1))
 
-        max_pos = msk_pos[-1] - SAMPLE_FREQ * 8
+        max_pos = msk_pos[-1] - SAMPLE_FREQ * 4
 
         for i in progress_bar(range(n_words), leave=True):
 
@@ -372,7 +372,7 @@ def part_enc(chordarr, part):
     
 
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 
-                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, pred_melody=True, **kwargs):
+                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
 
     stream = file2stream(midi) # 1.
     chordarr = stream2chordarr(stream) # 2.
@@ -385,14 +385,20 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     else:
         p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
         p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
-    mpart = torch.tensor(partenc2seq2seq(p1, part_type=MSEQ, add_eos=not pred_melody))
-    cpart = torch.tensor(partenc2seq2seq(p2, part_type=CSEQ, add_eos=pred_melody))
+    mpart = partenc2seq2seq(p1, part_type=MSEQ, add_eos=not pred_melody)
+    cpart = partenc2seq2seq(p2, part_type=CSEQ, add_eos=pred_melody)
+
+    if seed_len is not None:
+        if pred_melody: mpart = seed_tfm(mpart, seed_len=seed_len)
+        else: cpart = seed_tfm(cpart, seed_len=seed_len)
+    
     
     xb, yb = (cpart, mpart) if pred_melody else (mpart, cpart)
+    xb, yb = torch.tensor(xb), torch.tensor(yb)
     if torch.cuda.is_available(): xb, yb = xb.cuda(), yb.cuda()
     
     pred = learn.predict_s2s(xb, yb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-    # pred = yb
+    # pred = yb.cpu().numpy()
 
     seed_npenc = to_double_stream(xb.cpu().numpy()) # chord
     yb_npenc = to_double_stream(pred) # melody
@@ -404,7 +410,7 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
 def seed_tfm(npenc, seed_len=None, sample_freq=SAMPLE_FREQ):
     if seed_len is None: return npenc
     pos = position_enc(npenc)
-    cutoff = np.searchsorted(pos, (seed_len - 1) * sample_freq) + 1
+    cutoff = np.searchsorted(pos, seed_len * sample_freq) + 1
     return npenc[:cutoff]
 
 def nw_predict_from_midi(learn, midi=None, n_words=600, 
@@ -416,14 +422,11 @@ def nw_predict_from_midi(learn, midi=None, n_words=600,
     except IndexError:
         seed_np = to_single_stream(np.zeros((0, 2), dtype=int))
     seed = to_double_stream(seed_np)
-    return seed
     xb = torch.tensor(seed_np)
     if torch.cuda.is_available(): xb = xb.cuda()
     pred, seed = learn.predict_nw(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-    seed = to_double_stream(seed)
-    pred = to_double_stream(pred)
     full = np.concatenate((seed,pred), axis=0)
-    return full
+    return to_double_stream(full)
 
 
 def mask_predict_from_midi(learn, midi=None,
