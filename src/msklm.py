@@ -304,7 +304,9 @@ class MLMLearner(MusicLearner):
             res[vocab.stoi[EOS]] = 0
 
             # Use first temperatures value if last prediction was duration
-            temperature = temperatures[0]
+            prev_idx = xb[midx[0], midx[1]-1]
+            temperature = temperatures[0] if self.data.vocab.is_duration(prev_idx) else temperatures[1]
+            print(temperature)
             if temperature != 1.: res.pow_(1 / temperature)
 
             res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
@@ -314,7 +316,6 @@ class MLMLearner(MusicLearner):
             xb[tuple(midx)] = idx
 
         return xb.cpu().numpy()
-
 
 
     def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
