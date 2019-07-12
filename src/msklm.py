@@ -290,31 +290,33 @@ class MLMLearner(MusicLearner):
             pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
         self.model.reset()
         mask_idxs = (xb == vocab.mask_idx).nonzero()
-        for midx in progress_bar(mask_idxs, leave=True):
 
-            # Using original positions, otherwise model gets too off track
-    #         pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
+        with torch.no_grad():
+            for midx in progress_bar(mask_idxs, leave=True):
 
-            # Next Word
-            res = self.pred_batch(batch=((xb, None, pos, None),xb))
-            res = F.softmax(res[tuple(midx)], dim=-1) # task1, task2 - (bs x ts x vocab)
+                # Using original positions, otherwise model gets too off track
+        #         pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
 
-            # Don't allow any special tokens (as we are only removing notes and durations)
-            res[vocab.bos_idx] = 0.
-            res[vocab.sep_idx] = 0.
-            res[vocab.stoi[EOS]] = 0
+                # Next Word
+                res = self.pred_batch(batch=((xb, None, pos, None),xb))
+                res = F.softmax(res[tuple(midx)], dim=-1) # task1, task2 - (bs x ts x vocab)
 
-            # Use first temperatures value if last prediction was duration
-            prev_idx = xb[midx[0], midx[1]-1]
-            temperature = temperatures[0] if self.data.vocab.is_duration(prev_idx) else temperatures[1]
-            print(temperature)
-            if temperature != 1.: res.pow_(1 / temperature)
+                # Don't allow any special tokens (as we are only removing notes and durations)
+                res[vocab.bos_idx] = 0.
+                res[vocab.sep_idx] = 0.
+                res[vocab.stoi[EOS]] = 0
 
-            res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
-            idx = torch.multinomial(res, 1).item()
-            #         idx = res.argmax()
+                # Use first temperatures value if last prediction was duration
+                prev_idx = xb[midx[0], midx[1]-1]
+                temperature = temperatures[0] if self.data.vocab.is_duration(prev_idx) else temperatures[1]
+                print(temperature)
+                if temperature != 1.: res.pow_(1 / temperature)
 
-            xb[tuple(midx)] = idx
+                res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
+                idx = torch.multinomial(res, 1).item()
+                #         idx = res.argmax()
+
+                xb[tuple(midx)] = idx
 
         return xb.cpu().numpy()
 
@@ -333,35 +335,36 @@ class MLMLearner(MusicLearner):
 
         max_pos = msk_pos[-1] - SAMPLE_FREQ * 4
 
-        for i in progress_bar(range(n_words), leave=True):
+        with torch.no_grad():
+            for i in progress_bar(range(n_words), leave=True):
 
-            # Next Word
-            x, pos = torch.tensor(x_lm, device=xb_lm.device)[None], torch.tensor(lm_pos, device=xb_lm.device)[None]
-            dec = self.model.decoder(x, pos, x_enc) # all tasks include mask decoding
-            res = F.softmax(self.model.head(dec), dim=-1)[-1, -1]
+                # Next Word
+                x, pos = torch.tensor(x_lm, device=xb_lm.device)[None], torch.tensor(lm_pos, device=xb_lm.device)[None]
+                dec = self.model.decoder(x, pos, x_enc) # all tasks include mask decoding
+                res = F.softmax(self.model.head(dec), dim=-1)[-1, -1]
 
-            # Use first temperatures value if last prediction was duration
-            temperature = temperatures[0] if (len(x_lm)==0 or self.data.vocab.is_duration(x_lm[-1])) else temperatures[1]
-            if temperature != 1.: res.pow_(1 / temperature)
+                # Use first temperatures value if last prediction was duration
+                temperature = temperatures[0] if (len(x_lm)==0 or self.data.vocab.is_duration(x_lm[-1])) else temperatures[1]
+                if temperature != 1.: res.pow_(1 / temperature)
 
-            res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
-            idx = torch.multinomial(res, 1).item()
-            #         idx = res.argmax()
+                res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
+                idx = torch.multinomial(res, 1).item()
+                #         idx = res.argmax()
 
-            if idx == vocab.bos_idx | idx == vocab.stoi[EOS]: 
-                print('Predicting BOS/EOS')
-                break
-
-            if x_lm and x_lm[-1]==vocab.sep_idx: 
-                duration = idx - vocab.dur_range[0]
-    #             sep_count += duration
-                last_pos = last_pos - duration # position is negative
-                if last_pos < max_pos:
-                    print('Predicted past counter-part length. Returning early')
+                if idx == vocab.bos_idx | idx == vocab.stoi[EOS]: 
+                    print('Predicting BOS/EOS')
                     break
 
-            lm_pos.append(last_pos)
-            x_lm.append(idx)
+                if x_lm and x_lm[-1]==vocab.sep_idx: 
+                    duration = idx - vocab.dur_range[0]
+        #             sep_count += duration
+                    last_pos = last_pos - duration # position is negative
+                    if last_pos < max_pos:
+                        print('Predicted past counter-part length. Returning early')
+                        break
+
+                lm_pos.append(last_pos)
+                x_lm.append(idx)
 
         return np.array(x_lm)
 
