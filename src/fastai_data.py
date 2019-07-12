@@ -171,7 +171,7 @@ class MusicPreloader(Callback):
 
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
                  shuffle:bool=False, y_offset:int=1, 
-                 rand_transpose=False, transpose_range=(0,24), transpose_p=0.5,
+                 transpose_range=(0,24), transpose_p=0.5,
                  rand_bptt=False, bptt_p=0.5,
                  **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
@@ -179,7 +179,7 @@ class MusicPreloader(Callback):
         self.totalToks,self.ite_len,self.idx = int(0),None,None
         self.y_offset = y_offset
         
-        self.rand_transpose,self.transpose_range,self.transpose_p = rand_transpose,transpose_range,transpose_p
+        self.transpose_range,self.transpose_p = transpose_range,transpose_p
         self.rand_bptt, self.bptt_p = rand_bptt, bptt_p
         self.bptt_len = self.bptt
         
@@ -207,9 +207,10 @@ class MusicPreloader(Callback):
         self.ri    = np.zeros(self.bs, dtype=np.int)
         
         # allocate random transpose values. Need to allocate this before hand.
-        if self.rand_transpose: self.transpose_values = self.get_random_transpose_values()
+        self.transpose_values = self.get_random_transpose_values()
         
     def get_random_transpose_values(self):
+        if self.transpose_range is None: return None
         n = len(self.dataset)
         rt_arr = torch.randint(*self.transpose_range, (n,))-self.transpose_range[1]//2
         mask = torch.rand(rt_arr.shape) > self.transpose_p
@@ -227,7 +228,7 @@ class MusicPreloader(Callback):
             self.ite_len = None
             len(self)
             self.idx.shuffle()
-            if self.rand_transpose: self.transpose_values = self.get_random_transpose_values()
+            self.transpose_values = self.get_random_transpose_values()
             self.bptt_len = self.bptt
         self.idx.forward = not self.backwards 
 
@@ -264,7 +265,7 @@ class MusicPreloader(Callback):
             ix    = idx[ro]
             
             rag   = items[ix]
-            if self.rand_transpose: 
+            if self.transpose_values is not None: 
                 rag = tfm_transpose(rag, self.transpose_values[ix].item())
                 
             if forward:

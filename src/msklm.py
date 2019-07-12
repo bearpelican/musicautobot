@@ -130,12 +130,13 @@ class S2SPreloader(Callback):
                  transpose_range=(0,12), **kwargs):
         self.dataset,self.bptt = dataset,bptt
         self.np = vocab
-        self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=transpose_range)
+        self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=transpose_range) if transpose_range is not None else None
         
     def __getitem__(self, k:int):
         item,_ = self.dataset[k]
         x,y = item
-        x,y = self.transpose_tfm([x,y])
+        if transpose_tfm is not None:
+            x,y = self.transpose_tfm([x,y])
         # WARNING: we are padding position encodings too. However, pos is negative, so should be fine
         return pad_seq(x, self.bptt+1), pad_seq(y, self.bptt+1) # offset bptt for decoder shift
     

@@ -53,7 +53,7 @@ config = getattr(serve, args.config)(vocab)
 
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size
-if args.no_transpose: config['transpose_range'] = (0, 1)
+if args.no_transpose: config['transpose_range'] = None
 data = load_music_data(path=path, cache_name=args.cache, vocab=vocab, y_offset=1, **config)
 
 full_clip = None if args.half else 0.5

@@ -58,7 +58,7 @@ config = getattr(serve, args.config)(vocab)
 config['bptt'] = args.bptt
 config['bs'] = args.batch_size
 
-if args.no_transpose: config['transpose_range'] = (0, 1)
+if args.no_transpose: config['transpose_range'] = None
 
 datasets = []
 
