@@ -130,12 +130,13 @@ class S2SPreloader(Callback):
                  transpose_range=(0,12), **kwargs):
         self.dataset,self.bptt = dataset,bptt
         self.np = vocab
+        self.transpose_range = transpose_range
         self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=transpose_range) if transpose_range is not None else None
         
     def __getitem__(self, k:int):
         item,_ = self.dataset[k]
         x,y = item
-        if transpose_tfm is not None:
+        if self.transpose_tfm is not None:
             x,y = self.transpose_tfm([x,y])
         # WARNING: we are padding position encodings too. However, pos is negative, so should be fine
         return pad_seq(x, self.bptt+1), pad_seq(y, self.bptt+1) # offset bptt for decoder shift
@@ -238,7 +239,7 @@ class MLMLearner(MusicLearner):
 
     def predict_nw(self, xb:Tensor, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
-                     top_k=40, top_p=0.9):
+                     top_k=30, top_p=0.6):
         "Return the `n_words` that come after `text`."
         self.model.reset()
 
@@ -309,7 +310,6 @@ class MLMLearner(MusicLearner):
                 # Use first temperatures value if last prediction was duration
                 prev_idx = xb[midx[0], midx[1]-1]
                 temperature = temperatures[0] if self.data.vocab.is_duration(prev_idx) else temperatures[1]
-                print(temperature)
                 if temperature != 1.: res.pow_(1 / temperature)
 
                 res = top_k_top_p_filtering(res, top_k=top_k, top_p=top_p, filter_value=0)
@@ -323,7 +323,7 @@ class MLMLearner(MusicLearner):
 
     def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
                     temperatures:float=(1.0,1.0),
-                    top_k=40, top_p=0.9):
+                    top_k=30, top_p=0.8):
         self.model.reset()
 
         x_lm = xb_lm.tolist()
@@ -418,7 +418,7 @@ def seed_tfm(npenc, seed_len=None, sample_freq=SAMPLE_FREQ):
     return npenc[:cutoff]
 
 def nw_predict_from_midi(learn, midi=None, n_words=600, 
-                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, **kwargs):
+                      temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
     try:
         seed_np = to_single_stream(midi2npenc(midi)) # music21 can handle bytes directly
         if seed_len is not None:
@@ -434,7 +434,7 @@ def nw_predict_from_midi(learn, midi=None, n_words=600,
 
 
 def mask_predict_from_midi(learn, midi=None,
-                           temperatures=(1.0,1.0), top_k=20, top_p=0.8, 
+                           temperatures=(1.0,1.0), top_k=30, top_p=0.7, 
                            predict_notes=True, dur_seed_len=10,
                            **kwargs):
     seed_np = midi2npenc(midi) # music21 can handle bytes directly
