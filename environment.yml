@@ -1,12 +1,15 @@
-name: midi
+# To Run: conda env create -f environment.yml
+name: musicautobot
 channels:
 - fastai
 - pytorch
 - defaults
 dependencies:
 - pytorch
-# - fastai outdated versions
+- fastai
 - jupyter
+- ipyparallel
+- pip
 - pip:
   - music21
-  - "--editable=git+https://github.com/fastai/fastai@master"
+#  - "--editable=git+https://github.com/fastai/fastai@master"

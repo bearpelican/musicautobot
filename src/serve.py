@@ -12,11 +12,6 @@ from .encode_data import *
 
 import uuid
 
-# source_dir = 'midi_encode/np/shortdur'
-# path = Path('../../data/midi/v9/')/source_dir
-# out_path = Path('../../data/generated/')
-    
-
 def v15_config(vocab):
     config = tfmerXL_lm_config.copy()
     
@@ -42,10 +37,6 @@ def v15_config(vocab):
     config['n_heads'] = 8
     config['d_head'] = 64
 
-#     config['embed_p'] = 0.3
-#     config['attn_p'] = 0.15 # attention dropout
-#     config['output_p'] = 0.15 # decoder dropout (before final linear layer)
-
 
     return config
 
@@ -69,28 +60,6 @@ def v15m_config(vocab):
     config = v15_config(vocab)
     config['embed_p'] = 0.2
     return config
-    
-def unilm_config(vocab):
-    config = v15_config(vocab)
-    config['n_layers'] = 8
-    config['dec_layers'] = 8
-    return config
-
-def unilm_sm_config(vocab):
-    config = v15_config(vocab)
-    config['n_layers'] = 4
-    config['dec_layers'] = 10
-    config['n_heads'] = 8
-    config['d_head'] = 32
-    config['d_model'] = 256
-    config['d_inner'] = 1024
-    return config
-
-def unilm_m_config(vocab):
-    config = v15_config(vocab)
-    config['n_layers'] = 8
-    config['dec_layers'] = 10
-    return config
 
 def load_music_data(path, cache_name, vocab, **kwargs):
     data = MusicDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
@@ -104,23 +73,6 @@ def load_music_learner(data, config, load_path=None):
         state = torch.load(load_path, map_location='cpu')
         get_model(learn.model).load_state_dict(state['model'], strict=False)
     return learn
-
-
-# Serving functions
-
-
-# NOTE: looks like npenc does not include the separator. 
-# This means we don't have to remove the last (separator) step from the seed in order to keep predictions
-def predict_from_midi(learn, midi=None, n_words=600, 
-                      temperatures=(1.0,1.0), top_k=24, top_p=0.7, **kwargs):
-    seed_np = midi2npenc(midi, skip_last_rest=True) # music21 can handle bytes directly
-    xb = torch.tensor(to_single_stream(seed_np))[None]
-    pred, seed = learn.predict_topk(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-    seed = to_double_stream(seed)
-    pred = to_double_stream(pred)
-    full = np.concatenate((seed,pred), axis=0)
-    
-    return pred, seed, full
 
 # New way 
 
