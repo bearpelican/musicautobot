@@ -78,22 +78,9 @@ class MusicTransformerXL(TransformerXL):
         return (self.hidden if self.mem_len > 0 else [core_out]),[core_out]
 
     
-class RandBpttCallback(LearnerCallback):
-    def on_batch_begin(self, train, **kwargs:Any)->None:
-        "Record learning rate and momentum at beginning of batch."
-        if train:
-            preloader = self.learn.data.train_dl.dl.dataset
-            if hasattr(preloader, 'update_rand_bptt'):
-                preloader.update_rand_bptt()
-    
 # Predictions
 from fastai import basic_train # for predictions
 class MusicLearner(LanguageLearner):
-    def __init__(self, *args, config:dict=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.config = config
-        if config.get('rand_bptt', False): self.callbacks.append(RandBpttCallback(self))
-
     def beam_search(self, xb:Tensor, n_words:int, top_k:int=10, beam_sz:int=10, temperature:float=1.,
                     ):
         "Return the `n_words` that come after `text` using beam search."

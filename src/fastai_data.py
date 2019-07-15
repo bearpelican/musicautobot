@@ -172,7 +172,6 @@ class MusicPreloader(Callback):
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
                  shuffle:bool=False, y_offset:int=1, 
                  transpose_range=(0,24), transpose_p=0.5,
-                 rand_bptt=False, bptt_p=0.5,
                  **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
         self.bs *= num_distrib() or 1
@@ -180,7 +179,6 @@ class MusicPreloader(Callback):
         self.y_offset = y_offset
         
         self.transpose_range,self.transpose_p = transpose_range,transpose_p
-        self.rand_bptt, self.bptt_p = rand_bptt, bptt_p
         self.bptt_len = self.bptt
         
         self.allocate_buffers() # needed for valid_dl on distributed training - otherwise doesn't get initialized on first epoch
@@ -189,8 +187,7 @@ class MusicPreloader(Callback):
         if self.ite_len is None:
             if self.lengths is None: self.lengths = np.array([len(item) for item in self.dataset.x])
             self.totalToks = self.lengths.sum()
-            bptt_mult = 3/4 if self.rand_bptt else 1
-            self.ite_len   = self.bs*int( math.ceil( self.totalToks/((self.bptt*bptt_mult)*self.bs) )) if self.item is None else 1
+            self.ite_len   = self.bs*int( math.ceil( self.totalToks/(self.bptt*self.bs) )) if self.item is None else 1
         return self.ite_len
 
     def __getattr__(self,k:str)->Any: return getattr(self.dataset, k)
@@ -216,11 +213,6 @@ class MusicPreloader(Callback):
         mask = torch.rand(rt_arr.shape) > self.transpose_p
         rt_arr[mask] = 0
         return rt_arr
-
-    def update_rand_bptt(self, new_val=None):
-        if self.rand_bptt and random.random() > self.bptt_p:
-            self.bptt_len = random.randint(self.bptt//2, self.bptt) if new_val is None else new_val
-        else: self.bptt_len = self.bptt
 
     def on_epoch_begin(self, **kwargs):
         if self.idx is None: self.allocate_buffers()
