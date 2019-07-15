@@ -12,4 +12,5 @@ dependencies:
 - pip
 - pip:
   - music21
+  - pebble
 #  - "--editable=git+https://github.com/fastai/fastai@master"

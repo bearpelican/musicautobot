@@ -279,6 +279,16 @@ class MusicPreloader(Callback):
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
 
+class NPStreamProcessor(PreProcessor):
+    "`PreProcessor` that opens the filenames and read the texts."
+    def process_one(self,item):
+        item = to_single_stream(item)
+        item = position_tfm(item)
+        return item
+    
+    def process(self, ds:Collection):
+        ds.items = [self.process_one(item) for item in ds.items]
+        
 class OpenNPFileProcessor(PreProcessor):
     
     def __post_init__(self)->None:
