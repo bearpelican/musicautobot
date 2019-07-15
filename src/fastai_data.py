@@ -5,6 +5,7 @@ from fastai.text.data import LMLabelList
 from .encode_data import NOTE_SIZE, DUR_SIZE, VALTSEP
 # Additional encoding
 
+
 BOS = 'xxbos'
 PAD = 'xxpad'
 EOS = 'xxeos'
@@ -149,14 +150,6 @@ def rand_transpose_tfm(t, note_range=vocab.note_range, rand_range=(0,24), p=0.5)
         return tfm_transpose(t, transpose_value, note_range)
     return t
 
-def rand_transpose_tfm_double(t, rand_range=(0,24), p=0.5):
-    "For transposing double column encoded midi"
-    if np.random.rand() < p:
-        t = t.copy()
-        notes = t[...,0]
-        notes[notes > VALTSEP] += np.random.randint(*rand_range)-rand_range[1]//2
-    return t
-
 ## For npenc dataset
 class MusicPreloader(Callback):
     "Transforms the tokens in `dataset` to a stream of contiguous batches for language modelling."
@@ -271,21 +264,19 @@ class MusicPreloader(Callback):
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
 
-class NPStreamProcessor(PreProcessor):
+class PositionProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
-        item = to_single_stream(item)
         item = position_tfm(item)
         return item
     
-    def process(self, ds:Collection):
-        ds.items = [self.process_one(item) for item in ds.items]
-        
-class OpenNPFileProcessor(PreProcessor):
+class SingleEncodeProcessor(PreProcessor):
+    "`PreProcessor` that opens the filenames and read the texts."
+    def process_one(self,item):
+        item = to_single_stream(item)
+        return item
     
-    def __post_init__(self)->None:
-        self.vocab = vocab
-        
+class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
         return np.load(item, allow_pickle=True) if isinstance(item, Path) else item

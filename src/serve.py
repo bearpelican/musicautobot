@@ -12,7 +12,7 @@ from .encode_data import *
 
 import uuid
 
-def v15_config(vocab):
+def config(vocab):
     config = tfmerXL_lm_config.copy()
     
     config['pad_idx'] = vocab.pad_idx
@@ -40,24 +40,11 @@ def v15_config(vocab):
     return config
 
 def mlm_config(vocab):
-    config = v15_config(vocab)
+    config = config(vocab)
     config['bias'] = True
     config['enc_layers'] = 8
     config['dec_layers'] = 8
     del config['n_layers']
-    return config
-
-def mlm4_config(vocab):
-    config = v15_config(vocab)
-    config['bias'] = True
-    config['enc_layers'] = 4
-    config['dec_layers'] = 6
-    del config['n_layers']
-    return config
-    
-def v15m_config(vocab):
-    config = v15_config(vocab)
-    config['embed_p'] = 0.2
     return config
 
 def load_music_data(path, cache_name, vocab, **kwargs):
