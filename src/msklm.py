@@ -497,7 +497,7 @@ def mlm_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pret
 #     learn = UnilmLearner(data, model, config=config, split_func=tfmerXL_lm_split,
 #     learn = UnilmLearner(data, model, config=config, split_func=None,
 #                         **learn_kwargs)
-    learn = MLMLearner(data, model, config=config, split_func=None,
+    learn = MLMLearner(data, model, split_func=None,
                         **learn_kwargs)
     return learn
 

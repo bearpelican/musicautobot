@@ -89,6 +89,22 @@ class MusicVocab():
 
 vocab = MusicVocab.create()
 
+def midi2idxenc(midi_file):
+    "Converts midi file to numpy encoding for language model"
+    stream = file2stream(midi_file) # 1.
+    chordarr = stream2chordarr(stream) # 2.
+    npenc = chordarr2npenc(chordarr) # 3.
+    return to_single_stream(npenc)
+
+# Decoding process
+# 1. NoteEnc -> numpy chord array
+# 2. numpy array -> music21.Stream
+def idxenc2stream(arr, bpm=120):
+    "Converts numpy encoding to music21 stream"
+    npenc = to_double_stream(arr)
+    chordarr = npenc2chordarr(npenc) # 1.
+    return chordarr2stream(chordarr, bpm=bpm) # 2.
+
 # single stream instead of note,dur
 def to_single_stream(t, vocab=vocab, start_seq=None):
     if isinstance(t, (list, tuple)) and len(t) == 2: 
@@ -270,7 +286,7 @@ class PositionProcessor(PreProcessor):
         item = position_tfm(item)
         return item
     
-class SingleEncodeProcessor(PreProcessor):
+class IndexEncodeProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
         item = to_single_stream(item)
