@@ -2,7 +2,7 @@
 # from fastai.text import *
 from fastai.basics import *
 from fastai.text.data import LMLabelList
-from .encode_data import NOTE_SIZE, DUR_SIZE, VALTSEP
+from .encode_data import *
 # Additional encoding
 
 
