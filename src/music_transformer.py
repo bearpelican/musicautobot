@@ -40,14 +40,14 @@ def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pr
     model = get_language_model(MusicTransformerXL, len(data.vocab.itos), config=config, drop_mult=drop_mult)
     
     meta = _model_meta[TransformerXL]
-    learn = MusicLearner(data, model, config=config, split_func=meta['split_lm'], **learn_kwargs)
+    learn = MusicLearner(data, model, split_func=meta['split_lm'], **learn_kwargs)
     return learn
 
 class MusicTransformerXL(TransformerXL):
     def __init__(self, *args, **kwargs):
         import inspect
-        argspec = inspect.getfullargspec(TransformerXL)
-        arg_params = { k:kwargs[k] for k in argspec.args if k in kwargs }
+        sig = inspect.signature(TransformerXL)
+        arg_params = { k:kwargs[k] for k in sig.parameters if k in kwargs }
         super().__init__(*args, **arg_params)
         
     def forward(self, x):

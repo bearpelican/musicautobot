@@ -285,13 +285,23 @@ class PositionProcessor(PreProcessor):
     def process_one(self,item):
         item = position_tfm(item)
         return item
+
     
 class IndexEncodeProcessor(PreProcessor):
-    "`PreProcessor` that opens the filenames and read the texts."
+    "`PreProcessor` that transforms numpy files to indexes for training"
+    def __init__(self, ds:ItemList=None, vocab:MusicVocab=None):
+        vocab = ifnone(vocab, ds.vocab if ds is not None else None)
+        self.vocab = vocab
+
     def process_one(self,item):
-        item = to_single_stream(item)
+        item = to_single_stream(item, vocab=self.vocab)
         return item
     
+    def process(self, ds):
+        if self.vocab is None: self.vocab = MusicVocab.create()
+        ds.vocab = self.vocab
+        super().process(ds)
+        
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
@@ -314,10 +324,10 @@ class MusicDataBunch(DataBunch):
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     
     @classmethod    
-    def from_ids(cls, path:PathOrStr, train_ids:Collection[Collection[int]], valid_ids:Collection[Collection[int]],
+    def from_ids(cls, path:PathOrStr, vocab:MusicVocab, 
+                 train_ids:Collection[Collection[int]], valid_ids:Collection[Collection[int]],
                  test_ids:Collection[Collection[int]]=None, train_lbls:Collection[Union[int,float]]=None,
-                 valid_lbls:Collection[Union[int,float]]=None, classes:Collection[Any]=None,
-                 processor:PreProcessor=None,
+                 valid_lbls:Collection[Union[int,float]]=None, processor:PreProcessor=None,
                  train_tfms=None, valid_tfms=None,
                  **kwargs) -> DataBunch:
         "Create a `TextDataBunch` from ids, labels and a `vocab`. `kwargs` are passed to the dataloader creation."
@@ -327,26 +337,26 @@ class MusicDataBunch(DataBunch):
         if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
         return src.databunch(**kwargs)
     
-    def save(self, cache_name:PathOrStr='tmp'):
-        "Save the `DataBunch` in `self.path/cache_name` folder."
-        os.makedirs(self.path/cache_name, exist_ok=True)
-        cache_path = self.path/cache_name
-        np.save(cache_path/f'train_ids.npy', self.train_ds.x.items)
-        np.save(cache_path/f'train_lbl.npy', self.train_ds.y.items)
-        np.save(cache_path/f'valid_ids.npy', self.valid_ds.x.items)
-        np.save(cache_path/f'valid_lbl.npy', self.valid_ds.y.items)
-        if self.test_dl is not None: np.save(cache_path/f'test_ids.npy', self.test_ds.x.items)
-        if hasattr(self.train_ds, 'classes'): save_texts(cache_path/'classes.txt', self.train_ds.classes)
+#     def save(self, cache_name:PathOrStr='tmp'):
+#         "Save the `DataBunch` in `self.path/cache_name` folder."
+#         os.makedirs(self.path/cache_name, exist_ok=True)
+#         cache_path = self.path/cache_name
+#         np.save(cache_path/f'train_ids.npy', self.train_ds.x.items)
+#         np.save(cache_path/f'train_lbl.npy', self.train_ds.y.items)
+#         np.save(cache_path/f'valid_ids.npy', self.valid_ds.x.items)
+#         np.save(cache_path/f'valid_lbl.npy', self.valid_ds.y.items)
+#         if self.test_dl is not None: np.save(cache_path/f'test_ids.npy', self.test_ds.x.items)
+#         if hasattr(self.train_ds, 'classes'): save_texts(cache_path/'classes.txt', self.train_ds.classes)
 
-    @classmethod
-    def load(cls, path:PathOrStr, cache_name:PathOrStr='tmp', processor:PreProcessor=None, **kwargs):
-        "Load a `TextDataBunch` from `path/cache_name`. `kwargs` are passed to the dataloader creation."
-        cache_path = Path(path)/cache_name
-        train_ids,train_lbls = np.load(cache_path/f'train_ids.npy', allow_pickle=True), np.load(cache_path/f'train_lbl.npy', allow_pickle=True)
-        valid_ids,valid_lbls = np.load(cache_path/f'valid_ids.npy', allow_pickle=True), np.load(cache_path/f'valid_lbl.npy', allow_pickle=True)
-        test_ids = np.load(cache_path/f'test_ids.npy', allow_pickle=True) if os.path.isfile(cache_path/f'test_ids.npy') else None
-        classes = loadtxt_str(cache_path/'classes.txt') if os.path.isfile(cache_path/'classes.txt') else None
-        return cls.from_ids(path, train_ids, valid_ids, test_ids, train_lbls, valid_lbls, classes, processor, **kwargs)
+#     @classmethod
+#     def load(cls, path:PathOrStr, cache_name:PathOrStr='tmp', processor:PreProcessor=None, **kwargs):
+#         "Load a `TextDataBunch` from `path/cache_name`. `kwargs` are passed to the dataloader creation."
+#         cache_path = Path(path)/cache_name
+#         train_ids,train_lbls = np.load(cache_path/f'train_ids.npy', allow_pickle=True), np.load(cache_path/f'train_lbl.npy', allow_pickle=True)
+#         valid_ids,valid_lbls = np.load(cache_path/f'valid_ids.npy', allow_pickle=True), np.load(cache_path/f'valid_lbl.npy', allow_pickle=True)
+#         test_ids = np.load(cache_path/f'test_ids.npy', allow_pickle=True) if os.path.isfile(cache_path/f'test_ids.npy') else None
+#         classes = loadtxt_str(cache_path/'classes.txt') if os.path.isfile(cache_path/'classes.txt') else None
+#         return cls.from_ids(path, train_ids, valid_ids, test_ids, train_lbls, valid_lbls, classes, processor, **kwargs)
 
 class MusicItemList(ItemList):
     _bunch = MusicDataBunch
