@@ -110,8 +110,6 @@ class S2SFileProcessor(PreProcessor):
         return out
     
     def process(self, ds:Collection):
-        if self.vocab is None: self.vocab = MusicVocab.create()
-        ds.vocab = self.vocab
         ds.items = [self.process_one(item) for item in ds.items]
         ds.items = [i for i in ds.items if i is not None] # filter out None
 #         ds.items = array([self.process_one(item) for item in ds.items], dtype=np.object)
@@ -125,7 +123,7 @@ class S2SPartEncProcessor(PreProcessor):
         m, c = item
         m = position_tfm(partenc2seq2seq(m, MSEQ))
         c = position_tfm(partenc2seq2seq(c, CSEQ))
-        return np.array(m, c)
+        return np.array((m, c))
     
     def process(self, ds):
         if self.vocab is None: self.vocab = MusicVocab.create()

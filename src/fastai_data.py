@@ -107,6 +107,8 @@ def idxenc2stream(arr, bpm=120):
 
 # single stream instead of note,dur
 def to_single_stream(t, vocab=vocab, start_seq=None):
+    "Transforms numpy array from 2 column (note, duration) matrix to a single column"
+    "[[n1, d1], [n2, d2], ...] -> [n1, d1, n2, d2]"
     if isinstance(t, (list, tuple)) and len(t) == 2: 
         return [to_single_stream(x, vocab, start_seq) for x in t]
     t = t.copy()
@@ -304,7 +306,7 @@ class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
         return np.load(item, allow_pickle=True) if isinstance(item, Path) else item
-    
+
 class MusicDataBunch(DataBunch):
     "Create a `TextDataBunch` suitable for training a language model."
     @classmethod
@@ -322,40 +324,13 @@ class MusicDataBunch(DataBunch):
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     
     @classmethod    
-    def from_ids(cls, path:PathOrStr, vocab:MusicVocab, 
-                 train_ids:Collection[Collection[int]], valid_ids:Collection[Collection[int]],
-                 test_ids:Collection[Collection[int]]=None, train_lbls:Collection[Union[int,float]]=None,
-                 valid_lbls:Collection[Union[int,float]]=None, processor:PreProcessor=None,
-                 train_tfms=None, valid_tfms=None,
-                 **kwargs) -> DataBunch:
-        "Create a `TextDataBunch` from ids, labels and a `vocab`. `kwargs` are passed to the dataloader creation."
-        src = ItemLists(path, MusicItemList(train_ids, path=path, processor=[], tfms=train_tfms),
-                        MusicItemList(valid_ids, path=path, processor=[], tfms=valid_tfms))
-        src = src.label_const(label_cls=LMLabelList)
-        if not is1d(train_lbls): src.train.y.one_hot,src.valid.y.one_hot = True,True
+    def from_folder(cls, path:PathOrStr, processors=None, extensions='.npy', split_pct=0.1, **kwargs):
+        files = get_files(path, extensions=extensions, recurse=True);
+        src = (MusicItemList(items=files, path=path, processor=processors)
+                .split_by_rand_pct(split_pct, seed=6)
+                .label_const(label_cls=LMLabelList))
         return src.databunch(**kwargs)
     
-#     def save(self, cache_name:PathOrStr='tmp'):
-#         "Save the `DataBunch` in `self.path/cache_name` folder."
-#         os.makedirs(self.path/cache_name, exist_ok=True)
-#         cache_path = self.path/cache_name
-#         np.save(cache_path/f'train_ids.npy', self.train_ds.x.items)
-#         np.save(cache_path/f'train_lbl.npy', self.train_ds.y.items)
-#         np.save(cache_path/f'valid_ids.npy', self.valid_ds.x.items)
-#         np.save(cache_path/f'valid_lbl.npy', self.valid_ds.y.items)
-#         if self.test_dl is not None: np.save(cache_path/f'test_ids.npy', self.test_ds.x.items)
-#         if hasattr(self.train_ds, 'classes'): save_texts(cache_path/'classes.txt', self.train_ds.classes)
-
-#     @classmethod
-#     def load(cls, path:PathOrStr, cache_name:PathOrStr='tmp', processor:PreProcessor=None, **kwargs):
-#         "Load a `TextDataBunch` from `path/cache_name`. `kwargs` are passed to the dataloader creation."
-#         cache_path = Path(path)/cache_name
-#         train_ids,train_lbls = np.load(cache_path/f'train_ids.npy', allow_pickle=True), np.load(cache_path/f'train_lbl.npy', allow_pickle=True)
-#         valid_ids,valid_lbls = np.load(cache_path/f'valid_ids.npy', allow_pickle=True), np.load(cache_path/f'valid_lbl.npy', allow_pickle=True)
-#         test_ids = np.load(cache_path/f'test_ids.npy', allow_pickle=True) if os.path.isfile(cache_path/f'test_ids.npy') else None
-#         classes = loadtxt_str(cache_path/'classes.txt') if os.path.isfile(cache_path/'classes.txt') else None
-#         return cls.from_ids(path, train_ids, valid_ids, test_ids, train_lbls, valid_lbls, classes, processor, **kwargs)
-
 class MusicItemList(ItemList):
     _bunch = MusicDataBunch
     
