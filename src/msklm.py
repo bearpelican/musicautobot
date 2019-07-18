@@ -639,11 +639,11 @@ def update_mem_len(mod, mem_len):
 
 class TransformerEmbedding(nn.Module):
     "Embedding + positional encoding + dropout"
-    def __init__(self, vocab_sz:int, emb_sz:int, embed_p:float=0., mem_len=512, beat_len=32, max_bar_len=1024):
+    def __init__(self, vocab_size:int, emb_sz:int, embed_p:float=0., mem_len=512, beat_len=32, max_bar_len=1024):
         super().__init__()
         self.emb_sz = emb_sz
         
-        self.embed = nn.Embedding(vocab_sz, emb_sz, padding_idx=vocab.pad_idx)
+        self.embed = nn.Embedding(vocab_size, emb_sz, padding_idx=vocab.pad_idx)
         # See https://arxiv.org/abs/1711.09160
         with torch.no_grad(): trunc_normal_(self.embed.weight, std=0.01)
         self.pos_enc = PositionalEncoding(emb_sz)
