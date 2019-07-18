@@ -47,12 +47,6 @@ def mlm_config(vocab):
     del config['n_layers']
     return config
 
-def load_music_data(path, cache_name, vocab, **kwargs):
-    data = MusicDataBunch.load(path=path, cache_name=cache_name, **kwargs, 
-                              train_tfms=[to_single_stream], valid_tfms=[to_single_stream])
-    data.vocab = vocab
-    return data
-
 def load_music_learner(data, config, load_path=None):
     learn = music_model_learner(data, config)
     if load_path:

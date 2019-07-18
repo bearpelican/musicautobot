@@ -1,14 +1,13 @@
 "Encoding music21 streams -> numpy array -> text"
 
 import re
-from pathlib import Path
 import music21
 import numpy as np
-from .midi_data import file2stream
-from fastai.text.data import BOS
 import scipy.sparse
+from pathlib import Path
 from collections import defaultdict
 from math import ceil
+from fastai.text.data import BOS
 
 BPB = 4 # beats per bar
 TIMESIG = f'{BPB}/4' # default time signature
@@ -40,6 +39,21 @@ def npenc2stream(arr, bpm=120):
     return chordarr2stream(chordarr, bpm=bpm) # 2.
 
 ##### ENCODING ######
+
+# 1. File To STream
+
+def file2stream(fp, use_parser=True):
+    if isinstance(fp, music21.midi.MidiFile): return music21.midi.translate.midiFileToStream(fp)
+    if use_parser: return music21.converter.parse(fp)
+    mf = file2mf(fp)
+    return music21.midi.translate.midiFileToStream(mf)
+
+def file2mf(fp):
+    mf = music21.midi.MidiFile()
+    mf.open(fp)
+    mf.read()
+    mf.close()
+    return mf
 
 # 2.
 def stream2chordarr(s, note_size=NOTE_SIZE, sample_freq=SAMPLE_FREQ, max_note_dur=MAX_NOTE_DUR):
@@ -74,47 +88,6 @@ def stream2chordarr(s, note_size=NOTE_SIZE, sample_freq=SAMPLE_FREQ, max_note_du
             score_arr[offset, idx, pitch] = duration
             score_arr[offset+1:offset+duration, idx, pitch] = VALTCONT      # Continue holding note
     return score_arr
-
-def compress_chordarr(chordarr):
-    return shorten_chordarr_rests(trim_chordarr_rests(chordarr))
-
-def trim_chordarr_rests(arr, max_rests=4, sample_freq=SAMPLE_FREQ):
-    # max rests is in quarter notes
-    # max 1 bar between song start and end
-    start_idx = 0
-    max_sample = max_rests*sample_freq
-    for idx,t in enumerate(arr):
-        if (t != 0).any(): break
-        start_idx = idx+1
-        
-    end_idx = 0
-    for idx,t in enumerate(reversed(arr)):
-        if (t != 0).any(): break
-        end_idx = idx+1
-    start_idx = start_idx - start_idx % max_sample
-    end_idx = end_idx - end_idx % max_sample
-#     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(arr)-end_idx, end_idx)
-    return arr[start_idx:(len(arr)-end_idx)]
-
-def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
-    # max rests is in quarter notes
-    # max 2 bar pause
-    rest_count = 0
-    result = []
-    max_sample = max_rests*sample_freq
-    for timestep in arr:
-        if (timestep==0).all(): 
-            rest_count += 1
-        else:
-            if rest_count > max_sample:
-#                 old_count = rest_count
-                rest_count = (rest_count % sample_freq) + max_sample
-#                 print(f'Compressing rests: {old_count} -> {rest_count}')
-            for i in range(rest_count): result.append(np.zeros(timestep.shape))
-            rest_count = 0
-            result.append(timestep)
-    for i in range(rest_count): result.append(np.zeros(timestep.shape))
-    return np.array(result)
 
 def chordarr2npenc(chordarr, skip_last_rest=True):
     # combine instruments
@@ -278,3 +251,46 @@ def separate_melody_chord(stream):
     new_stream.append(melody_part)
     new_stream.append(chord_part)
     return new_stream
+
+# processing functions for sanitizing data
+
+def compress_chordarr(chordarr):
+    return shorten_chordarr_rests(trim_chordarr_rests(chordarr))
+
+def trim_chordarr_rests(arr, max_rests=4, sample_freq=SAMPLE_FREQ):
+    # max rests is in quarter notes
+    # max 1 bar between song start and end
+    start_idx = 0
+    max_sample = max_rests*sample_freq
+    for idx,t in enumerate(arr):
+        if (t != 0).any(): break
+        start_idx = idx+1
+        
+    end_idx = 0
+    for idx,t in enumerate(reversed(arr)):
+        if (t != 0).any(): break
+        end_idx = idx+1
+    start_idx = start_idx - start_idx % max_sample
+    end_idx = end_idx - end_idx % max_sample
+#     if start_idx > 0 or end_idx > 0: print('Trimming rests. Start, end:', start_idx, len(arr)-end_idx, end_idx)
+    return arr[start_idx:(len(arr)-end_idx)]
+
+def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
+    # max rests is in quarter notes
+    # max 2 bar pause
+    rest_count = 0
+    result = []
+    max_sample = max_rests*sample_freq
+    for timestep in arr:
+        if (timestep==0).all(): 
+            rest_count += 1
+        else:
+            if rest_count > max_sample:
+#                 old_count = rest_count
+                rest_count = (rest_count % sample_freq) + max_sample
+#                 print(f'Compressing rests: {old_count} -> {rest_count}')
+            for i in range(rest_count): result.append(np.zeros(timestep.shape))
+            rest_count = 0
+            result.append(timestep)
+    for i in range(rest_count): result.append(np.zeros(timestep.shape))
+    return np.array(result)

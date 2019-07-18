@@ -1,7 +1,7 @@
 "Transform functions for raw midi files"
 from enum import Enum
 import music21
-from src.midi_data import file2mf, keyc_offset
+from src.encode_data import file2mf
 
 PIANO_TYPES = list(range(24)) + list(range(80, 96)) # Piano, Synths
 PLUCK_TYPES = list(range(24, 40)) + list(range(104, 112)) # Guitar, Bass, Ethnic

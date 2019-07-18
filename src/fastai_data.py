@@ -290,12 +290,10 @@ class PositionProcessor(PreProcessor):
 class IndexEncodeProcessor(PreProcessor):
     "`PreProcessor` that transforms numpy files to indexes for training"
     def __init__(self, ds:ItemList=None, vocab:MusicVocab=None):
-        vocab = ifnone(vocab, ds.vocab if ds is not None else None)
-        self.vocab = vocab
+        self.vocab = ifnone(vocab, ds.vocab if ds is not None else None)
 
     def process_one(self,item):
-        item = to_single_stream(item, vocab=self.vocab)
-        return item
+        return to_single_stream(item, vocab=self.vocab)
     
     def process(self, ds):
         if self.vocab is None: self.vocab = MusicVocab.create()

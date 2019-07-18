@@ -105,18 +105,33 @@ class S2SFileProcessor(PreProcessor):
     def process_one(self,item):
         out = np.load(item, allow_pickle=True)
         if out.shape != (2,): return None
-        if len(out[0]) > 2048: return None
-        if len(out[1]) > 2048: return None
-        if len(out[0]) < 16: return None
-        if len(out[1]) < 16: return None
-#         return np.array([out[0].reshape(-1), out[1].reshape(-1)])
+        if not 16 < len(out[0]) < 2048: return None
+        if not 16 < len(out[1]) < 2048: return None
         return out
     
     def process(self, ds:Collection):
+        if self.vocab is None: self.vocab = MusicVocab.create()
+        ds.vocab = self.vocab
         ds.items = [self.process_one(item) for item in ds.items]
-        ds.items = [i for i in ds.items if i is not None]
+        ds.items = [i for i in ds.items if i is not None] # filter out None
 #         ds.items = array([self.process_one(item) for item in ds.items], dtype=np.object)
 
+class S2SPartEncProcessor(PreProcessor):
+    "Encodes midi file into 2 separate parts - melody and chords."
+    def __init__(self, ds:ItemList=None, vocab:MusicVocab=None):
+        self.vocab = ifnone(vocab, ds.vocab if ds is not None else None)
+        
+    def process_one(self,item):
+        m, c = item
+        m = position_tfm(partenc2seq2seq(m, MSEQ))
+        c = position_tfm(partenc2seq2seq(c, CSEQ))
+        return np.array(m, c)
+    
+    def process(self, ds):
+        if self.vocab is None: self.vocab = MusicVocab.create()
+        ds.vocab = self.vocab
+        ds.items = [self.process_one(item) for item in ds.items]
+        
 def avg_tempo(t, sep_idx=VALTSEP):
     avg = t[t[:, 0] == sep_idx][:, 1].sum()/t.shape[0]
     avg = int(round(avg/SAMPLE_FREQ))
@@ -478,8 +493,6 @@ def get_mlm_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
     "Create a language model from `arch` and its `config`, maybe `pretrained`."
     for k in config.keys(): 
         if k.endswith('_p'): config[k] *= drop_mult
-#     tie_weights,output_p,out_bias = map(config.pop, ['tie_weights', 'output_p', 'out_bias'])
-    tie_weights,output_p,out_bias = map(config.get, ['tie_weights', 'output_p', 'out_bias'])
     n_hid = config['d_model']
     mem_len = config.pop('mem_len')
     embed = TransformerEmbedding(vocab_sz, n_hid, embed_p=config['embed_p'], mem_len=mem_len)
@@ -494,9 +507,6 @@ def mlm_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pret
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
     model = get_mlm_model(config['vocab_size'], config=config, drop_mult=drop_mult)
-#     learn = UnilmLearner(data, model, config=config, split_func=tfmerXL_lm_split,
-#     learn = UnilmLearner(data, model, config=config, split_func=None,
-#                         **learn_kwargs)
     learn = MLMLearner(data, model, split_func=None,
                         **learn_kwargs)
     return learn
@@ -512,7 +522,6 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         self.n_heads,self.d_head,self.scale = n_heads,d_head,scale
         
         assert(d_model == d_head * n_heads)
-#         self.out = nn.Linear(n_heads * d_head, d_model, bias=bias)
         self.q_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
         self.k_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
         self.v_wgt = nn.Linear(d_model, n_heads * d_head, bias=bias)
@@ -531,7 +540,6 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
                 mask:Tensor=None, **kwargs):
         if k is None: k = q
         if v is None: v = q
-#         return self.ln(q + self.drop_res(self.out(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs))))
         return self.ln(q + self.drop_res(self._apply_attention(q, k, v, r, g_u, g_v, mask=mask, **kwargs)))
 
     def mem_k(self, k):
@@ -633,20 +641,18 @@ def update_mem_len(mod, mem_len):
 
 class TransformerEmbedding(nn.Module):
     "Embedding + positional encoding + dropout"
-    def __init__(self, vocab_sz:int, emb_sz:int, embed_p:float=0., mem_len=512, beat_len=32):
+    def __init__(self, vocab_sz:int, emb_sz:int, embed_p:float=0., mem_len=512, beat_len=32, max_bar_len=1024):
         super().__init__()
         self.emb_sz = emb_sz
         
         self.embed = nn.Embedding(vocab_sz, emb_sz, padding_idx=vocab.pad_idx)
         # See https://arxiv.org/abs/1711.09160
         with torch.no_grad(): trunc_normal_(self.embed.weight, std=0.01)
-#         self.embed = embedding(vocab_sz, emb_sz)
         self.pos_enc = PositionalEncoding(emb_sz)
         self.initrange = 0.05
-        self.beat_len = beat_len
+        self.beat_len, self.max_bar_len = beat_len, max_bar_len
         self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0) # negative pad
-        self.bar_enc = nn.Embedding(1024, emb_sz, padding_idx=0) # negative pad
-#         self.bar_enc = PositionalEncoding(emb_sz) # positional encoding doesn't work for multi dimensions right now
+        self.bar_enc = nn.Embedding(max_bar_len, emb_sz, padding_idx=0) # negative pad
 
         self.beat_enc.weight.data.uniform_(-self.initrange, self.initrange)
         self.bar_enc.weight.data.uniform_(-self.initrange, self.initrange)
@@ -656,17 +662,13 @@ class TransformerEmbedding(nn.Module):
         self.mem_len = mem_len
     
     def forward(self, inp, pos_enc):
-#         pdb.set_trace()
-#        return self.drop(self.embed(inp))
         pe = -pos_enc.clone()
         pe[pe==-vocab.pad_idx] = 0
         
         beat_enc = self.beat_enc(pe % self.beat_len)
-        bar_pos = pe // self.beat_len % 1024
-#        bar_pos[bar_pos > 4096] = 4095
+        bar_pos = pe // self.beat_len % self.max_bar_len
+        bar_pos[bar_pos >= self.max_bar_len] = self.max_bar_len - 1
         bar_enc = self.bar_enc((bar_pos))
-#        bar_enc = self.bar_enc((pe // self.beat_len).type(beat_enc.dtype))
-#        assert((pe//self.beat_len < 1024).all())
         emb = self.drop(self.embed(inp) + beat_enc + bar_enc)
         return emb
     
@@ -743,7 +745,6 @@ class MLMEncoderBlock(nn.Module):
         attn_cls = MemMultiHeadRelativeAttentionKV
         self.mha1 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=False)
         self.mha2 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=True)
-#         self.mha2 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=True)
         self.ff   = feed_forward(d_model, d_inner, ff_p=ff_p, double_drop=double_drop)
     
     def forward(self, enc_lm:Tensor, enc_msk:Tensor,
