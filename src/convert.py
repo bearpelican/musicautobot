@@ -42,18 +42,9 @@ def npenc2stream(arr, bpm=120):
 
 # 1. File To STream
 
-def file2stream(fp, use_parser=True):
+def file2stream(fp):
     if isinstance(fp, music21.midi.MidiFile): return music21.midi.translate.midiFileToStream(fp)
-    if use_parser: return music21.converter.parse(fp)
-    mf = file2mf(fp)
-    return music21.midi.translate.midiFileToStream(mf)
-
-def file2mf(fp):
-    mf = music21.midi.MidiFile()
-    mf.open(fp)
-    mf.read()
-    mf.close()
-    return mf
+    return music21.converter.parse(fp)
 
 # 2.
 def stream2chordarr(s, note_size=NOTE_SIZE, sample_freq=SAMPLE_FREQ, max_note_dur=MAX_NOTE_DUR):
@@ -204,19 +195,8 @@ def group_notes_by_duration(notes):
     notes = sorted(notes, key=keyfunc)
     return [list(g) for k,g in groupby(notes, keyfunc)]
 
-# saving
-def save_chordarr(out_file, chordarr):
-    sparse_matrix = scipy.sparse.csc_matrix(chordarr.reshape(chordarr.shape[0], -1))
-    scipy.sparse.save_npz(out_file, sparse_matrix)
-    
-def load_chordarr(file):
-    sparse_matrix = scipy.sparse.load_npz(file)
-    np_arr = np.array(sparse_matrix.todense())
-    return np_arr.reshape((np_arr.shape[0], -1, 127))
 
-
-# Conversion helpers
-
+# Midi -> npenc Conversion helpers
 def is_valid_npenc(npenc, note_range=PIANO_RANGE, max_dur=DUR_SIZE, 
                    min_notes=32, input_path=None, verbose=True):
     if len(npenc) < min_notes:

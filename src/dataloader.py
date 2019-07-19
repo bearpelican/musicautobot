@@ -1,4 +1,4 @@
-"Fast parallel databunch creation and special npencoding DataBunch"
+"Fastai Language Model Databunch modified to work with music"
 # from fastai.text import *
 from fastai.basics import *
 from fastai.text.data import LMLabelList
@@ -33,7 +33,6 @@ class MusicVocab():
     "Contain the correspondence between numbers and tokens and numericalize."
     def __init__(self, itos:Collection[str]):
         self.itos = itos
-#         self.stoi = collections.defaultdict(int,{v:k for k,v in enumerate(self.itos)})
         self.stoi = {v:k for k,v in enumerate(self.itos)}
 
     def numericalize(self, t:Collection[str]) -> List[int]:
@@ -66,7 +65,6 @@ class MusicVocab():
 
     def __setstate__(self, state:dict):
         self.itos = state['itos']
-#         self.stoi = collections.defaultdict(int,{v:k for k,v in enumerate(self.itos)})
         self.stoi = {v:k for k,v in enumerate(self.itos)}
 
     def save(self, path):
@@ -90,17 +88,14 @@ class MusicVocab():
 vocab = MusicVocab.create()
 
 def midi2idxenc(midi_file):
-    "Converts midi file to numpy encoding for language model"
+    "Converts midi file to index encoding for training"
     stream = file2stream(midi_file) # 1.
     chordarr = stream2chordarr(stream) # 2.
     npenc = chordarr2npenc(chordarr) # 3.
     return to_single_stream(npenc)
 
-# Decoding process
-# 1. NoteEnc -> numpy chord array
-# 2. numpy array -> music21.Stream
 def idxenc2stream(arr, bpm=120):
-    "Converts numpy encoding to music21 stream"
+    "Converts index encoding to music21 stream"
     npenc = to_double_stream(arr)
     chordarr = npenc2chordarr(npenc) # 1.
     return chordarr2stream(chordarr, bpm=bpm) # 2.
@@ -290,7 +285,6 @@ class PositionProcessor(PreProcessor):
         item = position_tfm(item)
         return item
 
-    
 class IndexEncodeProcessor(PreProcessor):
     "`PreProcessor` that transforms numpy files to indexes for training"
     def __init__(self, ds:ItemList=None, vocab:MusicVocab=None):
@@ -335,13 +329,3 @@ class MusicDataBunch(DataBunch):
     
 class MusicItemList(ItemList):
     _bunch = MusicDataBunch
-    
-    def __init__(self, *args, tfms=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tfms = tfms or []
-        
-    def get(self, i)->Any:
-        item = self.items[i]
-        if self.tfms is None: return item
-        for tfm in self.tfms: item = tfm(item)
-        return item

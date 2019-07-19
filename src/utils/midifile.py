@@ -27,6 +27,15 @@ type2inst = {
 # INFO_TYPES = set(['TIME_SIGNATURE', 'KEY_SIGNATURE'])
 INFO_TYPES = set(['TIME_SIGNATURE', 'KEY_SIGNATURE', 'SET_TEMPO'])
 
+def file2mf(fp):
+    mf = music21.midi.MidiFile()
+    mf.open(fp)
+    mf.read()
+    mf.close()
+    return mf
+
+def mf2stream(mf): return music21.midi.translate.midiFileToStream(mf)
+
 def num_piano_tracks(fp):
     music_file = file2mf(fp)
     note_tracks = [t for t in music_file.tracks if t.hasNotes() and get_track_type(t) == Track.PIANO]

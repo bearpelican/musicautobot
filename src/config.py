@@ -1,16 +1,6 @@
 import music21
-import torch
-
-from fastai.distributed import *
 from fastai.text.models.transformer import *
-
-import numpy as np
-
 from .fastai_data import *
-from .music_transformer import *
-from .encode_data import *
-
-import uuid
 
 def default_config(vocab):
     config = tfmerXL_lm_config.copy()

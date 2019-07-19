@@ -89,7 +89,7 @@ c2m_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache,
 datasets.append(m2c_data)
 datasets.append(c2m_data)
 
-# combined_data = CombinedData(datasets)
+# combined_data = StackedData(datasets)
 
 full_clip = None if args.half else 0.5
 
