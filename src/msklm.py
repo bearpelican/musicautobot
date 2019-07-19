@@ -5,6 +5,7 @@ from fastai.basics import *
 from fastai.text.models.transformer import _line_shift, init_transformer
 from fastai.text.models.awd_lstm import *
 from fastai.text.models.transformer import *
+from fastai.callbacks.rnn import RNNTrainer
 
 from .encode_data import VALTSEP, SAMPLE_FREQ
 
@@ -24,62 +25,53 @@ def msklm_mask(shape, p, tile):
     lm_mask = rand_mask & lm_mask
     return rand_mask, lm_mask
 
-def msklm_tfm(b, word_range=vocab.npenc_range, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p=0.2, tile=1):
+
+def mask_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p_mask=0.2):
     x,y = b
+    x_lm,x_pos = x[...,0], x[...,1]
+    y_lm,y_pos = y[...,0], y[...,1]
     
-    rand_mask, lm_mask = msklm_mask(y.shape, p, tile)
+    x_msk, y_msk = mask_tfm((y_lm, y_lm), p=p_mask) # masking instead of x. Just in case we ever do sequential s2s training
+    msk_pos = y_pos
     
-    x_msk = y.clone()
-    x_msk[rand_mask] = mask_idx
-    
-    new_rand = torch.rand(*y.shape)
-    unchanged_mask = (new_rand < 0.1) & rand_mask # 10%
-    wrong_mask = (new_rand > 0.9) & rand_mask # 10% = wrong word
-    x_msk[unchanged_mask] = y[unchanged_mask]
-    x_msk[wrong_mask] = torch.randint(*word_range, [wrong_mask.sum().item()], device=x.device)
+    x_dict = { 
+        'msk': { 'x': x_msk, 'pos': msk_pos },
+        'lm': { 'x': x_lm, 'pos': msk_pos }
+    }
+    y_dict = { 'msk': y_msk, 'lm': y_lm }
+    return x_dict, y_dict
 
-    y_msk = y.clone()
-    y_msk[~rand_mask] = pad_idx
+def melody_chord_tfm(b, mlm_type=MLMType.M2C):
+    m,c = b
     
-    x_lm = torch.zeros_like(x)
-    x_lm[lm_mask] = x[lm_mask]
+    m,m_pos = m[...,0], m[...,1]
+    c,c_pos = c[...,0], c[...,1]
     
-    return (x_msk, x_lm), y_msk
-
-def random_msklm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, 
-                     p_lm=0.5, p_mask=0.2, p_tile=0.2, 
-                     tile_range=(1, 5)):
-    if random.random() < p_lm:
-        x,y = b
-#         x_msk = torch.full_like(y, pad_idx)
-        return (None, x), (y, MLMType.NextWord)
-    tile = random.randrange(*tile_range) if random.random() < p_tile else 1
-    x, y = msklm_tfm(b, p=p_mask, tile=tile)
-    return x, (y, MLMType.Mask)
-
-def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
-             mask_idx=vocab.mask_idx, p=0.2):
-    # p = replacement probability
-    x,y = b
-    x,y = x.clone(),y.clone()
-    rand = torch.rand(x.shape, device=x.device)
-    rand[x < word_range[0]] = 1.0
-    rand[x >= word_range[1]] = 1.0
-    y[rand > p] = pad_idx
-    x[rand <= (p*.8)] = mask_idx # 80% = mask
-    wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
-    x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()], device=x.device)
-    return x, y
-
-def mask_or_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, 
-                     p_lm=0.5, p_mask=0.2):
-    x,y = b
-    x,x_pos = x[...,0], x[...,1]
-    y,y_pos = y[...,0], y[...,1]
-    if random.random() < p_lm:
-        return (None, x, None, x_pos), (y, MLMType.NextWord)
-    x, y = mask_tfm((y, y), p=p_mask) # masking instead of x. Not that it matters
-    return (x, None, y_pos, None), (y, MLMType.Mask)
+    # offset x and y for next word prediction
+    y_m = m[:,1:]
+    x_m, m_pos = m[:,:-1], m_pos[:,:-1]
+    
+    y_c = c[:,1:]
+    x_c, c_pos = c[:,:-1], c_pos[:,:-1]
+    
+    x_dict = { 
+        'c2m': {
+            'enc': x_c,
+            'enc_pos': c_pos,
+            'dec': x_m,
+            'dec_pos': m_pos
+        },
+        'm2c': {
+            'enc': x_m,
+            'enc_pos': m_pos,
+            'dec': x_c,
+            'dec_pos': c_pos
+        }
+    }
+    y_dict = {
+        'c2m': y_m, 'm2c': y_c
+    }
+    return x_dict, y_dict
 
 # Utility for predictions
 def mask_note_or_dur(b):
@@ -157,12 +149,6 @@ class S2SPreloader(Callback):
     def __len__(self):
         return len(self.dataset)
     
-def part_tfm(b):
-    x,y = b
-    x = partenc2seq2seq(x, part_type=MSEQ)
-    y = partenc2seq2seq(y, part_type=CSEQ)
-    return x, y
-    
 def partenc2seq2seq(part_np, part_type, vocab=vocab, add_eos=True):
     part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
     s2s_out = to_single_stream(part_np, start_seq=part_meta)
@@ -174,9 +160,9 @@ def pad_seq(seq, bptt, pad_idx=vocab.pad_idx):
     pad_len = max(bptt-seq.shape[0], 0)
     return np.pad(seq, [(0, pad_len),(0,0)], 'constant', constant_values=pad_idx)[:bptt]
 
-def combined_npenc2chordarr(np1, np2):
+def s2s_combine2chordarr(np1, np2):
     if len(np1.shape) == 1: np1 = to_double_stream(np1)
-    if len(np2.shape) == 1: np1 = to_double_stream(np2)
+    if len(np2.shape) == 1: np2 = to_double_stream(np2)
     p1 = npenc2chordarr(np1)
     p2 = npenc2chordarr(np2)
     max_ts = max(p1.shape[0], p2.shape[0])
@@ -248,18 +234,16 @@ class CombinedData():
         for dl in self.dbs: dl.remove_tfm(tfm)
         
 class MLMLearner(MusicLearner):
-
-
     def predict_nw(self, xb:Tensor, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=30, top_p=0.6):
         "Return the `n_words` that come after `text`."
         self.model.reset()
-
-        seed = xb.cpu().numpy().squeeze()
         new_idx = []
-        pos = torch.tensor(-position_enc(xb.cpu().numpy()), device=xb.device)
+        xb = xb.squeeze()
+        pos = torch.tensor(neg_position_enc(xb.cpu().numpy()), device=xb.device)
         last_pos = pos[-1]
+        yb = torch.tensor([0])
 
         sep_count = 0
         bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
@@ -267,7 +251,8 @@ class MLMLearner(MusicLearner):
 
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
-                res = self.pred_batch(batch=((None, xb[None], None, pos[None]),xb[None]))[-1][-1]
+                batch = { 'lm': { 'x': xb[None], 'pos': pos[None] } }, yb
+                res = self.pred_batch(batch=batch)['lm'][-1][-1]
                 res = F.softmax(res, dim=-1)
 
                 # bar = 16 beats
@@ -283,9 +268,7 @@ class MLMLearner(MusicLearner):
                 if new_idx and new_idx[-1]==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
                     sep_count += duration
-    #                 print('Updating positional encoding:', last_pos, last_pos - duration)
                     last_pos = last_pos - duration # position is negative
-    #                 print('Bars', duration, sep_count // 16)
 
                 if idx==vocab.bos_idx: 
                     print('Predicted BOS token. Returning prediction...')
@@ -294,16 +277,17 @@ class MLMLearner(MusicLearner):
                 new_idx.append(idx)
                 xb = xb.new_tensor([idx])
                 pos = pos.new_tensor([last_pos])
-        return np.array(new_idx), seed
+        return np.array(new_idx)
 
-    def predict_mask(self, xb:Tensor, pos=None,
+    def predict_mask(self, x:Tensor, pos=None,
                     temperatures:float=(1.0,1.0),
                     top_k=20, top_p=0.8):
-        xb = xb.clone().squeeze()[None]
+        x = x.clone().squeeze()
+        y = torch.tensor([0])
         if pos is None:
-            pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
+            pos = torch.tensor(neg_position_enc(x.cpu().numpy()), device=x.device)
         self.model.reset()
-        mask_idxs = (xb == vocab.mask_idx).nonzero()
+        mask_idxs = (x == vocab.mask_idx).nonzero().view(-1)
 
         with torch.no_grad():
             for midx in progress_bar(mask_idxs, leave=True):
@@ -312,8 +296,8 @@ class MLMLearner(MusicLearner):
         #         pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
 
                 # Next Word
-                res = self.pred_batch(batch=((xb, None, pos, None),xb))
-                res = F.softmax(res[tuple(midx)], dim=-1) # task1, task2 - (bs x ts x vocab)
+                res = self.pred_batch(batch=({ 'msk': { 'x': x[None], 'pos': pos[None] } }, y) )['msk'][0]
+                res = F.softmax(res[midx], dim=-1) # task1, task2 - (bs x ts x vocab)
 
                 # Don't allow any special tokens (as we are only removing notes and durations)
                 res[vocab.bos_idx] = 0.
@@ -321,7 +305,7 @@ class MLMLearner(MusicLearner):
                 res[vocab.stoi[EOS]] = 0
 
                 # Use first temperatures value if last prediction was duration
-                prev_idx = xb[midx[0], midx[1]-1]
+                prev_idx = x[midx-1]
                 temperature = temperatures[0] if self.data.vocab.is_duration(prev_idx) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
 
@@ -329,9 +313,9 @@ class MLMLearner(MusicLearner):
                 idx = torch.multinomial(res, 1).item()
                 #         idx = res.argmax()
 
-                xb[tuple(midx)] = idx
+                x[midx] = idx
 
-        return xb.cpu().numpy()
+        return x.cpu().numpy()
 
 
     def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
@@ -340,10 +324,10 @@ class MLMLearner(MusicLearner):
         self.model.reset()
 
         x_lm = xb_lm.tolist()
-        lm_pos = (-position_enc(xb_lm.cpu().numpy())).tolist()
+        lm_pos = (neg_position_enc(xb_lm.cpu().numpy())).tolist()
         last_pos = lm_pos[-1]
 
-        msk_pos = torch.tensor(-position_enc(xb_msk.cpu().numpy()), device=xb_msk.device)
+        msk_pos = torch.tensor(neg_position_enc(xb_msk.cpu().numpy()), device=xb_msk.device)
         x_enc = self.model.encoder(xb_msk.view(1, -1), msk_pos.view(1, -1))
 
         max_pos = msk_pos[-1] - SAMPLE_FREQ * 4
@@ -370,7 +354,6 @@ class MLMLearner(MusicLearner):
 
                 if x_lm and x_lm[-1]==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
-        #             sep_count += duration
                     last_pos = last_pos - duration # position is negative
                     if last_pos < max_pos:
                         print('Predicted past counter-part length. Returning early')
@@ -390,7 +373,23 @@ def part_enc(chordarr, part):
 
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
+    mpart, cpart = midi_extract_melody_chords(midi)
+    
+    x_np, y_np = (cpart, mpart) if pred_melody else (mpart, cpart)
+    
+    # if seed_len is passed, cutoff sequence so we can predict the rest
+    y_cut = y_np if seed_len is None else seed_tfm(y_np, seed_len=seed_len)
+    
+    x, y = torch.tensor(x_np), torch.tensor(y_cut)
+    if torch.cuda.is_available(): x, y = x.cuda(), y.cuda()
+    pred = learn.predict_s2s(x, y, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
 
+    part_order = [pred, cpart] if pred_melody else [mpart, cpart]
+    chordarr_comb = s2s_combine2chordarr(*part_order)
+
+    return chordarr_comb
+
+def midi_extract_melody_chords(midi):
     stream = file2stream(midi) # 1.
     chordarr = stream2chordarr(stream) # 2.
     _,num_parts,_ = chordarr.shape
@@ -399,69 +398,49 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
         # if predicting melody, assume only track is chord track
         p1, p2 = part_enc(chordarr, 0), np.zeros((0,2), dtype=int)
         p1, p2 = (p2, p1) if pred_melody else (p1, p2)
-    else:
+    elif num_parts == 2:
         p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
         p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
-    mpart = partenc2seq2seq(p1, part_type=MSEQ, add_eos=not pred_melody)
-    cpart = partenc2seq2seq(p2, part_type=CSEQ, add_eos=pred_melody)
-
-    if seed_len is not None:
-        if pred_melody: mpart = seed_tfm(mpart, seed_len=seed_len)
-        else: cpart = seed_tfm(cpart, seed_len=seed_len)
-    
-    
-    xb, yb = (cpart, mpart) if pred_melody else (mpart, cpart)
-    xb, yb = torch.tensor(xb), torch.tensor(yb)
-    if torch.cuda.is_available(): xb, yb = xb.cuda(), yb.cuda()
-    
-    pred = learn.predict_s2s(xb, yb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-    # pred = yb.cpu().numpy()
-
-    seed_npenc = to_double_stream(xb.cpu().numpy()) # chord
-    yb_npenc = to_double_stream(pred) # melody
-    npenc_order = [yb_npenc, seed_npenc] if pred_melody else [seed_npenc, yb_npenc]
-    chordarr_comb = combined_npenc2chordarr(*npenc_order)
-
-    return chordarr_comb
+    else:
+        raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
+        
+    mpart = partenc2seq2seq(p1, part_type=MSEQ)
+    cpart = partenc2seq2seq(p2, part_type=CSEQ)
+    return mpart, cpart
 
 def seed_tfm(npenc, seed_len=None, sample_freq=SAMPLE_FREQ):
     if seed_len is None: return npenc
-    pos = position_enc(npenc)
+    pos = -neg_position_enc(npenc)
     cutoff = np.searchsorted(pos, seed_len * sample_freq) + 1
     return npenc[:cutoff]
 
 def nw_predict_from_midi(learn, midi=None, n_words=600, 
                       temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
     try:
-        seed_np = to_single_stream(midi2npenc(midi)) # music21 can handle bytes directly
+        seed_np = midi2idxenc(midi) # music21 can handle bytes directly
         if seed_len is not None:
             seed_np = seed_tfm(seed_np, seed_len=seed_len)
     except IndexError:
         seed_np = to_single_stream(np.zeros((0, 2), dtype=int))
-    seed = to_double_stream(seed_np)
-    xb = torch.tensor(seed_np)
-    if torch.cuda.is_available(): xb = xb.cuda()
-    pred, seed = learn.predict_nw(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-    full = np.concatenate((seed,pred), axis=0)
-    return to_double_stream(full)
-
+    x = torch.tensor(seed_np)
+    if torch.cuda.is_available(): x = x.cuda()
+    pred = learn.predict_nw(x, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
+    return np.concatenate((seed_np,pred), axis=0)
 
 def mask_predict_from_midi(learn, midi=None,
                            temperatures=(1.0,1.0), top_k=30, top_p=0.7, 
-                           predict_notes=True, dur_seed_len=10,
-                           **kwargs):
+                           predict_notes=True, **kwargs):
     seed_np = midi2npenc(midi) # music21 can handle bytes directly
-    xb = torch.tensor(to_single_stream(seed_np))[None]
-    pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
+    x = torch.tensor(to_single_stream(seed_np))
+    pos = torch.tensor(neg_position_enc(x.cpu().numpy()), device=x.device)
     mask_range = vocab.note_range if predict_notes else vocab.dur_range
-    xb_msk = mask_input(xb, mask_range=mask_range)
-    if not predict_notes and dur_seed_len is not None: 
-        xb_msk[..., :dur_seed_len] = xb[..., :dur_seed_len] # Give it a bit of a hint. otherwise way off
+    x_msk = mask_input(x, mask_range=mask_range)
+#     if not predict_notes and dur_seed_len is not None: 
+#         x_msk[:dur_seed_len] = x[:dur_seed_len] # Give it a bit of a hint. otherwise way off
     if torch.cuda.is_available(): 
-        xb_msk = xb_msk.cuda()
+        x_msk = x_msk.cuda()
         pos = pos.cuda()
-    pred = learn.predict_mask(xb_msk, pos, temperatures=temperatures, top_k=top_k, top_p=top_p)
-    pred = to_double_stream(pred)
+    pred = learn.predict_mask(x_msk, pos, temperatures=temperatures, top_k=top_k, top_p=top_p)
     return pred
         
 # MODEL LOADING
@@ -497,7 +476,7 @@ def get_mlm_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
     encoder = MLMEncoder(embed, n_hid, n_layers=config['enc_layers'], mem_len=0, **config) # encoder doesn't need memory
     decoder = MLMEncoder(embed, n_hid, is_decoder=True, n_layers=config['dec_layers'], mem_len=mem_len, **config)
     head = MLMLinearDecoder(n_hid, vocab_sz, tie_encoder=embed.embed, **config)
-    model = MLMTransformer(encoder, decoder, head, mem_len=mem_len)
+    model = MultiTransformer(encoder, decoder, head, mem_len=mem_len)
     return model.apply(init_transformer)
 
 
@@ -507,6 +486,7 @@ def mlm_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pret
     model = get_mlm_model(config['vocab_size'], config=config, drop_mult=drop_mult)
     learn = MLMLearner(data, model, split_func=None,
                         **learn_kwargs)
+    learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
     return learn
 
 # Attn
@@ -592,7 +572,7 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         return attn_vec.permute(0, 2, 1, 3).contiguous().view(bs, x_len, -1)
     
     
-class MLMTransformer(nn.Module):
+class MultiTransformer(nn.Module):
     def __init__(self, encoder, decoder, head, mem_len):
         super().__init__()
         self.encoder = encoder
@@ -601,15 +581,29 @@ class MLMTransformer(nn.Module):
         self.default_mem_len = mem_len
         self.current_mem_len = None
     
-    def forward(self, x_msk, x_lm, msk_pos, lm_pos):
-        if x_msk is None:
-            return self.head(self.decoder(x_lm, lm_pos))
-        if x_lm is None:
-            return self.head(self.encoder(x_msk, msk_pos))
-        self.reset()
-        x_msk = self.encoder(x_msk, msk_pos)
-        dec = self.decoder(x_lm, lm_pos, x_msk) # all tasks include mask decoding
-        return self.head(dec)
+    def forward(self, inp):
+        # data order: mask, next word, melody, chord
+        outputs = {}
+        msk, lm, c2m, m2c = [inp.get(key) for key in ['msk', 'lm', 'c2m', 'm2c']]
+        
+        if msk is not None:
+            outputs['msk'] = self.head(self.encoder(msk['x'], msk['pos']))
+        if lm is not None:
+            outputs['lm'] = self.head(self.decoder(lm['x'], lm['pos']))
+        
+        if c2m is not None:
+            self.reset()
+            c2m_enc = self.encoder(c2m['enc'], c2m['enc_pos'])
+            c2m_dec = self.decoder(c2m['dec'], c2m['dec_pos'], c2m_enc)
+            outputs['c2m'] = self.head(c2m_dec)
+            
+        if m2c is not None:
+            self.reset()
+            m2c_enc = self.encoder(m2c['enc'], m2c['enc_pos'])
+            m2c_dec = self.decoder(m2c['dec'], m2c['dec_pos'], m2c_enc)
+            outputs['m2c'] = self.head(m2c_dec)
+            
+        return outputs
     
     "A sequential module that passes the reset call to its children."
     def reset(self):
@@ -625,6 +619,7 @@ class MLMTransformer(nn.Module):
             update_mem_len(module, next_mem_len)
         self.current_mem_len = next_mem_len
         self.reset()
+        
         
 def reset_children(mod):
     if hasattr(mod, 'reset'): mod.reset()
@@ -659,8 +654,8 @@ class TransformerEmbedding(nn.Module):
         self.drop = nn.Dropout(embed_p)
         self.mem_len = mem_len
     
-    def forward(self, inp, pos_enc):
-        pe = -pos_enc.clone()
+    def forward(self, inp, neg_pos_enc):
+        pe = -neg_pos_enc.clone()
         pe[pe==-vocab.pad_idx] = 0
         
         beat_enc = self.beat_enc(pe % self.beat_len)
@@ -754,23 +749,47 @@ class MLMEncoderBlock(nn.Module):
         return self.ff(self.mha2(y_lm, enc_msk, enc_msk, r, g_u, g_v, mask=msk_mask))
     
 # LOSS AND METRICS
-class MLMLoss():
+class MultiLoss():
     def __init__(self):
         "Loss mult - Mask, NextWord, Seq2Seq"
         self.loss = CrossEntropyFlat(ignore_index=vocab.pad_idx)
         
-    def __call__(self, input:Tensor, target:Tensor, mlm_type:Tensor=None, **kwargs)->Rank0Tensor:
-        return self.loss(input, target)
+    def __call__(self, inputs:Dict[str,Tensor], targets:Dict[str,Tensor])->Rank0Tensor:
+        losses = [self.loss(inputs[key], target) for key,target in targets.items()]
+        return sum(losses)
     
-def acc_ignore_pad(input:Tensor, targ:Tensor, mlm_type=None, acc_type=None, pad_idx=vocab.pad_idx)->Rank0Tensor:
-    if acc_type is not None and mlm_type != acc_type: return None
+def acc_ignore_pad(input:Tensor, targ:Tensor, pad_idx=vocab.pad_idx)->Rank0Tensor:
+    if input is None or targ is None: return None
     n = targ.shape[0]
     input = input.argmax(dim=-1).view(n,-1)
     targ = targ.view(n,-1)
     mask = targ != pad_idx
     return (input[mask]==targ[mask]).float().mean()
 
-def mask_acc(*args): return acc_ignore_pad(*args, acc_type=MLMType.Mask)
-def lm_acc(*args): return acc_ignore_pad(*args, acc_type=MLMType.NextWord)
-def c2m_acc(*args): return acc_ignore_pad(*args, acc_type=MLMType.C2M)
-def m2c_acc(*args): return acc_ignore_pad(*args, acc_type=MLMType.M2C)
+def acc_index(inputs, targets, key=None, pad_idx=vocab.pad_idx):
+    return acc_ignore_pad(inputs.get(key), targets.get(key), pad_idx)
+    
+def mask_acc(inputs, targets): return acc_index(inputs, targets, 'lm')
+def lm_acc(inputs, targets): return acc_index(inputs, targets, 'msk')
+def c2m_acc(inputs, targets): return acc_index(inputs, targets, 'c2m')
+def m2c_acc(inputs, targets): return acc_index(inputs, targets, 'm2c')
+
+
+class AverageMultiMetric(AverageMetric):
+    "Updated fastai.AverageMetric to support multi task metrics."
+    def on_batch_end(self, last_output, last_target, **kwargs):
+        "Update metric computation with `last_output` and `last_target`."
+        if not is_listy(last_target): last_target=[last_target]
+        val = self.func(last_output, *last_target)
+        if val is None: return
+        self.count += first_el(last_target).size(0)
+        if self.world:
+            val = val.clone()
+            dist.all_reduce(val, op=dist.ReduceOp.SUM)
+            val /= self.world
+        self.val += first_el(last_target).size(0) * val.detach().cpu()
+
+    def on_epoch_end(self, last_metrics, **kwargs):
+        "Set the final result in `last_metrics`."
+        if self.count == 0: return add_metrics(last_metrics, 0)
+        return add_metrics(last_metrics, self.val/self.count)
