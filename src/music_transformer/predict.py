@@ -6,10 +6,27 @@
 # from fastai.text import *
 # from fastai.text.models.transformer import *
 # from fastai.text.models.transformer import init_transformer
-# from fastai.text.learner import language_model_learner, get_language_model, _model_meta
 # from fastai.callbacks.tracker import *
 
-# from .encode_data import SAMPLE_FREQ
+from fastai.basics import *
+from fastai.text.learner import LanguageLearner, get_language_model, _model_meta
+from .model import *
+from ..data_encode import SAMPLE_FREQ
+from ..utils.top_k_top_p import top_k_top_p
+
+def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.,
+                        pretrained_path:PathOrStr=None, **learn_kwargs) -> 'LanguageLearner':
+    "Create a `Learner` with a language model from `data` and `arch`."
+    _model_meta[MusicTransformerXL] = _model_meta[TransformerXL] # copy over fastai's model metadata
+    meta = _model_meta[MusicTransformerXL]
+    model = get_language_model(MusicTransformerXL, len(data.vocab.itos), config=config, drop_mult=drop_mult)
+    learn = MusicLearner(data, model, split_func=meta['split_lm'], **learn_kwargs)
+
+    if pretrained_path:
+        state = torch.load(pretrained_path, map_location='cpu')
+        get_model(model).load_state_dict(state['model'], strict=False)
+        
+    return learn
 
 # Predictions
 from fastai import basic_train # for predictions

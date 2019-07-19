@@ -56,14 +56,13 @@ config['bs'] = args.batch_size
 if args.no_transpose: config['transpose_range'] = None
 data = load_music_data(path=path, cache_name=args.cache, vocab=vocab, y_offset=1, **config)
 
-full_clip = None if args.half else 0.5
-
 opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=1e-4)
 if args.lamb:
     from src.lamb import Lamb
     opt_func = partial(Lamb, eps=1e-4)
     
-learn = music_model_learner(data, config, clip=full_clip, drop_mult=1.5, opt_func=opt_func)
+learn = music_model_learner(data, config, drop_mult=1.5, opt_func=opt_func)
+if not args.half: learn.clip_grad(0.5)
 
 if args.load:
     load_path = Path(args.path)/args.load

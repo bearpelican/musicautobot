@@ -1,24 +1,9 @@
-
-
-def load_music_learner(data, config, load_path=None):
-    learn = music_model_learner(data, config)
-    return learn
-
-def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.,
-                        load_path:PathOrStr=None, **learn_kwargs) -> 'LanguageLearner':
-    "Create a `Learner` with a language model from `data` and `arch`."
-    _model_meta[MusicTransformerXL] = _model_meta[TransformerXL]
-    model = get_language_model(MusicTransformerXL, len(data.vocab.itos), config=config, drop_mult=drop_mult)
-    
-    meta = _model_meta[TransformerXL]
-    learn = MusicLearner(data, model, split_func=meta['split_lm'], **learn_kwargs)
-
-    if load_path:
-        state = torch.load(load_path, map_location='cpu')
-        get_model(model).load_state_dict(state['model'], strict=False)
-    return learn
+from fastai.basics import *
+from fastai.text.models.transformer import TransformerXL
+from ..utils.attention_mask import rand_window_mask
 
 class MusicTransformerXL(TransformerXL):
+    "Exactly like fastai's TransformerXL, but with more aggressive attention mask: see `rand_window_mask`"
     def __init__(self, *args, **kwargs):
         import inspect
         sig = inspect.signature(TransformerXL)

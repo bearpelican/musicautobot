@@ -1,3 +1,5 @@
+import numpy as np
+import torch
 
 def window_mask(x_len, device, m_len=0, size=(1,1)):
     win_size,k = size

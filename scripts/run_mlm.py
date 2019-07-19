@@ -88,10 +88,7 @@ c2m_data = MusicDataBunch.load(args.path/'s2s_encode', cache_name=args.cache,
 
 datasets.append(m2c_data)
 datasets.append(c2m_data)
-
 # combined_data = StackedData(datasets)
-
-full_clip = None if args.half else 0.5
 
 # Load Optimizer
 eps = 1e-3 if args.half else 1e-6
@@ -102,8 +99,8 @@ if args.lamb:
     
 # Load Learner
 learn = mlm_model_learner(datasets[0], config.copy(), 
-                           loss_func=MLMLoss(),
-                           clip=full_clip, opt_func=opt_func)
+                          loss_func=MLMLoss(), opt_func=opt_func)
+if not args.half: learn.clip_grad(0.5)
 
 # Load custom data trainer - overwrite RNNTrainer
 learn.metrics = [acc_ignore_pad, mask_acc, lm_acc, c2m_acc, m2c_acc]

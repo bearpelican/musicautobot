@@ -1,3 +1,6 @@
+import torch
+import torch.nn.functional as F
+
 # top_k + nucleus filter - https://twitter.com/thom_wolf/status/1124263861727760384?lang=en
 # https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
 def top_k_top_p(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):

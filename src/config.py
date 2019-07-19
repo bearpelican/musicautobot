@@ -1,6 +1,5 @@
-import music21
-from fastai.text.models.transformer import *
-from .fastai_data import *
+from fastai.text.models.transformer import tfmerXL_lm_config, Activation
+from .music_transformer.dataloader import MusicVocab
 
 def default_config(vocab):
     config = tfmerXL_lm_config.copy()

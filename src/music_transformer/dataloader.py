@@ -1,10 +1,9 @@
 "Fastai Language Model Databunch modified to work with music"
-# from fastai.text import *
 from fastai.basics import *
+# from fastai.basic_data import DataBunch
 from fastai.text.data import LMLabelList
-from .encode_data import *
+from ..data_encode import *
 # Additional encoding
-
 
 BOS = 'xxbos'
 PAD = 'xxpad'

@@ -1,4 +1,5 @@
-
+from fastai.basics import *
+from ..music_transformer.dataloader import MusicVocab
 # Sequence 2 Sequence Translate
 
 class S2SFileProcessor(PreProcessor):
