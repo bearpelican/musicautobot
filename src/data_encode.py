@@ -1,13 +1,11 @@
 "Encoding music21 streams -> numpy array -> text"
 
-import re
-import music21
-import numpy as np
-import scipy.sparse
-from pathlib import Path
-from collections import defaultdict
-from math import ceil
-from fastai.text.data import BOS
+# import re
+# import music21
+# import numpy as np
+# from pathlib import Path
+# from collections import defaultdict
+# from math import ceil
 
 BPB = 4 # beats per bar
 TIMESIG = f'{BPB}/4' # default time signature

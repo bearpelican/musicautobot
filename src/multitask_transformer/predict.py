@@ -1,94 +1,12 @@
-from .fastai_data import *
-from .encode_data import *
-from .music_transformer import *
-from fastai.basics import *
-from fastai.text.models.transformer import _line_shift, init_transformer
-from fastai.text.models.awd_lstm import *
-from fastai.text.models.transformer import *
-from fastai.callbacks.rnn import RNNTrainer
+# from .fastai_data import *
+# from .encode_data import *
+# from .music_transformer import *
+# from fastai.basics import *
+# from fastai.text.models.transformer import _line_shift, init_transformer
+# from fastai.text.models.awd_lstm import *
+# from fastai.text.models.transformer import *
+# from fastai.callbacks.rnn import RNNTrainer
 
-from .encode_data import VALTSEP, SAMPLE_FREQ
-
-# DATALOADING AND TRANSFORMATIONS
-
-MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
-
-# MLM Transform - DEPRECATED
-def msklm_mask(shape, p, tile):
-    p = p / tile # scale probability
-    rand_mask = torch.rand(*shape) < p
-    if tile > 1:
-        rand_mask = torch.repeat_interleave(rand_mask, tile, dim=1)[:rand_mask.shape[0], :rand_mask.shape[1]]
-        
-    lm_mask = torch.roll(rand_mask, 1, dims=1)
-    lm_mask[:, 0] = 0
-    lm_mask = rand_mask & lm_mask
-    return rand_mask, lm_mask
-
-# Utility for predictions
-def mask_note_or_dur(b):
-    x, y = b
-    x,x_pos = x[...,0], x[...,1]
-    y,y_pos = y[...,0], y[...,1]
-    x = x.clone()
-    rand = torch.rand(x.shape, device=x.device) < 0.9
-    mask_range = vocab.dur_range if random.randint(0, 1) == 0 else vocab.note_range
-    x[(x >= mask_range[0]) & (x < mask_range[1]) & rand] = vocab.mask_idx
-    return (x, None, y_pos, None), (y, MLMType.Mask)
-
-
-def mask_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p_mask=0.2):
-    x,y = b
-    x_lm,x_pos = x[...,0], x[...,1]
-    y_lm,y_pos = y[...,0], y[...,1]
-    
-    x_msk, y_msk = mask_tfm((y_lm, y_lm), p=p_mask) # masking instead of x. Just in case we ever do sequential s2s training
-    msk_pos = y_pos
-    
-    x_dict = { 
-        'msk': { 'x': x_msk, 'pos': msk_pos },
-        'lm': { 'x': x_lm, 'pos': msk_pos }
-    }
-    y_dict = { 'msk': y_msk, 'lm': y_lm }
-    return x_dict, y_dict
-
-def melody_chord_tfm(b):
-    m,c = b
-    
-    m,m_pos = m[...,0], m[...,1]
-    c,c_pos = c[...,0], c[...,1]
-    
-    # offset x and y for next word prediction
-    y_m = m[:,1:]
-    x_m, m_pos = m[:,:-1], m_pos[:,:-1]
-    
-    y_c = c[:,1:]
-    x_c, c_pos = c[:,:-1], c_pos[:,:-1]
-    
-    x_dict = { 
-        'c2m': {
-            'enc': x_c,
-            'enc_pos': c_pos,
-            'dec': x_m,
-            'dec_pos': m_pos
-        },
-        'm2c': {
-            'enc': x_m,
-            'enc_pos': m_pos,
-            'dec': x_c,
-            'dec_pos': c_pos
-        }
-    }
-    y_dict = {
-        'c2m': y_m, 'm2c': y_c
-    }
-    return x_dict, y_dict
-
-# Utility for predictions
-def mask_input(xb, mask_range=vocab.note_range, mask_idx=vocab.mask_idx, clone=True):
-    if clone: xb = xb.clone()
-    xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = mask_idx
-    return xb
 
 class MLMLearner(MusicLearner):
     def predict_nw(self, xb:Tensor, n_words:int=128,
@@ -220,13 +138,9 @@ class MLMLearner(MusicLearner):
                 x_lm.append(idx)
 
         return np.array(x_lm)
-
-# High level serve api
-def part_enc(chordarr, part):
-    partarr = chordarr[:,part:part+1,:]
-    npenc = chordarr2npenc(partarr)
-    return npenc
     
+
+# High level prediction functions from midi file
 
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
@@ -245,25 +159,6 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     chordarr_comb = s2s_combine2chordarr(*part_order)
 
     return chordarr_comb
-
-def midi_extract_melody_chords(midi):
-    stream = file2stream(midi) # 1.
-    chordarr = stream2chordarr(stream) # 2.
-    _,num_parts,_ = chordarr.shape
-
-    if num_parts == 1:
-        # if predicting melody, assume only track is chord track
-        p1, p2 = part_enc(chordarr, 0), np.zeros((0,2), dtype=int)
-        p1, p2 = (p2, p1) if pred_melody else (p1, p2)
-    elif num_parts == 2:
-        p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
-        p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
-    else:
-        raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
-        
-    mpart = partenc2seq2seq(p1, part_type=MSEQ)
-    cpart = partenc2seq2seq(p2, part_type=CSEQ)
-    return mpart, cpart
 
 def seed_tfm(npenc, seed_len=None, sample_freq=SAMPLE_FREQ):
     if seed_len is None: return npenc
@@ -298,3 +193,9 @@ def mask_predict_from_midi(learn, midi=None,
         pos = pos.cuda()
     pred = learn.predict_mask(x_msk, pos, temperatures=temperatures, top_k=top_k, top_p=top_p)
     return pred
+
+# Utility for predictions
+def mask_input(xb, mask_range=vocab.note_range, mask_idx=vocab.mask_idx, clone=True):
+    if clone: xb = xb.clone()
+    xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = mask_idx
+    return xb

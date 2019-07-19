@@ -6,6 +6,7 @@ tmp_out/
 data_serve/
 notebooks/data_collection/musescore/*.json
 .vscode
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

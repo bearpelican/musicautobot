@@ -36,10 +36,3 @@ def mlm_config(vocab):
     config['dec_layers'] = 8
     del config['n_layers']
     return config
-
-def load_music_learner(data, config, load_path=None):
-    learn = music_model_learner(data, config)
-    if load_path:
-        state = torch.load(load_path, map_location='cpu')
-        get_model(learn.model).load_state_dict(state['model'], strict=False)
-    return learn
