@@ -11,7 +11,7 @@
 from fastai.basics import *
 from fastai.text.learner import LanguageLearner, get_language_model, _model_meta
 from .model import *
-from ..data_encode import SAMPLE_FREQ
+from ..numpy_encode import SAMPLE_FREQ
 from ..utils.top_k_top_p import top_k_top_p
 
 def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.,
@@ -62,14 +62,12 @@ class MusicLearner(LanguageLearner):
         node_idx = torch.multinomial(torch.exp(-scores), 1).item()
         return [i.item() for i in nodes[node_idx][xb_length:] ]
 
-    def predict(self, xb:Tensor, n_words:int=128,
+    def predict(self, x:Tensor, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=40, top_p=0.9):
         "Return the `n_words` that come after `text`."
         self.model.reset()
-        if xb.shape[0] > 1: xb = xb[0][None]
-        seed = xb.cpu().numpy().squeeze()
-        yb = torch.ones_like(xb)
+        y = torch.tensor([0])
         new_idx = []
 
         sep_count = 0
@@ -80,7 +78,7 @@ class MusicLearner(LanguageLearner):
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
 
-                res = self.pred_batch(batch=(xb,yb))[0][-1]
+                res = self.pred_batch(batch=(x[None],y))[0][-1]
 
                 # bar = 16 beats
                 if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
@@ -103,6 +101,6 @@ class MusicLearner(LanguageLearner):
 
 
                 new_idx.append(idx)
-                xb = xb.new_tensor([idx])[None]
-        return np.array(new_idx), seed
+                x = x.new_tensor([idx])
+        return np.array(new_idx)
     

@@ -1,5 +1,8 @@
+from ..numpy_encode import *
+import numpy as np
+import torch
 
-class MusicItem(ItemBase):
+class MusicItem():
     def __init__(self, item, vocab):
         self.data = item
         self.vocab = vocab
@@ -16,7 +19,7 @@ class MusicItem(ItemBase):
 
     def to_stream(self, bpm=120):
         if self.stream is None: 
-            self.stream = idxenc2stream(self.data, bpm=bpm)
+            self.stream = idxenc2stream(self.data, self.vocab, bpm=bpm)
         return self.stream
 
     def to_tensor(self, device=None):
@@ -34,16 +37,16 @@ class MusicItem(ItemBase):
     def show_score(self):
         self.to_stream().show()
 
-    def play_file(self):
-        self.to_stream().show('midi')
+    def play(self): self.to_stream().show('midi')
+    def show_midi(self): self.to_stream().show('midi')
 
     def trim_to_beat(self, beat):
-        self.data = self.seed_tfm(self.data, beat)
+        return MusicItem(trim_tfm(self.data, self.vocab, beat), self.vocab)
 
-def trim_tfm(idxenc, to_beat=None, sample_freq=SAMPLE_FREQ):
+def trim_tfm(idxenc, vocab, to_beat=None, sample_freq=SAMPLE_FREQ):
     if to_beat is None: return idxenc
-    pos = -neg_position_enc(idxenc)
-    cutoff = np.searchsorted(pos, to_beat * sample_freq) + 1
+    pos = -neg_position_enc(idxenc, vocab)
+    cutoff = np.searchsorted(pos, to_beat * sample_freq)
     return idxenc[:cutoff]
     
 def midi2idxenc(midi_file, vocab):
@@ -103,19 +106,19 @@ def neg_position_enc(idxenc, vocab):
     posenc[sep_idxs+2] = dur_vals
     return -posenc.cumsum()
 
-def position_tfm(idxenc, vocab=vocab):
+def position_tfm(idxenc, vocab):
     posenc = neg_position_enc(idxenc, vocab) # using negative values so we don't interfere with indexes
     return np.stack([idxenc, posenc], axis=1)
 
-def tfm_transpose(x, value, note_range=vocab.note_range):
+def tfm_transpose(x, value, vocab):
     x = x.copy()
-    x[(x >= note_range[0]) & (x < note_range[1])] += value
+    x[(x >= vocab.note_range[0]) & (x < vocab.note_range[1])] += value
     return x
 
-def rand_transpose_tfm(t, note_range=vocab.note_range, rand_range=(0,24), p=0.5):
+def rand_transpose_tfm(t, vocab, rand_range=(0,24), p=0.5):
     if np.random.rand() < p:
         transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
         if isinstance(t, (list, tuple)) and len(t) == 2: 
-            return [tfm_transpose(x, transpose_value, note_range) for x in t]
-        return tfm_transpose(t, transpose_value, note_range)
+            return [tfm_transpose(x, transpose_value, vocab) for x in t]
+        return tfm_transpose(t, transpose_value, vocab)
     return t

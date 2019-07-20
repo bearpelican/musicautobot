@@ -1,3 +1,7 @@
+from fastai.basics import *
+from .numpy_encode import *
+from .music_transformer import MusicItem
+
 BOS = 'xxbos'
 PAD = 'xxpad'
 EOS = 'xxeos'
@@ -34,6 +38,10 @@ class MusicVocab():
     def textify(self, nums:Collection[int], sep=' ') -> List[str]:
         "Convert a list of `nums` to their tokens."
         return sep.join([self.itos[i] for i in nums]) if sep is not None else [self.itos[i] for i in nums]
+    
+    def musicify(self, idxenc):
+        return MusicItem(idxenc, self)
+    
     @property 
     def mask_idx(self): return self.stoi[MASK]
     @property 
@@ -43,11 +51,11 @@ class MusicVocab():
     @property
     def sep_idx(self): return self.stoi[SEP]
     @property
-    def npenc_range(self): return (vocab.stoi[SEP], vocab.stoi[DUR_END]+1)
+    def npenc_range(self): return (self.stoi[SEP], self.stoi[DUR_END]+1)
     @property
-    def note_range(self): return vocab.stoi[NOTE_START], vocab.stoi[NOTE_END]+1
+    def note_range(self): return self.stoi[NOTE_START], self.stoi[NOTE_END]+1
     @property
-    def dur_range(self): return vocab.stoi[DUR_START], vocab.stoi[DUR_END]+1
+    def dur_range(self): return self.stoi[DUR_START], self.stoi[DUR_END]+1
 
     def is_duration(self, idx): 
         return idx >= self.dur_range[0] and idx < self.dur_range[1]

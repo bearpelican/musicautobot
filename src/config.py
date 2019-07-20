@@ -1,15 +1,14 @@
 from fastai.text.models.transformer import tfmerXL_lm_config, Activation
-from .music_transformer.dataloader import MusicVocab
+# from .vocab import MusicVocab
 
-def default_config(vocab):
+def default_config():
     config = tfmerXL_lm_config.copy()
     
-    config['pad_idx'] = vocab.pad_idx
-    config['bos_idx'] = vocab.bos_idx
+#     config['pad_idx'] = vocab.pad_idx
+#     config['bos_idx'] = vocab.bos_idx
     config['transpose_range'] = (0,12)
-    config['note_range'] = vocab.note_range
+#     config['note_range'] = vocab.note_range
     config['act'] = Activation.GeLU
-    # config['act'] = Activation.ReLU
 
     config['mem_len'] = 512
 
@@ -17,7 +16,7 @@ def default_config(vocab):
     config['bptt'] = 256
     
     config['d_model'] = 512
-    config['vocab_size'] = len(vocab.itos)
+#     config['vocab_size'] = len(vocab.itos)
     config['d_inner'] = 2048
     config['n_layers'] = 16
     
@@ -27,8 +26,8 @@ def default_config(vocab):
 
     return config
 
-def mlm_config(vocab):
-    config = default_config(vocab)
+def mlm_config():
+    config = default_config()
     config['bias'] = True
     config['enc_layers'] = 8
     config['dec_layers'] = 8

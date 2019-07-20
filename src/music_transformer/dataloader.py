@@ -2,7 +2,8 @@
 from fastai.basics import *
 # from fastai.basic_data import DataBunch
 from fastai.text.data import LMLabelList
-from ..data_encode import *
+# from ..numpy_encode import *
+from .transform import *
 # Additional encoding
 
 class MusicDataBunch(DataBunch):
@@ -11,9 +12,10 @@ class MusicDataBunch(DataBunch):
     def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
                num_workers:int=0, device:torch.device=None, collate_fn:Callable=data_collate, 
                dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70,
-               preloader_cls=MusicPreloader, shuffle_dl=False, **kwargs) -> DataBunch:
+               preloader_cls=None, shuffle_dl=False, **kwargs) -> DataBunch:
         "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
         datasets = cls._init_ds(train_ds, valid_ds, test_ds)
+        preloader_cls = MusicPreloader if preloader_cls is None else preloader_cls
         val_bs = ifnone(val_bs, bs)
         datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, **kwargs) 
                     for i,ds in enumerate(datasets)]
@@ -34,7 +36,7 @@ class MusicItemList(ItemList):
 
 class IndexEncodeProcessor(PreProcessor):
     "`PreProcessor` that transforms numpy files to indexes for training"
-    def __init__(self, ds:ItemList=None, vocab:MusicVocab=None):
+    def __init__(self, ds:ItemList=None, vocab=None):
         self.vocab = ifnone(vocab, ds.vocab if ds is not None else None)
 
     def process_one(self,item):
@@ -73,6 +75,7 @@ class MusicPreloader(Callback):
                  transpose_range=(0,24), transpose_p=0.5,
                  **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
+        self.vocab = self.dataset.vocab
         self.bs *= num_distrib() or 1
         self.totalToks,self.ite_len,self.idx = int(0),None,None
         self.y_offset = y_offset
@@ -157,7 +160,7 @@ class MusicPreloader(Callback):
             
             rag   = items[ix]
             if self.transpose_values is not None: 
-                rag = tfm_transpose(rag, self.transpose_values[ix].item())
+                rag = tfm_transpose(rag, self.transpose_values[ix].item(), self.vocab)
                 
             if forward:
                 ri = 0 if ibuf else ri
