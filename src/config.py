@@ -6,7 +6,6 @@ def default_config(vocab):
     
     config['pad_idx'] = vocab.pad_idx
     config['bos_idx'] = vocab.bos_idx
-    config['sep_idx'] = vocab.sep_idx
     config['transpose_range'] = (0,12)
     config['note_range'] = vocab.note_range
     config['act'] = Activation.GeLU
