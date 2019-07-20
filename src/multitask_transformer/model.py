@@ -1,14 +1,14 @@
 
-def get_mlm_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
+def get_mlm_model(vocab_size:int, config:dict=None, drop_mult:float=1., pad_idx=None):
     "Create a language model from `arch` and its `config`, maybe `pretrained`."
     for k in config.keys(): 
         if k.endswith('_p'): config[k] *= drop_mult
     n_hid = config['d_model']
     mem_len = config.pop('mem_len')
-    embed = TransformerEmbedding(vocab_sz, n_hid, embed_p=config['embed_p'], mem_len=mem_len)
+    embed = TransformerEmbedding(vocab_size, n_hid, embed_p=config['embed_p'], mem_len=mem_len, pad_idx=pad_idx)
     encoder = MLMEncoder(embed, n_hid, n_layers=config['enc_layers'], mem_len=0, **config) # encoder doesn't need memory
     decoder = MLMEncoder(embed, n_hid, is_decoder=True, n_layers=config['dec_layers'], mem_len=mem_len, **config)
-    head = MLMLinearDecoder(n_hid, vocab_sz, tie_encoder=embed.embed, **config)
+    head = MLMLinearDecoder(n_hid, vocab_size, tie_encoder=embed.embed, **config)
     model = MultiTransformer(encoder, decoder, head, mem_len=mem_len)
     return model.apply(init_transformer)
 
@@ -16,7 +16,8 @@ def get_mlm_model(vocab_sz:int, config:dict=None, drop_mult:float=1.):
 def mlm_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pretrained:bool=False,
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
-    model = get_mlm_model(config['vocab_size'], config=config, drop_mult=drop_mult)
+    vocab_size = len(data.vocab)
+    model = get_mlm_model(vocab_size, config=config, drop_mult=drop_mult, pad_idx=data.vocab.pad_idx)
     learn = MLMLearner(data, model, split_func=None,
                         **learn_kwargs)
     learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
