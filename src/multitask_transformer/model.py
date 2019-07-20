@@ -1,3 +1,8 @@
+from fastai.basics import *
+from fastai.text.models.transformer import Activation, PositionalEncoding, feed_forward, init_transformer, _line_shift
+from fastai.text.models.awd_lstm import RNNDropout
+from .predict import *
+from ..utils.attention_mask import *
 
 def get_mlm_model(vocab_size:int, config:dict=None, drop_mult:float=1., pad_idx=None):
     "Create a language model from `arch` and its `config`, maybe `pretrained`."
@@ -16,11 +21,12 @@ def get_mlm_model(vocab_size:int, config:dict=None, drop_mult:float=1., pad_idx=
 def mlm_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pretrained:bool=False,
                         pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
-    vocab_size = len(data.vocab)
-    model = get_mlm_model(vocab_size, config=config, drop_mult=drop_mult, pad_idx=data.vocab.pad_idx)
-    learn = MLMLearner(data, model, split_func=None,
-                        **learn_kwargs)
-    learn.callbacks = [c for c in learn.callbacks if not isinstance(c, RNNTrainer)]
+    vocab = data.vocab
+    vocab_size = len(vocab)
+    model = get_mlm_model(vocab_size, config=config, drop_mult=drop_mult, pad_idx=vocab.pad_idx)
+    metrics = [partial(m, pad_idx=vocab.pad_idx) for m in [mask_acc, lm_acc, c2m_acc, m2c_acc]]
+    loss_func = MultiLoss(ignore_index=data.vocab.pad_idx)
+    learn = MultitaskLearner(data, model, loss_func=loss_func, metrics=metrics, **learn_kwargs)
     return learn
 
 class MultiTransformer(nn.Module):
@@ -174,7 +180,7 @@ class MLMEncoder(nn.Module):
         # Masks
         if self.is_decoder:
             lm_mask = rand_window_mask(lm_len, self.embed.mem_len, x_lm.device,
-                                       max_size=self.mask_size, p=0.3, is_eval=not self.train)
+                                       max_size=self.mask_size, p=0.3, is_eval=not self.training)
         else:
             lm_mask = None
         
@@ -317,15 +323,15 @@ class MLMTrainer(LearnerCallback):
 # LOSS AND METRICS
 
 class MultiLoss():
-    def __init__(self):
+    def __init__(self, ignore_index=None):
         "Loss mult - Mask, NextWord, Seq2Seq"
-        self.loss = CrossEntropyFlat(ignore_index=vocab.pad_idx)
+        self.loss = CrossEntropyFlat(ignore_index=ignore_index)
         
     def __call__(self, inputs:Dict[str,Tensor], targets:Dict[str,Tensor])->Rank0Tensor:
         losses = [self.loss(inputs[key], target) for key,target in targets.items()]
         return sum(losses)
     
-def acc_ignore_pad(input:Tensor, targ:Tensor, pad_idx=vocab.pad_idx)->Rank0Tensor:
+def acc_ignore_pad(input:Tensor, targ:Tensor, pad_idx)->Rank0Tensor:
     if input is None or targ is None: return None
     n = targ.shape[0]
     input = input.argmax(dim=-1).view(n,-1)
@@ -333,13 +339,13 @@ def acc_ignore_pad(input:Tensor, targ:Tensor, pad_idx=vocab.pad_idx)->Rank0Tenso
     mask = targ != pad_idx
     return (input[mask]==targ[mask]).float().mean()
 
-def acc_index(inputs, targets, key=None, pad_idx=vocab.pad_idx):
-    return acc_ignore_pad(inputs.get(key), targets.get(key), pad_idx)
+# def acc_index(inputs, targets, key=None, pad_idx=vocab.pad_idx):
+#     return acc_ignore_pad(inputs.get(key), targets.get(key), pad_idx)
     
-def mask_acc(inputs, targets): return acc_index(inputs, targets, 'lm')
-def lm_acc(inputs, targets): return acc_index(inputs, targets, 'msk')
-def c2m_acc(inputs, targets): return acc_index(inputs, targets, 'c2m')
-def m2c_acc(inputs, targets): return acc_index(inputs, targets, 'm2c')
+def mask_acc(inputs, targets, pad_idx): return acc_index(inputs.get(key), targets.get(key), 'lm', pad_idx)
+def lm_acc(inputs, targets, pad_idx): return acc_index(inputs.get(key), targets.get(key), 'msk', pad_idx)
+def c2m_acc(inputs, targets, pad_idx): return acc_index(inputs.get(key), targets.get(key), 'c2m', pad_idx)
+def m2c_acc(inputs, targets, pad_idx): return acc_index(inputs.get(key), targets.get(key), 'm2c', pad_idx)
 
 
 class AverageMultiMetric(AverageMetric):

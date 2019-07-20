@@ -6,17 +6,21 @@
 # from fastai.text.models.awd_lstm import *
 # from fastai.text.models.transformer import *
 # from fastai.callbacks.rnn import RNNTrainer
+from fastai.basics import *
+from ..vocab import *
+from ..utils.top_k_top_p import top_k_top_p
+from ..music_transformer.transform import *
 
-
-class MLMLearner(MusicLearner):
+class MultitaskLearner(Learner):
     def predict_nw(self, xb:Tensor, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=30, top_p=0.6):
         "Return the `n_words` that come after `text`."
         self.model.reset()
         new_idx = []
+        vocab = self.data.vocab
         xb = xb.squeeze()
-        pos = torch.tensor(neg_position_enc(xb.cpu().numpy()), device=xb.device)
+        pos = torch.tensor(neg_position_enc(xb.cpu().numpy(), vocab), device=xb.device)
         last_pos = pos[-1]
         yb = torch.tensor([0])
 
@@ -34,7 +38,7 @@ class MLMLearner(MusicLearner):
                 if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
 
                 # Use first temperatures value if last prediction was duration
-                temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
+                temperature = temperatures[0] if (len(new_idx)==0 or vocab.is_duration(new_idx[-1])) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
 
                 res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
@@ -59,8 +63,9 @@ class MLMLearner(MusicLearner):
                     top_k=20, top_p=0.8):
         x = x.clone().squeeze()
         y = torch.tensor([0])
+        vocab = self.data.vocab
         if pos is None:
-            pos = torch.tensor(neg_position_enc(x.cpu().numpy()), device=x.device)
+            pos = torch.tensor(neg_position_enc(x.cpu().numpy(), vocab), device=x.device)
         self.model.reset()
         mask_idxs = (x == vocab.mask_idx).nonzero().view(-1)
 
@@ -81,7 +86,7 @@ class MLMLearner(MusicLearner):
 
                 # Use first temperatures value if last prediction was duration
                 prev_idx = x[midx-1]
-                temperature = temperatures[0] if self.data.vocab.is_duration(prev_idx) else temperatures[1]
+                temperature = temperatures[0] if vocab.is_duration(prev_idx) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
 
                 res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
@@ -97,12 +102,12 @@ class MLMLearner(MusicLearner):
                     temperatures:float=(1.0,1.0),
                     top_k=30, top_p=0.8):
         self.model.reset()
-
+        vocab = self.data.vocab
         x_lm = xb_lm.tolist()
         lm_pos = (neg_position_enc(xb_lm.cpu().numpy())).tolist()
         last_pos = lm_pos[-1]
 
-        msk_pos = torch.tensor(neg_position_enc(xb_msk.cpu().numpy()), device=xb_msk.device)
+        msk_pos = torch.tensor(neg_position_enc(xb_msk.cpu().numpy(), vocab), device=xb_msk.device)
         x_enc = self.model.encoder(xb_msk.view(1, -1), msk_pos.view(1, -1))
 
         max_pos = msk_pos[-1] - SAMPLE_FREQ * 4
@@ -116,7 +121,7 @@ class MLMLearner(MusicLearner):
                 res = F.softmax(self.model.head(dec), dim=-1)[-1, -1]
 
                 # Use first temperatures value if last prediction was duration
-                temperature = temperatures[0] if (len(x_lm)==0 or self.data.vocab.is_duration(x_lm[-1])) else temperatures[1]
+                temperature = temperatures[0] if (len(x_lm)==0 or vocab.is_duration(x_lm[-1])) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
 
                 res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
@@ -181,7 +186,7 @@ def mask_predict_from_midi(learn, midi=None,
     x = torch.tensor(seed_np)
     pos = torch.tensor(neg_position_enc(x.cpu().numpy()), device=x.device)
     mask_range = vocab.note_range if predict_notes else vocab.dur_range
-    x_msk = mask_input(x, mask_range=mask_range)
+    x_msk = mask_input(x, mask_range=mask_range, replacement_idx=vocab.mask_idx)
     if torch.cuda.is_available(): 
         x_msk = x_msk.cuda()
         pos = pos.cuda()
@@ -189,7 +194,7 @@ def mask_predict_from_midi(learn, midi=None,
     return pred
 
 # Utility for predictions
-def mask_input(xb, mask_range=vocab.note_range, mask_idx=vocab.mask_idx, clone=True):
+def mask_input(xb, mask_range, replacement_idx, clone=True):
     if clone: xb = xb.clone()
-    xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = mask_idx
+    xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = replacement_idx
     return xb

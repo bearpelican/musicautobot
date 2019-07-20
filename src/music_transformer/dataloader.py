@@ -43,7 +43,9 @@ class IndexEncodeProcessor(PreProcessor):
         return npenc2idxenc(item, vocab=self.vocab)
     
     def process(self, ds):
-        if self.vocab is None: self.vocab = MusicVocab.create()
+        if self.vocab is None: 
+            from ..vocab import MusicVocab
+            self.vocab = MusicVocab.create()
         ds.vocab = self.vocab
         super().process(ds)
         

@@ -1,5 +1,6 @@
 from fastai.basics import *
-from ..music_transformer.dataloader import MusicVocab
+from ..vocab import *
+from ..music_transformer.transform import *
 # Sequence 2 Sequence Translate
 
 class S2SFileProcessor(PreProcessor):
@@ -23,8 +24,8 @@ class S2SPartEncProcessor(PreProcessor):
         
     def process_one(self,item):
         m, c = item
-        m = position_tfm(partenc2seq2seq(m, MSEQ, vocab=self.vocab))
-        c = position_tfm(partenc2seq2seq(c, CSEQ, vocab=self.vocab))
+        m = position_tfm(partenc2seq2seq(m, MSEQ, vocab=self.vocab), self.vocab)
+        c = position_tfm(partenc2seq2seq(c, CSEQ, vocab=self.vocab), self.vocab)
         return np.array((m, c))
     
     def process(self, ds):
@@ -37,7 +38,7 @@ class S2SPreloader(Callback):
                  transpose_range=(0,12), **kwargs):
         self.dataset,self.bptt = dataset,bptt
         self.vocab = self.dataset.vocab
-        self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=transpose_range) if transpose_range is not None else None
+        self.transpose_tfm = partial(rand_transpose_tfm, vocab=self.vocab, rand_range=transpose_range) if transpose_range is not None else None
         
     def __getitem__(self, k:int):
         item,_ = self.dataset[k]
@@ -103,16 +104,18 @@ def msklm_mask(shape, p, tile):
     lm_mask = rand_mask & lm_mask
     return rand_mask, lm_mask
 
-def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
-             mask_idx=vocab.mask_idx, p=0.2):
+def mask_tfm(b, vocab, p=0.2):
+# def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
+#              mask_idx=vocab.mask_idx, p=0.2):
     # p = replacement probability
+    word_range = vocab.npenc_range
     x,y = b
     x,y = x.clone(),y.clone()
     rand = torch.rand(x.shape, device=x.device)
     rand[x < word_range[0]] = 1.0
     rand[x >= word_range[1]] = 1.0
-    y[rand > p] = pad_idx
-    x[rand <= (p*.8)] = mask_idx # 80% = mask
+    y[rand > p] = vocab.pad_idx
+    x[rand <= (p*.8)] = vocab.mask_idx # 80% = mask
     wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
     x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()], device=x.device)
     return x, y
@@ -129,12 +132,13 @@ def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx,
 #     return (x, None, y_pos, None), (y, MLMType.Mask)
 
 
-def mask_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p_mask=0.2):
+# def mask_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p_mask=0.2):
+def mask_lm_tfm(b, vocab, p_mask=0.2):
     x,y = b
     x_lm,x_pos = x[...,0], x[...,1]
     y_lm,y_pos = y[...,0], y[...,1]
     
-    x_msk, y_msk = mask_tfm((y_lm, y_lm), p=p_mask) # masking instead of x. Just in case we ever do sequential s2s training
+    x_msk, y_msk = mask_tfm((y_lm, y_lm), vocab=vocab, p=p_mask) # masking instead of x. Just in case we ever do sequential s2s training
     msk_pos = y_pos
     
     x_dict = { 

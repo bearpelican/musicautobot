@@ -66,6 +66,8 @@ class MusicVocab():
     def __setstate__(self, state:dict):
         self.itos = state['itos']
         self.stoi = {v:k for k,v in enumerate(self.itos)}
+        
+    def __len__(self): return len(self.itos)
 
     def save(self, path):
         "Save `self.itos` in `path`"
