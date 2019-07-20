@@ -270,3 +270,41 @@ def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
             result.append(timestep)
     for i in range(rest_count): result.append(np.zeros(timestep.shape))
     return np.array(result)
+
+# sequence 2 sequence convenience functions
+
+def chordarr_combine_parts(p1, p2):
+    max_ts = max(p1.shape[0], p2.shape[0])
+    p1w = ((0,max_ts-p1.shape[0]),(0,0),(0,0))
+    p1_pad = np.pad(p1, p1w, 'constant')
+    p2w = ((0,max_ts-p2.shape[0]),(0,0),(0,0))
+    p2_pad = np.pad(p2, p2w, 'constant')
+    chordarr_comb = np.concatenate((p1_pad, p2_pad), axis=1)
+    return chordarr_comb
+
+# def chordarr_extract_parts(chordarr):
+#     _,num_parts,_ = chordarr.shape
+
+#     if num_parts == 1:
+#         # if predicting melody, assume only track is chord track
+#         p1, p2 = part_enc(chordarr, 0), np.zeros((0,2), dtype=int)
+#         p1, p2 = (p2, p1) if pred_melody else (p1, p2)
+#     elif num_parts == 2:
+#         p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
+#         p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
+#     else:
+#         raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
+#     return p1, p2
+
+def part_enc(chordarr, part):
+    partarr = chordarr[:,part:part+1,:]
+    npenc = chordarr2npenc(partarr)
+    return npenc
+
+def avg_tempo(t, sep_idx=VALTSEP):
+    avg = t[t[:, 0] == sep_idx][:, 1].sum()/t.shape[0]
+    avg = int(round(avg/SAMPLE_FREQ))
+    return 'mt'+str(min(avg, MTEMPO_SIZE-1))
+
+def avg_pitch(t, sep_idx=VALTSEP):
+    return t[t[:, 0] > sep_idx][:, 0].mean()

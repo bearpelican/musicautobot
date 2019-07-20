@@ -23,8 +23,8 @@ class S2SPartEncProcessor(PreProcessor):
         
     def process_one(self,item):
         m, c = item
-        m = position_tfm(partenc2seq2seq(m, MSEQ))
-        c = position_tfm(partenc2seq2seq(c, CSEQ))
+        m = position_tfm(partenc2seq2seq(m, MSEQ, vocab=self.vocab))
+        c = position_tfm(partenc2seq2seq(c, CSEQ, vocab=self.vocab))
         return np.array((m, c))
     
     def process(self, ds):
@@ -36,8 +36,7 @@ class S2SPreloader(Callback):
     def __init__(self, dataset:LabelList, bptt:int=512, 
                  transpose_range=(0,12), **kwargs):
         self.dataset,self.bptt = dataset,bptt
-        self.np = vocab
-        self.transpose_range = transpose_range
+        self.vocab = self.dataset.vocab
         self.transpose_tfm = partial(rand_transpose_tfm, note_range=vocab.note_range, rand_range=transpose_range) if transpose_range is not None else None
         
     def __getitem__(self, k:int):
@@ -46,36 +45,29 @@ class S2SPreloader(Callback):
         if self.transpose_tfm is not None:
             x,y = self.transpose_tfm([x,y])
         # WARNING: we are padding position encodings too. However, pos is negative, so should be fine
-        return pad_seq(x, self.bptt+1), pad_seq(y, self.bptt+1) # offset bptt for decoder shift
+        return pad_seq(x, self.bptt+1, self.vocab.pad_idx), pad_seq(y, self.bptt+1, self.vocab.pad_idx) # offset bptt for decoder shift
     
     def __len__(self):
         return len(self.dataset)
         
-def pad_seq(seq, bptt, pad_idx=vocab.pad_idx):
+def pad_seq(seq, bptt, value):
     pad_len = max(bptt-seq.shape[0], 0)
-    return np.pad(seq, [(0, pad_len),(0,0)], 'constant', constant_values=pad_idx)[:bptt]
+    return np.pad(seq, [(0, pad_len),(0,0)], 'constant', constant_values=value)[:bptt]
     
-def partenc2seq2seq(part_np, part_type, vocab=vocab, add_eos=True):
+def partenc2seq2seq(part_np, part_type, vocab, add_eos=True):
     part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
-    s2s_out = to_single_stream(part_np, start_seq=part_meta)
+    s2s_out = npenc2idxenc(part_np, vocab=vocab, start_seq=part_meta)
     if add_eos: s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
-#     s2s_out = position_tfm(s2s_out)
     return s2s_out
 
-def s2s_combine2chordarr(np1, np2):
-    if len(np1.shape) == 1: np1 = to_double_stream(np1)
-    if len(np2.shape) == 1: np2 = to_double_stream(np2)
+def s2s_combine2chordarr(np1, np2, vocab):
+    if len(np1.shape) == 1: np1 = idxenc2npenc(np1, vocab)
+    if len(np2.shape) == 1: np2 = idxenc2npenc(np2, vocab)
     p1 = npenc2chordarr(np1)
     p2 = npenc2chordarr(np2)
-    max_ts = max(p1.shape[0], p2.shape[0])
-    p1w = ((0,max_ts-p1.shape[0]),(0,0),(0,0))
-    p1_pad = np.pad(p1, p1w, 'constant')
-    p2w = ((0,max_ts-p2.shape[0]),(0,0),(0,0))
-    p2_pad = np.pad(p2, p2w, 'constant')
-    chordarr_comb = np.concatenate((p1_pad, p2_pad), axis=1)
-    return chordarr_comb
+    return chordarr_combine_parts(p1, p2)
 
-def midi_extract_melody_chords(midi):
+def midi_extract_melody_chords(midi, vocab):
     stream = file2stream(midi) # 1.
     chordarr = stream2chordarr(stream) # 2.
     _,num_parts,_ = chordarr.shape
@@ -90,31 +82,14 @@ def midi_extract_melody_chords(midi):
     else:
         raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
         
-    mpart = partenc2seq2seq(p1, part_type=MSEQ)
-    cpart = partenc2seq2seq(p2, part_type=CSEQ)
+    mpart = partenc2seq2seq(p1, part_type=MSEQ, vocab=vocab)
+    cpart = partenc2seq2seq(p2, part_type=CSEQ, vocab=vocab)
     return mpart, cpart
 
-def part_enc(chordarr, part):
-    partarr = chordarr[:,part:part+1,:]
-    npenc = chordarr2npenc(partarr)
-    return npenc
-
-def avg_tempo(t, sep_idx=VALTSEP):
-    avg = t[t[:, 0] == sep_idx][:, 1].sum()/t.shape[0]
-    avg = int(round(avg/SAMPLE_FREQ))
-    return 'mt'+str(min(avg, MTEMPO_SIZE-1))
-
-def avg_pitch(t, sep_idx=VALTSEP):
-    return t[t[:, 0] > sep_idx][:, 0].mean()
-
-
-# Dataloader transforms
-
-from .encode_data import VALTSEP, SAMPLE_FREQ
 
 # DATALOADING AND TRANSFORMATIONS
 
-MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
+# MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
 
 # MLM Transform - DEPRECATED
 def msklm_mask(shape, p, tile):
@@ -143,15 +118,15 @@ def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx,
     return x, y
 
 # Utility for predictions
-def mask_note_or_dur(b):
-    x, y = b
-    x,x_pos = x[...,0], x[...,1]
-    y,y_pos = y[...,0], y[...,1]
-    x = x.clone()
-    rand = torch.rand(x.shape, device=x.device) < 0.9
-    mask_range = vocab.dur_range if random.randint(0, 1) == 0 else vocab.note_range
-    x[(x >= mask_range[0]) & (x < mask_range[1]) & rand] = vocab.mask_idx
-    return (x, None, y_pos, None), (y, MLMType.Mask)
+# def mask_note_or_dur(b):
+#     x, y = b
+#     x,x_pos = x[...,0], x[...,1]
+#     y,y_pos = y[...,0], y[...,1]
+#     x = x.clone()
+#     rand = torch.rand(x.shape, device=x.device) < 0.9
+#     mask_range = vocab.dur_range if random.randint(0, 1) == 0 else vocab.note_range
+#     x[(x >= mask_range[0]) & (x < mask_range[1]) & rand] = vocab.mask_idx
+#     return (x, None, y_pos, None), (y, MLMType.Mask)
 
 
 def mask_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p_mask=0.2):

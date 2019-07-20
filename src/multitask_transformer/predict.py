@@ -144,7 +144,7 @@ class MLMLearner(MusicLearner):
 
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
-    mpart, cpart = midi_extract_melody_chords(midi)
+    mpart, cpart = midi_extract_melody_chords(midi, vocab=learn.data.vocab)
     
     x_np, y_np = (cpart, mpart) if pred_melody else (mpart, cpart)
     
@@ -160,12 +160,6 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
 
     return chordarr_comb
 
-def seed_tfm(npenc, seed_len=None, sample_freq=SAMPLE_FREQ):
-    if seed_len is None: return npenc
-    pos = -neg_position_enc(npenc)
-    cutoff = np.searchsorted(pos, seed_len * sample_freq) + 1
-    return npenc[:cutoff]
-
 def nw_predict_from_midi(learn, midi=None, n_words=600, 
                       temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
     try:
@@ -174,7 +168,7 @@ def nw_predict_from_midi(learn, midi=None, n_words=600,
             seed_np = seed_tfm(seed_np, seed_len=seed_len)
     except IndexError:
         # midi file has empty notes/tracks. Create empty stream
-        seed_np = to_single_stream(np.zeros((0, 2), dtype=int))
+        seed_np = npenc2idxenc(np.zeros((0, 2), dtype=int))
     x = torch.tensor(seed_np)
     if torch.cuda.is_available(): x = x.cuda()
     pred = learn.predict_nw(x, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)

@@ -86,25 +86,53 @@ class MusicVocab():
 
 vocab = MusicVocab.create()
 
-def midi2idxenc(midi_file):
-    "Converts midi file to index encoding for training"
-    stream = file2stream(midi_file) # 1.
-    chordarr = stream2chordarr(stream) # 2.
-    npenc = chordarr2npenc(chordarr) # 3.
-    return to_single_stream(npenc)
+class MusicItem(ItemBase):
+    def __init__(self, item, vocab):
+        self.data = item
+        self.vocab = vocab
+        self.stream = None
+    def __repr__(self): return self.data[:10]
 
-def idxenc2stream(arr, bpm=120):
+    @classmethod
+    def from_file(cls, midi_file, vocab):
+        return MusicItem(midi2idxenc(midi_file, vocab), vocab)
+
+    def to_stream(self, bpm=120):
+        if self.stream is None: 
+            self.stream = idxenc2stream(self.data, bpm=bpm)
+        return self.stream
+
+    def show_score(self):
+        self.to_stream().show()
+
+    def play_file(self):
+        self.to_stream().show('midi')
+
+    def trim_to_beat(self):
+        self.
+
+def seed_tfm(idxenc, seed_len=None, sample_freq=SAMPLE_FREQ):
+    if seed_len is None: return idxenc
+    pos = -neg_position_enc(idxenc)
+    cutoff = np.searchsorted(pos, seed_len * sample_freq) + 1
+    return idxenc[:cutoff]
+    
+def midi2idxenc(midi_file, vocab):
+    "Converts midi file to index encoding for training"
+    npenc = midi2npenc(midi_file) # 3.
+    return npenc2idxenc(npenc, vocab)
+
+def idxenc2stream(arr, vocab, bpm=120):
     "Converts index encoding to music21 stream"
-    npenc = to_double_stream(arr)
-    chordarr = npenc2chordarr(npenc) # 1.
-    return chordarr2stream(chordarr, bpm=bpm) # 2.
+    npenc = idxenc2npenc(arr, vocab)
+    return npenc2stream(npenc, bpm=bpm)
 
 # single stream instead of note,dur
-def to_single_stream(t, vocab=vocab, start_seq=None):
+def npenc2idxenc(t, vocab=vocab, start_seq=None):
     "Transforms numpy array from 2 column (note, duration) matrix to a single column"
     "[[n1, d1], [n2, d2], ...] -> [n1, d1, n2, d2]"
     if isinstance(t, (list, tuple)) and len(t) == 2: 
-        return [to_single_stream(x, vocab, start_seq) for x in t]
+        return [npenc2idxenc(x, vocab, start_seq) for x in t]
     t = t.copy()
     
     t[:, 0] = t[:, 0] + vocab.note_range[0]
@@ -112,15 +140,8 @@ def to_single_stream(t, vocab=vocab, start_seq=None):
     if start_seq is None: start_seq = np.array([vocab.bos_idx, vocab.pad_idx])
     return np.concatenate([start_seq, t.reshape(-1)])
 
-def to_npenc(t, vocab=vocab):
-    r = vocab.npenc_range
-    return t[np.where((t >= r[0]) & (t < r[1]))]
-
-def to_double_stream(t, vocab=vocab, normalize=True):
-    if normalize:
-        t = to_npenc(t, vocab=vocab)
-        if t.shape[-1] % 2 == 1:
-            t = t[..., :-1]
+def idxenc2npenc(t, vocab=vocab, validate=True):
+    if validate: t = to_valid_npenc(t, vocab.npenc_range)
     t = t.copy().reshape(-1, 2)
     if t.shape[0] == 0: return
         
@@ -134,22 +155,28 @@ def to_double_stream(t, vocab=vocab, normalize=True):
         return t[:invalid_note_idx]
     return t
 
-def neg_position_enc(ssenc, vocab=vocab):
+def to_valid_npenc(t, valid_range):
+    r = valid_range
+    t = t[np.where((t >= r[0]) & (t < r[1]))]
+    if t.shape[-1] % 2 == 1: t = t[..., :-1]
+    return t
+
+def neg_position_enc(idxenc, vocab=vocab):
     "Calculates positional beat encoding."
     "Note: returns negative position to prevent index collision with vocab"
-    sep_idxs = (ssenc == vocab.sep_idx).nonzero()[0]
-    sep_idxs = sep_idxs[sep_idxs+2 < ssenc.shape[0]] # remove any indexes right before out of bounds (sep_idx+2)
-    dur_vals = ssenc[sep_idxs+1]
+    sep_idxs = (idxenc == vocab.sep_idx).nonzero()[0]
+    sep_idxs = sep_idxs[sep_idxs+2 < idxenc.shape[0]] # remove any indexes right before out of bounds (sep_idx+2)
+    dur_vals = idxenc[sep_idxs+1]
     dur_vals[dur_vals == vocab.mask_idx] = vocab.dur_range[0] # make sure masked durations are 0
     dur_vals -= vocab.dur_range[0]
     
-    posenc = np.zeros_like(ssenc)
+    posenc = np.zeros_like(idxenc)
     posenc[sep_idxs+2] = dur_vals
     return -posenc.cumsum()
 
-def position_tfm(ssenc, vocab=vocab):
-    posenc = neg_position_enc(ssenc, vocab) # using negative values so we don't interfere with indexes
-    return np.stack([ssenc, posenc], axis=1)
+def position_tfm(idxenc, vocab=vocab):
+    posenc = neg_position_enc(idxenc, vocab) # using negative values so we don't interfere with indexes
+    return np.stack([idxenc, posenc], axis=1)
 
 def tfm_transpose(x, value, note_range=vocab.note_range):
     x = x.copy()
@@ -278,25 +305,25 @@ class MusicPreloader(Callback):
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
 
-class PositionProcessor(PreProcessor):
-    "`PreProcessor` that opens the filenames and read the texts."
-    def process_one(self,item):
-        item = position_tfm(item)
-        return item
-
 class IndexEncodeProcessor(PreProcessor):
     "`PreProcessor` that transforms numpy files to indexes for training"
     def __init__(self, ds:ItemList=None, vocab:MusicVocab=None):
         self.vocab = ifnone(vocab, ds.vocab if ds is not None else None)
 
     def process_one(self,item):
-        return to_single_stream(item, vocab=self.vocab)
+        return npenc2idxenc(item, vocab=self.vocab)
     
     def process(self, ds):
         if self.vocab is None: self.vocab = MusicVocab.create()
         ds.vocab = self.vocab
         super().process(ds)
         
+class PositionProcessor(IndexEncodeProcessor):
+    "`PreProcessor` that opens the filenames and read the texts."
+    def process_one(self,item):
+        item = position_tfm(item, vocab=self.vocab)
+        return item
+
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
