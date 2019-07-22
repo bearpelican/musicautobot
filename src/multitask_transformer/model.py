@@ -1,10 +1,9 @@
 from fastai.basics import *
 from fastai.text.models.transformer import Activation, PositionalEncoding, feed_forward, init_transformer, _line_shift
 from fastai.text.models.awd_lstm import RNNDropout
-from .predict import *
 from ..utils.attention_mask import *
 
-def get_mlm_model(vocab_size:int, config:dict=None, drop_mult:float=1., pad_idx=None):
+def get_multitask_model(vocab_size:int, config:dict=None, drop_mult:float=1., pad_idx=None):
     "Create a language model from `arch` and its `config`, maybe `pretrained`."
     for k in config.keys(): 
         if k.endswith('_p'): config[k] *= drop_mult
@@ -16,18 +15,6 @@ def get_mlm_model(vocab_size:int, config:dict=None, drop_mult:float=1., pad_idx=
     head = MLMLinearDecoder(n_hid, vocab_size, tie_encoder=embed.embed, **config)
     model = MultiTransformer(encoder, decoder, head, mem_len=mem_len)
     return model.apply(init_transformer)
-
-
-def mlm_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pretrained:bool=False,
-                        pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
-    "Create a `Learner` with a language model from `data` and `arch`."
-    vocab = data.vocab
-    vocab_size = len(vocab)
-    model = get_mlm_model(vocab_size, config=config, drop_mult=drop_mult, pad_idx=vocab.pad_idx)
-    metrics = [partial(m, pad_idx=vocab.pad_idx) for m in [mask_acc, lm_acc, c2m_acc, m2c_acc]]
-    loss_func = MultiLoss(ignore_index=data.vocab.pad_idx)
-    learn = MultitaskLearner(data, model, loss_func=loss_func, metrics=metrics, **learn_kwargs)
-    return learn
 
 class MultiTransformer(nn.Module):
     "Multitask Transformer for training mask, next word, and sequence 2 sequence"
@@ -293,76 +280,3 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         attn_prob = self.drop_att(F.softmax(attn_score, dim=-1))
         attn_vec = torch.matmul(attn_prob, wv)
         return attn_vec.permute(0, 2, 1, 3).contiguous().view(bs, x_len, -1)
-    
-
-
-
-# MODEL LOADING
-
-class MLMTrainer(LearnerCallback):
-    "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
-    def __init__(self, learn:Learner, dataloaders=None, starting_mask_window=1):
-        super().__init__(learn)
-        self.count = 1
-        self.mw_start = starting_mask_window
-        self.dataloaders = dataloaders
-
-    def on_epoch_begin(self, **kwargs):
-        "Reset the hidden state of the model."
-        model = get_model(self.learn.model)
-        model.reset()
-        model.encoder.mask_size = max(self.count+self.mw_start, 100)
-        
-    def on_epoch_end(self, last_metrics, **kwargs):
-        "Finish the computation and sends the result to the Recorder."
-        if self.dataloaders is not None: 
-            self.learn.data = self.dataloaders[self.count % len(self.dataloaders)]
-        self.count += 1
-
-
-# LOSS AND METRICS
-
-class MultiLoss():
-    def __init__(self, ignore_index=None):
-        "Loss mult - Mask, NextWord, Seq2Seq"
-        self.loss = CrossEntropyFlat(ignore_index=ignore_index)
-        
-    def __call__(self, inputs:Dict[str,Tensor], targets:Dict[str,Tensor])->Rank0Tensor:
-        losses = [self.loss(inputs[key], target) for key,target in targets.items()]
-        return sum(losses)
-    
-def acc_ignore_pad(input:Tensor, targ:Tensor, pad_idx)->Rank0Tensor:
-    if input is None or targ is None: return None
-    n = targ.shape[0]
-    input = input.argmax(dim=-1).view(n,-1)
-    targ = targ.view(n,-1)
-    mask = targ != pad_idx
-    return (input[mask]==targ[mask]).float().mean()
-
-# def acc_index(inputs, targets, key=None, pad_idx=vocab.pad_idx):
-#     return acc_ignore_pad(inputs.get(key), targets.get(key), pad_idx)
-    
-def mask_acc(inputs, targets, pad_idx): return acc_index(inputs.get(key), targets.get(key), 'lm', pad_idx)
-def lm_acc(inputs, targets, pad_idx): return acc_index(inputs.get(key), targets.get(key), 'msk', pad_idx)
-def c2m_acc(inputs, targets, pad_idx): return acc_index(inputs.get(key), targets.get(key), 'c2m', pad_idx)
-def m2c_acc(inputs, targets, pad_idx): return acc_index(inputs.get(key), targets.get(key), 'm2c', pad_idx)
-
-
-class AverageMultiMetric(AverageMetric):
-    "Updated fastai.AverageMetric to support multi task metrics."
-    def on_batch_end(self, last_output, last_target, **kwargs):
-        "Update metric computation with `last_output` and `last_target`."
-        if not is_listy(last_target): last_target=[last_target]
-        val = self.func(last_output, *last_target)
-        if val is None: return
-        self.count += first_el(last_target).size(0)
-        if self.world:
-            val = val.clone()
-            dist.all_reduce(val, op=dist.ReduceOp.SUM)
-            val /= self.world
-        self.val += first_el(last_target).size(0) * val.detach().cpu()
-
-    def on_epoch_end(self, last_metrics, **kwargs):
-        "Set the final result in `last_metrics`."
-        if self.count == 0: return add_metrics(last_metrics, 0)
-        return add_metrics(last_metrics, self.val/self.count)

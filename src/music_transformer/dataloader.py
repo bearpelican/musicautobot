@@ -20,6 +20,7 @@ class MusicDataBunch(DataBunch):
         datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, **kwargs) 
                     for i,ds in enumerate(datasets)]
         val_bs = bs
+        dl_tfms = [partially_apply_vocab(tfm, train_ds.vocab) for tfm in listify(dl_tfms)]
         dls = [DataLoader(d, b, shuffle=shuffle_dl) for d,b in zip(datasets, (bs,val_bs,val_bs,val_bs)) if d is not None]
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     
@@ -30,6 +31,11 @@ class MusicDataBunch(DataBunch):
                 .split_by_rand_pct(split_pct, seed=6)
                 .label_const(label_cls=LMLabelList))
         return src.databunch(**kwargs)
+
+def partially_apply_vocab(tfm, vocab):
+    if 'vocab' in inspect.getfullargspec(tfm).args:
+        return partial(tfm, vocab=vocab)
+    return tfm
     
 class MusicItemList(ItemList):
     _bunch = MusicDataBunch

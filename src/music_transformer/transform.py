@@ -3,24 +3,25 @@ import numpy as np
 import torch
 
 class MusicItem():
-    def __init__(self, item, vocab):
+    def __init__(self, item, vocab, stream=None):
         self.data = item
         self.vocab = vocab
-        self.stream = None
-    def __repr__(self): return self.data[:10]
+        self._stream = stream
+    def __repr__(self): return vocab.textify(self.data)
 
     @classmethod
     def from_file(cls, midi_file, vocab):
-        return MusicItem(midi2idxenc(midi_file, vocab), vocab)
+        return MusicItem(midi2idxenc(midi_file, vocab), vocab, file2stream(midi))
         
     @classmethod
     def from_npenc(cls, npenc, vocab):
         return MusicItem(npenc2idxenc(npenc, vocab), vocab)
 
-    def to_stream(self, bpm=120):
-        if self.stream is None: 
-            self.stream = idxenc2stream(self.data, self.vocab, bpm=bpm)
-        return self.stream
+    @property
+    def stream(self, bpm=120):
+        if self._stream is None: 
+            self._stream = idxenc2stream(self.data, self.vocab, bpm=bpm)
+        return self._stream
 
     def to_tensor(self, device=None):
         t = torch.tensor(self.data)
@@ -34,11 +35,11 @@ class MusicItem():
     def to_npenc(self):
         return idxenc2npenc(self.data)
 
-    def show_score(self):
-        self.to_stream().show()
-
-    def play(self): self.to_stream().show('midi')
-    def show_midi(self): self.to_stream().show('midi')
+    def show(self, format:str=None):
+        return self.stream.show(format)
+    def show_score(self): self.stream.show()
+    def show_midi(self): self.stream.show('midi')
+    def play(self): self.stream.show('midi')
 
     def trim_to_beat(self, beat):
         return MusicItem(trim_tfm(self.data, self.vocab, beat), self.vocab)

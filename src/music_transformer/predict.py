@@ -104,3 +104,17 @@ class MusicLearner(LanguageLearner):
                 x = x.new_tensor([idx])
         return np.array(new_idx)
     
+
+# For vue app?
+# NOTE: looks like npenc does not include the separator. 
+# This means we don't have to remove the last (separator) step from the seed in order to keep predictions
+# def predict_from_midi(learn, midi=None, n_words=600, 
+#                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, **kwargs):
+#     seed_np = midi2npenc(midi, skip_last_rest=True) # music21 can handle bytes directly
+#     xb = torch.tensor(to_single_stream(seed_np))[None]
+#     pred, seed = learn.predict_topk(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
+#     seed = to_double_stream(seed)
+#     pred = to_double_stream(pred)
+#     full = np.concatenate((seed,pred), axis=0)
+    
+#     return pred, seed, full
