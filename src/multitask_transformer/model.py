@@ -91,8 +91,8 @@ class TransformerEmbedding(nn.Module):
         self.pos_enc = PositionalEncoding(emb_sz)
         self.initrange = 0.05
         self.beat_len, self.max_bar_len = beat_len, max_bar_len
-        self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0) # negative pad
-        self.bar_enc = nn.Embedding(max_bar_len, emb_sz, padding_idx=0) # negative pad
+        self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0)
+        self.bar_enc = nn.Embedding(max_bar_len, emb_sz, padding_idx=0)
 
         self.beat_enc.weight.data.uniform_(-self.initrange, self.initrange)
         self.bar_enc.weight.data.uniform_(-self.initrange, self.initrange)
@@ -101,10 +101,7 @@ class TransformerEmbedding(nn.Module):
         self.drop = nn.Dropout(embed_p)
         self.mem_len = mem_len
     
-    def forward(self, inp, neg_pos_enc):
-        pe = -neg_pos_enc.clone()
-        pe[pe==-self.pad_idx] = 0
-        
+    def forward(self, inp, pos):
         beat_enc = self.beat_enc(pe % self.beat_len)
         bar_pos = pe // self.beat_len % self.max_bar_len
         bar_pos[bar_pos >= self.max_bar_len] = self.max_bar_len - 1

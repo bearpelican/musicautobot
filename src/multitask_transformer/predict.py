@@ -60,7 +60,7 @@ class MultitaskLearner(Learner):
                 if new_idx and new_idx[-1]==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
                     sep_count += duration
-                    last_pos = last_pos - duration # position is negative
+                    last_pos = last_pos + duration
 
                 if idx==vocab.bos_idx: 
                     print('Predicted BOS token. Returning prediction...')
@@ -122,7 +122,7 @@ class MultitaskLearner(Learner):
         inp, inp_pos = input_item.to_tensor()[None], input_item.get_pos_tensor()[None]
         x_enc = self.model.encoder(inp, inp_pos)
 
-        max_pos = input_item.position[-1] - SAMPLE_FREQ * 4 # Only predict until both tracks/parts have the same length
+        max_pos = input_item.position[-1] + SAMPLE_FREQ * 4 # Only predict until both tracks/parts have the same length
 
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
@@ -146,7 +146,7 @@ class MultitaskLearner(Learner):
 
                 if targ and targ[-1]==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
-                    last_pos = last_pos - duration # position is negative
+                    last_pos = last_pos + duration
                     if last_pos < max_pos:
                         print('Predicted past counter-part length. Returning early')
                         break

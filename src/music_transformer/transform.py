@@ -47,7 +47,7 @@ class MusicItem():
     
     @property
     def position(self): 
-        self._position = neg_position_enc(self.data, self.vocab) if self._position is None else self._position
+        self._position = position_enc(self.data, self.vocab) if self._position is None else self._position
         return self._position
     
     def get_pos_tensor(self, device=None): return to_tensor(self.position, device)
@@ -124,7 +124,7 @@ def to_tensor(t, device=None):
             
 def trim_tfm(idxenc, vocab, to_beat=None, sample_freq=SAMPLE_FREQ):
     if to_beat is None: return idxenc
-    pos = -neg_position_enc(idxenc, vocab)
+    pos = position_enc(idxenc, vocab)
     cutoff = np.searchsorted(pos, to_beat * sample_freq)
     return idxenc[:cutoff]
     
@@ -181,9 +181,8 @@ def to_valid_npenc(t, valid_range):
     if t.shape[-1] % 2 == 1: t = t[..., :-1]
     return t
 
-def neg_position_enc(idxenc, vocab):
+def position_enc(idxenc, vocab):
     "Calculates positional beat encoding."
-    "Note: returns negative position to prevent index collision with vocab"
     sep_idxs = (idxenc == vocab.sep_idx).nonzero()[0]
     sep_idxs = sep_idxs[sep_idxs+2 < idxenc.shape[0]] # remove any indexes right before out of bounds (sep_idx+2)
     dur_vals = idxenc[sep_idxs+1]
@@ -195,7 +194,7 @@ def neg_position_enc(idxenc, vocab):
     return -posenc.cumsum()
 
 def position_tfm(idxenc, vocab):
-    posenc = neg_position_enc(idxenc, vocab) # using negative values so we don't interfere with indexes
+    posenc = position_enc(idxenc, vocab)
     return np.stack([idxenc, posenc], axis=1)
 
 def tfm_transpose(x, value, vocab):
