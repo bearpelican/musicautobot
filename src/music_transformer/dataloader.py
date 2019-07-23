@@ -2,9 +2,9 @@
 from fastai.basics import *
 # from fastai.basic_data import DataBunch
 from fastai.text.data import LMLabelList
-# from ..numpy_encode import *
 from .transform import *
-# Additional encoding
+from ..vocab import MusicVocab
+
 
 class MusicDataBunch(DataBunch):
     "Create a `TextDataBunch` suitable for training a language model."
@@ -25,9 +25,10 @@ class MusicDataBunch(DataBunch):
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     
     @classmethod    
-    def from_folder(cls, path:PathOrStr, processors=None, extensions='.npy', split_pct=0.1, **kwargs):
+    def from_folder(cls, path:PathOrStr, processors=None, extensions='.npy', split_pct=0.1, vocab=None, **kwargs):
         files = get_files(path, extensions=extensions, recurse=True);
-        src = (MusicItemList(items=files, path=path, processor=processors)
+        if vocab is None: vocab = MusicVocab.create()
+        src = (MusicItemList(items=files, path=path, processor=processors, vocab=vocab)
                 .split_by_rand_pct(split_pct, seed=6)
                 .label_const(label_cls=LMLabelList))
         return src.databunch(**kwargs)
@@ -39,27 +40,34 @@ def partially_apply_vocab(tfm, vocab):
     
 class MusicItemList(ItemList):
     _bunch = MusicDataBunch
+    
+    def __init__(self, items:Iterator, vocab:MusicVocab=None, **kwargs):
+        super().__init__(items, **kwargs)
+        self.vocab = vocab
+        self.copy_new += ['vocab']
+    
+    def get(self, i):
+        o = super().get(i)
+        if is_pos_enc(o): 
+            return MusicItem(o[0], vocab=self.vocab, position=o[1])
+        return MusicItem(o, self.vocab)
+
+def is_pos_enc(idxenc):
+    return idxenc.dtype == np.object and idxenc.shape == (2,)
 
 class IndexEncodeProcessor(PreProcessor):
     "`PreProcessor` that transforms numpy files to indexes for training"
-    def __init__(self, ds:ItemList=None, vocab=None):
-        self.vocab = ifnone(vocab, ds.vocab if ds is not None else None)
-
     def process_one(self,item):
         return npenc2idxenc(item, vocab=self.vocab)
     
     def process(self, ds):
-        if self.vocab is None: 
-            from ..vocab import MusicVocab
-            self.vocab = MusicVocab.create()
-        ds.vocab = self.vocab
+        self.vocab = ds.vocab
         super().process(ds)
         
 class PositionProcessor(IndexEncodeProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
-        item = position_tfm(item, vocab=self.vocab)
-        return item
+        return item, neg_position_enc(item, self.vocab)
 
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
@@ -81,6 +89,7 @@ class MusicPreloader(Callback):
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
                  shuffle:bool=False, y_offset:int=1, 
                  transpose_range=(0,24), transpose_p=0.5,
+                 encode_position=False,
                  **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
         self.vocab = self.dataset.vocab
@@ -89,6 +98,7 @@ class MusicPreloader(Callback):
         self.y_offset = y_offset
         
         self.transpose_range,self.transpose_p = transpose_range,transpose_p
+        self.encode_position = encode_position
         self.bptt_len = self.bptt
         
         self.allocate_buffers() # needed for valid_dl on distributed training - otherwise doesn't get initialized on first epoch
@@ -106,7 +116,10 @@ class MusicPreloader(Callback):
         "Create the ragged array that will be filled when we ask for items."
         if self.ite_len is None: len(self)
         self.idx   = MusicPreloader.CircularIndex(len(self.dataset.x), not self.backwards)
-        self.batch = np.zeros((self.bs, self.bptt+self.y_offset) + self.dataset.x[0].shape[1:], dtype=np.int64)
+        
+        # batch shape = (bs, bptt, 2 - [index, pos]) if encode_position. Else - (bs, bptt)
+        buffer_len = (2) if self.encode_position else ()
+        self.batch = np.zeros((self.bs, self.bptt+self.y_offset) + buffer_len, dtype=np.int64)
         self.batch_x, self.batch_y = self.batch[:,0:self.bptt], self.batch[:,self.y_offset:self.bptt+self.y_offset] 
         #ro: index of the text we're at inside our datasets for the various batches
         self.ro    = np.zeros(self.bs, dtype=np.int64)
@@ -128,7 +141,6 @@ class MusicPreloader(Callback):
         if self.idx is None: self.allocate_buffers()
         elif self.shuffle:   
             self.ite_len = None
-            len(self)
             self.idx.shuffle()
             self.transpose_values = self.get_random_transpose_values()
             self.bptt_len = self.bptt
@@ -166,9 +178,14 @@ class MusicPreloader(Callback):
             ro   += 1 
             ix    = idx[ro]
             
-            rag   = items[ix]
+            item = items[ix]
             if self.transpose_values is not None: 
-                rag = tfm_transpose(rag, self.transpose_values[ix].item(), self.vocab)
+                item = item.transpose(self.transpose_values[ix].item())
+                
+            if self.encode_position:
+                rag = np.stack([item.data, item.position], axis=1)
+            else:
+                rag = item.data
                 
             if forward:
                 ri = 0 if ibuf else ri

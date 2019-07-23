@@ -1,6 +1,6 @@
 from fastai.basics import *
 from .numpy_encode import *
-from .music_transformer import MusicItem
+from .music_transformer.transform import MusicItem
 
 BOS = 'xxbos'
 PAD = 'xxpad'

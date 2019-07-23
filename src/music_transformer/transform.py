@@ -5,11 +5,12 @@ import torch
 # MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
 
 class MusicItem():
-    def __init__(self, item, vocab, stream=None):
-        self.data = item
+    def __init__(self, data, vocab, stream=None, position=None):
+        self.data = data
         self.vocab = vocab
         self._stream = stream
     def __repr__(self): return vocab.textify(self.data)
+    def __len__(self): return len(self.data)
 
     @classmethod
     def from_file(cls, midi_file, vocab):
@@ -32,7 +33,8 @@ class MusicItem():
     def to_tensor(self, device=None):
         return to_tensor(self.data, device)
     
-    def get_pos(self): return neg_position_enc(self.data, self.vocab)
+    @property
+    def position(self): return neg_position_enc(self.data, self.vocab)
     def get_pos_tensor(self, device=None): return to_tensor(self.get_pos(), device)
 
     def to_npenc(self):
@@ -46,6 +48,10 @@ class MusicItem():
 
     def trim_to_beat(self, beat):
         return MusicItem(trim_tfm(self.data, self.vocab, beat), self.vocab)
+    
+    def transpose(self, interval):
+        return MusicItem(tfm_transpose(self.data, interval, self.vocab), self.vocab)
+        
 
 def to_tensor(t, device=None):
     t = t if isinstance(t, torch.Tensor) else torch.tensor(t)
