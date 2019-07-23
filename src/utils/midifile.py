@@ -1,7 +1,6 @@
 "Transform functions for raw midi files"
 from enum import Enum
 import music21
-from src.encode_data import file2mf
 
 PIANO_TYPES = list(range(24)) + list(range(80, 96)) # Piano, Synths
 PLUCK_TYPES = list(range(24, 40)) + list(range(104, 112)) # Guitar, Bass, Ethnic
@@ -35,6 +34,11 @@ def file2mf(fp):
     return mf
 
 def mf2stream(mf): return music21.midi.translate.midiFileToStream(mf)
+
+def is_empty_midi(fp):
+    if fp is None: return False
+    mf = file2mf(fp)
+    return not any([t.hasNotes() for t in mf.tracks])
 
 def num_piano_tracks(fp):
     music_file = file2mf(fp)

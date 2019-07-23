@@ -2,6 +2,8 @@ from ..numpy_encode import *
 import numpy as np
 import torch
 
+# MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
+
 class MusicItem():
     def __init__(self, item, vocab, stream=None):
         self.data = item
@@ -11,11 +13,15 @@ class MusicItem():
 
     @classmethod
     def from_file(cls, midi_file, vocab):
-        return MusicItem(midi2idxenc(midi_file, vocab), vocab, file2stream(midi))
+        return MusicItem(midi2idxenc(midi_file, vocab), vocab, file2stream(midi_file))
         
     @classmethod
     def from_npenc(cls, npenc, vocab):
         return MusicItem(npenc2idxenc(npenc, vocab), vocab)
+    
+#     @classmethod
+#     def empty(cls, vocab, seq_type:str=None):
+#         return MusicItem(np.array([vocab.bos_idx, vocab.pad_idx])
 
     @property
     def stream(self, bpm=120):
@@ -24,13 +30,10 @@ class MusicItem():
         return self._stream
 
     def to_tensor(self, device=None):
-        t = torch.tensor(self.data)
-        if device is None and torch.cuda.is_available(): t = t.cuda()
-        else: t.to(device)
-        return t
-
-    def get_pos(self):
-        return neg_position_enc(self.data, self.vocab)
+        return to_tensor(self.data, device)
+    
+    def get_pos(self): return neg_position_enc(self.data, self.vocab)
+    def get_pos_tensor(self, device=None): return to_tensor(self.get_pos(), device)
 
     def to_npenc(self):
         return idxenc2npenc(self.data)
@@ -44,6 +47,12 @@ class MusicItem():
     def trim_to_beat(self, beat):
         return MusicItem(trim_tfm(self.data, self.vocab, beat), self.vocab)
 
+def to_tensor(t, device=None):
+    t = t if isinstance(t, torch.Tensor) else torch.tensor(t)
+    if device is None and torch.cuda.is_available(): t = t.cuda()
+    else: t.to(device)
+    return t
+            
 def trim_tfm(idxenc, vocab, to_beat=None, sample_freq=SAMPLE_FREQ):
     if to_beat is None: return idxenc
     pos = -neg_position_enc(idxenc, vocab)

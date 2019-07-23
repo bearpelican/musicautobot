@@ -9,6 +9,7 @@
 from fastai.basics import *
 from ..vocab import *
 from ..utils.top_k_top_p import top_k_top_p
+from ..utils.midifile import is_empty_midi
 from ..music_transformer.transform import *
 from .model import get_multitask_model
 from .dataloader import *
@@ -182,6 +183,7 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
 def nw_predict_from_midi(learn, midi=None, n_words=600, 
                       temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
     vocab = learn.data.vocab
+    
     try:
         seed_np = midi2idxenc(midi, vocab=vocab) # music21 can handle bytes directly
         if seed_len is not None:
