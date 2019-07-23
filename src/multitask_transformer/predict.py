@@ -26,17 +26,16 @@ def multitask_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.
     return learn
 
 class MultitaskLearner(Learner):
-    def predict_nw(self, xb:Tensor, n_words:int=128,
+    def predict_nw(self, item:MusicItem, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=30, top_p=0.6):
         "Return the `n_words` that come after `text`."
         self.model.reset()
         new_idx = []
         vocab = self.data.vocab
-        xb = xb.squeeze()
-        pos = torch.tensor(neg_position_enc(xb.cpu().numpy(), vocab), device=xb.device)
-        last_pos = pos[-1]
-        yb = torch.tensor([0])
+        x, pos = item.to_tensor(), item.get_pos_tensor()
+        last_pos = pos[-1] if len(pos) else 0
+        y = torch.tensor([0])
 
         sep_count = 0
         bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
@@ -44,7 +43,7 @@ class MultitaskLearner(Learner):
 
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
-                batch = { 'lm': { 'x': xb[None], 'pos': pos[None] } }, yb
+                batch = { 'lm': { 'x': x[None], 'pos': pos[None] } }, y
                 res = self.pred_batch(batch=batch)['lm'][-1][-1]
                 res = F.softmax(res, dim=-1)
 
@@ -68,24 +67,22 @@ class MultitaskLearner(Learner):
                     break
 
                 new_idx.append(idx)
-                xb = xb.new_tensor([idx])
+                x = x.new_tensor([idx])
                 pos = pos.new_tensor([last_pos])
-        return np.array(new_idx)
+        return MusicItem(np.array(new_idx), vocab)
 
-    def predict_mask(self, x:Tensor, pos=None,
+    def predict_mask(self, masked_item:MusicItem, pos=None,
                     temperatures:float=(1.0,1.0),
                     top_k=20, top_p=0.8):
-        x = x.clone().squeeze()
+        x = masked_item.to_tensor()
+        pos = masked_item.get_pos_tensor()
         y = torch.tensor([0])
         vocab = self.data.vocab
-        if pos is None:
-            pos = torch.tensor(neg_position_enc(x.cpu().numpy(), vocab), device=x.device)
         self.model.reset()
         mask_idxs = (x == vocab.mask_idx).nonzero().view(-1)
 
         with torch.no_grad():
             for midx in progress_bar(mask_idxs, leave=True):
-
                 # Using original positions, otherwise model gets too off track
         #         pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
 
@@ -109,8 +106,7 @@ class MultitaskLearner(Learner):
 
                 x[midx] = idx
 
-        return x.cpu().numpy()
-
+        return MusicItem(x.cpu().numpy(), vocab)
 
     def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
                     temperatures:float=(1.0,1.0),
@@ -180,21 +176,18 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
 
     return chordarr_comb
 
-def nw_predict_from_midi(learn, midi=None, n_words=600, 
+
+def nw_predict_from_midi(learn, midi=None, n_words=400, 
                       temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
     vocab = learn.data.vocab
     
-    try:
-        seed_np = midi2idxenc(midi, vocab=vocab) # music21 can handle bytes directly
-        if seed_len is not None:
-            seed_np = trim_tfm(seed_np, vocab=vocab, to_beat=seed_len)
-    except IndexError:
-        # midi file has empty notes/tracks. Create empty stream
-        seed_np = npenc2idxenc(np.zeros((0, 2), dtype=int))
-    x = torch.tensor(seed_np)
-    if torch.cuda.is_available(): x = x.cuda()
-    pred = learn.predict_nw(x, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-    return np.concatenate((seed_np,pred), axis=0)
+    seed = MusicItem.from_file(midi, learn.data.vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
+    if seed_len is not None: seed = seed.trim_to_beat(seed_len)
+        
+    pred = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
+    return seed.append(pred)
+#     return np.concatenate((seed_np,pred), axis=0)
+
 
 def mask_predict_from_midi(learn, midi=None,
                            temperatures=(1.0,1.0), top_k=30, top_p=0.7, 
@@ -210,12 +203,6 @@ def mask_predict_from_midi(learn, midi=None,
         pos = pos.cuda()
     pred = learn.predict_mask(x_msk, pos, temperatures=temperatures, top_k=top_k, top_p=top_p)
     return pred
-
-# Utility for predictions
-def mask_input(xb, mask_range, replacement_idx, clone=True):
-    if clone: xb = xb.clone()
-    xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = replacement_idx
-    return xb
 
 
 # LOSS AND METRICS

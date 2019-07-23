@@ -25,10 +25,12 @@ class MusicDataBunch(DataBunch):
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     
     @classmethod    
-    def from_folder(cls, path:PathOrStr, processors=None, extensions='.npy', split_pct=0.1, vocab=None, **kwargs):
+    def from_folder(cls, path:PathOrStr, processors=None, extensions='.npy', split_pct=0.1, 
+                    vocab=None, list_cls=None, **kwargs):
         files = get_files(path, extensions=extensions, recurse=True);
         if vocab is None: vocab = MusicVocab.create()
-        src = (MusicItemList(items=files, path=path, processor=processors, vocab=vocab)
+        if list_cls is None: list_cls = MusicItemList
+        src = (list_cls(items=files, path=path, processor=processors, vocab=vocab)
                 .split_by_rand_pct(split_pct, seed=6)
                 .label_const(label_cls=LMLabelList))
         return src.databunch(**kwargs)
@@ -49,26 +51,23 @@ class MusicItemList(ItemList):
     def get(self, i):
         o = super().get(i)
         if is_pos_enc(o): 
-            return MusicItem(o[0], vocab=self.vocab, position=o[1])
+            return MusicItem.from_idx(o, self.vocab)
         return MusicItem(o, self.vocab)
 
 def is_pos_enc(idxenc):
+    if len(idxenc.shape) == 2 and idxenc.shape[0] == 2: return True
     return idxenc.dtype == np.object and idxenc.shape == (2,)
 
-class IndexEncodeProcessor(PreProcessor):
+class MusicItemProcessor(PreProcessor):
     "`PreProcessor` that transforms numpy files to indexes for training"
     def process_one(self,item):
-        return npenc2idxenc(item, vocab=self.vocab)
+        item = MusicItem.from_npenc(item, vocab=self.vocab)
+        return item.to_idx()
     
     def process(self, ds):
         self.vocab = ds.vocab
         super().process(ds)
         
-class PositionProcessor(IndexEncodeProcessor):
-    "`PreProcessor` that opens the filenames and read the texts."
-    def process_one(self,item):
-        return item, neg_position_enc(item, self.vocab)
-
 class OpenNPFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
     def process_one(self,item):
@@ -118,7 +117,7 @@ class MusicPreloader(Callback):
         self.idx   = MusicPreloader.CircularIndex(len(self.dataset.x), not self.backwards)
         
         # batch shape = (bs, bptt, 2 - [index, pos]) if encode_position. Else - (bs, bptt)
-        buffer_len = (2) if self.encode_position else ()
+        buffer_len = (2,) if self.encode_position else ()
         self.batch = np.zeros((self.bs, self.bptt+self.y_offset) + buffer_len, dtype=np.int64)
         self.batch_x, self.batch_y = self.batch[:,0:self.bptt], self.batch[:,self.y_offset:self.bptt+self.y_offset] 
         #ro: index of the text we're at inside our datasets for the various batches

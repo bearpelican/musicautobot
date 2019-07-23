@@ -1,7 +1,58 @@
 from fastai.basics import *
 from ..vocab import *
 from ..music_transformer.transform import *
+from ..music_transformer.dataloader import MusicDataBunch, MusicItemList
 # Sequence 2 Sequence Translate
+
+class MultitrackItem():
+    def __init__(self, melody:MusicItem, chords:MusicItem, stream=None):
+        self.melody,self.chords = melody, chords
+        self.vocab = melody.vocab
+        self._stream = stream
+        
+    @classmethod
+    def from_file(cls, midi_file, vocab):
+        stream = file2stream(midi_file)
+        num_parts = len(stream.parts)
+        if num_parts > 2: 
+            raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
+        elif num_parts == 1: 
+            print('Warning: only 1 track found. Inferring melody/chords')
+            stream = separate_melody_chord(stream)
+            
+        mpart, cpart = stream2npenc_parts(stream)
+        return cls.from_npenc_parts(mpart, cpart, vocab)
+        
+    @classmethod
+    def from_npenc_parts(cls, mpart, cpart, vocab):
+        mpart = partenc2seq2seq(mpart, part_type=MSEQ, vocab=vocab)
+        cpart = partenc2seq2seq(cpart, part_type=CSEQ, vocab=vocab)
+        return MultitrackItem(MusicItem(mpart, vocab), MusicItem(cpart, vocab))
+        
+    @classmethod
+    def from_idx(cls, item, vocab):
+        m, c = item
+        return MultitrackItem(MusicItem.from_idx(m, vocab), MusicItem.from_idx(c, vocab))
+    def to_idx(self): return np.array((self.melody.to_idx(), self.chords.to_idx()))
+    
+    @property
+    def stream(self, bpm=120):
+        if self._stream is None:
+            ps = self.melody.to_npenc(), self.chords.to_npenc()
+            ps = [npenc2chordarr(p) for p in ps]
+            chordarr = chordarr_combine_parts(ps)
+            self._stream = chordarr2stream(chordarr)
+        return self._stream
+    
+    def show(self, format:str=None):
+        return self.stream.show(format)
+    def play(self): self.stream.show('midi')
+        
+    def transpose(self, val):
+        return MultitrackItem(self.melody.transpose(val), self.chords.transpose(val))
+    def pad_to(self, val):
+        return MultitrackItem(self.melody.pad_to(val), self.chords.pad_to(val))
+    
 
 class S2SFileProcessor(PreProcessor):
     "`PreProcessor` that opens the filenames and read the texts."
@@ -17,20 +68,16 @@ class S2SFileProcessor(PreProcessor):
         ds.items = [i for i in ds.items if i is not None] # filter out None
 #         ds.items = array([self.process_one(item) for item in ds.items], dtype=np.object)
 
-class S2SPartEncProcessor(PreProcessor):
+class S2SPartsProcessor(PreProcessor):
     "Encodes midi file into 2 separate parts - melody and chords."
-    def __init__(self, ds:ItemList=None, vocab:MusicVocab=None):
-        self.vocab = ifnone(vocab, ds.vocab if ds is not None else None)
-        
-    def process_one(self,item):
+    
+    def process_one(self, item):
         m, c = item
-        m = position_tfm(partenc2seq2seq(m, MSEQ, vocab=self.vocab), self.vocab)
-        c = position_tfm(partenc2seq2seq(c, CSEQ, vocab=self.vocab), self.vocab)
-        return np.array((m, c))
+        mtrack = MultitrackItem.from_npenc_parts(m, c, vocab=self.vocab)
+        return mtrack.to_idx()
     
     def process(self, ds):
-        if self.vocab is None: self.vocab = MusicVocab.create()
-        ds.vocab = self.vocab
+        self.vocab = ds.vocab
         ds.items = [self.process_one(item) for item in ds.items]
         
 class S2SPreloader(Callback):
@@ -38,22 +85,50 @@ class S2SPreloader(Callback):
                  transpose_range=(0,12), **kwargs):
         self.dataset,self.bptt = dataset,bptt
         self.vocab = self.dataset.vocab
-        self.transpose_tfm = partial(rand_transpose_tfm, vocab=self.vocab, rand_range=transpose_range) if transpose_range is not None else None
+        self.rand_transpose = partial(rand_transpose_value, rand_range=transpose_range) if transpose_range is not None else None
         
     def __getitem__(self, k:int):
-        item,_ = self.dataset[k]
-        x,y = item
-        if self.transpose_tfm is not None:
-            x,y = self.transpose_tfm([x,y])
+        item,empty_label = self.dataset[k]
+        
+        if self.rand_transpose is not None:
+            val = self.rand_transpose()
+            item = item.transpose(val)
+        item = item.pad_to(self.bptt+1)
+        ((m_x, m_pos), (c_x, c_pos)) = item.to_idx()
+#         m_x = pad_seq(m.data, self.bptt+1, self.vocab.pad_idx)
+#         m_pos = pad_seq(m.position, self.bptt+1, 0)
+#         c_x = pad_seq(c.data, self.bptt+1, self.vocab.pad_idx)
+#         c_pos = pad_seq(c.position, self.bptt+1, 0)
+        return m_x, m_pos, c_x, c_pos
+#         return {
+#             'm': pad_seq(m.data, self.bptt+1, self.vocab.pad_idx),
+#             'm_pos': pad_seq(m.position, self.bptt+1, 0),
+#             'c': pad_seq(c.data, self.bptt+1, self.vocab.pad_idx),
+#             'c_pos': pad_seq(c.position, self.bptt+1, 0),
+#         }
         # WARNING: we are padding position encodings too. However, pos is negative, so should be fine
-        return pad_seq(x, self.bptt+1, self.vocab.pad_idx), pad_seq(y, self.bptt+1, self.vocab.pad_idx) # offset bptt for decoder shift
+#         return ,  # offset bptt for decoder shift
     
     def __len__(self):
         return len(self.dataset)
-        
+
+def rand_transpose_value(rand_range=(0,24), p=0.5):
+    if np.random.rand() < p: return np.random.randint(*rand_range)-rand_range[1]//2
+    return 0
+
+class S2SItemList(MusicItemList):
+    _bunch = MusicDataBunch
+    def get(self, i):
+        return MultitrackItem.from_idx(self.items[i], self.vocab)
+
+
 def pad_seq(seq, bptt, value):
     pad_len = max(bptt-seq.shape[0], 0)
-    return np.pad(seq, [(0, pad_len),(0,0)], 'constant', constant_values=value)[:bptt]
+    return np.pad(seq, (0, pad_len), 'constant', constant_values=value)[:bptt]
+    
+# def pad_seq(seq, bptt, value):
+#     pad_len = max(bptt-seq.shape[0], 0)
+#     return np.pad(seq, [(0, pad_len),(0,0)], 'constant', constant_values=value)[:bptt]
     
 def partenc2seq2seq(part_np, part_type, vocab, add_eos=True):
     part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
@@ -66,26 +141,26 @@ def s2s_combine2chordarr(np1, np2, vocab):
     if len(np2.shape) == 1: np2 = idxenc2npenc(np2, vocab)
     p1 = npenc2chordarr(np1)
     p2 = npenc2chordarr(np2)
-    return chordarr_combine_parts(p1, p2)
+    return chordarr_combine_parts((p1, p2))
 
-def midi_extract_melody_chords(midi, vocab):
-    stream = file2stream(midi) # 1.
-    chordarr = stream2chordarr(stream) # 2.
-    _,num_parts,_ = chordarr.shape
+# def midi_extract_melody_chords(midi, vocab):
+#     stream = file2stream(midi) # 1.
+#     parts = stream2npenc_parts(stream)
+#     num_parts = len(parts)
 
-    if num_parts == 1:
-        # if predicting melody, assume only track is chord track
-        p1, p2 = part_enc(chordarr, 0), np.zeros((0,2), dtype=int)
-        p1, p2 = (p2, p1) if pred_melody else (p1, p2)
-    elif num_parts == 2:
-        p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
-        p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
-    else:
-        raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
+#     if num_parts == 1:
+#         # if predicting melody, assume only track is chord track
+#         p1, p2 = part_enc(chordarr, 0), np.zeros((0,2), dtype=int)
+#         p1, p2 = (p2, p1) if pred_melody else (p1, p2)
+#     elif num_parts == 2:
+#         p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
+#         p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
+#     else:
+#         raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
         
-    mpart = partenc2seq2seq(p1, part_type=MSEQ, vocab=vocab)
-    cpart = partenc2seq2seq(p2, part_type=CSEQ, vocab=vocab)
-    return mpart, cpart
+#     mpart = partenc2seq2seq(p1, part_type=MSEQ, vocab=vocab)
+#     cpart = partenc2seq2seq(p2, part_type=CSEQ, vocab=vocab)
+#     return mpart, cpart
 
 
 # DATALOADING AND TRANSFORMATIONS
@@ -149,10 +224,7 @@ def mask_lm_tfm(b, vocab, p_mask=0.2):
     return x_dict, y_dict
 
 def melody_chord_tfm(b):
-    m,c = b
-    
-    m,m_pos = m[...,0], m[...,1]
-    c,c_pos = c[...,0], c[...,1]
+    m,m_pos,c,c_pos = b
     
     # offset x and y for next word prediction
     y_m = m[:,1:]

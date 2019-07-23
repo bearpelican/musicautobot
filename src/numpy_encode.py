@@ -273,15 +273,31 @@ def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
 
 # sequence 2 sequence convenience functions
 
-def chordarr_combine_parts(p1, p2):
-    max_ts = max(p1.shape[0], p2.shape[0])
-    p1w = ((0,max_ts-p1.shape[0]),(0,0),(0,0))
-    p1_pad = np.pad(p1, p1w, 'constant')
-    p2w = ((0,max_ts-p2.shape[0]),(0,0),(0,0))
-    p2_pad = np.pad(p2, p2w, 'constant')
-    chordarr_comb = np.concatenate((p1_pad, p2_pad), axis=1)
+# def chordarr_combine_parts(p1, p2):
+#     max_ts = max(p1.shape[0], p2.shape[0])
+#     p1w = ((0,max_ts-p1.shape[0]),(0,0),(0,0))
+#     p1_pad = np.pad(p1, p1w, 'constant')
+#     p2w = ((0,max_ts-p2.shape[0]),(0,0),(0,0))
+#     p2_pad = np.pad(p2, p2w, 'constant')
+#     chordarr_comb = np.concatenate((p1_pad, p2_pad), axis=1)
+#     return chordarr_comb
+
+def stream2npenc_parts(stream, sort_pitch=True):
+    chordarr = stream2chordarr(stream)
+    _,num_parts,_ = chordarr.shape
+    parts = [part_enc(chordarr, i) for i in range(num_parts)]
+    return sorted(parts, key=avg_pitch) if sort_pitch else parts
+
+def chordarr_combine_parts(parts):
+    max_ts = max([p.shape[0] for p in parts])
+    parts_padded = [pad_part_to(p, max_ts) for p in parts]
+    chordarr_comb = np.concatenate(parts_padded, axis=1)
     return chordarr_comb
 
+def pad_part_to(p, target_size):
+    pad_width = ((0,target_size-p.shape[0]),(0,0),(0,0))
+    return np.pad(p, pad_width, 'constant')
+    
 # def chordarr_extract_parts(chordarr):
 #     _,num_parts,_ = chordarr.shape
 

@@ -1,6 +1,8 @@
+from __future__ import annotations
 from ..numpy_encode import *
 import numpy as np
 import torch
+from functools import partial
 
 # MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
 
@@ -9,7 +11,8 @@ class MusicItem():
         self.data = data
         self.vocab = vocab
         self._stream = stream
-    def __repr__(self): return vocab.textify(self.data)
+        self._position = position
+    def __repr__(self): return self.vocab.textify(self.data)
     def __len__(self): return len(self.data)
 
     @classmethod
@@ -20,38 +23,95 @@ class MusicItem():
     def from_npenc(cls, npenc, vocab):
         return MusicItem(npenc2idxenc(npenc, vocab), vocab)
     
+    @classmethod
+    def from_idx(cls, item, vocab):
+        idx,pos = item
+        return MusicItem(idx, vocab=vocab, position=pos)
+    def to_idx(self): return self.data, self.position
+    
 #     @classmethod
 #     def empty(cls, vocab, seq_type:str=None):
 #         return MusicItem(np.array([vocab.bos_idx, vocab.pad_idx])
 
     @property
     def stream(self, bpm=120):
-        if self._stream is None: 
-            self._stream = idxenc2stream(self.data, self.vocab, bpm=bpm)
+        self._stream = idxenc2stream(self.data, self.vocab, bpm=bpm) if self._stream is None else self._stream
         return self._stream
 
     def to_tensor(self, device=None):
         return to_tensor(self.data, device)
     
     @property
-    def position(self): return neg_position_enc(self.data, self.vocab)
-    def get_pos_tensor(self, device=None): return to_tensor(self.get_pos(), device)
+    def position(self): 
+        self._position = neg_position_enc(self.data, self.vocab) if self._position is None else self._position
+        return self._position
+    
+    def get_pos_tensor(self, device=None): return to_tensor(self.position, device)
 
     def to_npenc(self):
-        return idxenc2npenc(self.data)
+        return idxenc2npenc(self.data, self.vocab)
 
     def show(self, format:str=None):
         return self.stream.show(format)
-    def show_score(self): self.stream.show()
-    def show_midi(self): self.stream.show('midi')
     def play(self): self.stream.show('midi')
+        
+    @property
+    def new(self):
+        return partial(type(self), vocab=self.vocab)
 
     def trim_to_beat(self, beat):
-        return MusicItem(trim_tfm(self.data, self.vocab, beat), self.vocab)
+        return self.new(trim_tfm(self.data, self.vocab, beat))
     
     def transpose(self, interval):
-        return MusicItem(tfm_transpose(self.data, interval, self.vocab), self.vocab)
+        return self.new(tfm_transpose(self.data, interval, self.vocab), position=self._position)
+    
+    def append(self, item:MusicItem):
+        return self.new(np.concatenate((self.data, item.data), axis=0))
+    
+    def mask_notes(self):
+        masked_data = mask_input(self.data, self.vocab.note_range, self.vocab.mask_idx)
+        return self.new(masked_data, self.position)
+    
+    def mask_duration(self, keep_position_enc=True):
+        masked_data = mask_input(self.data, self.vocab.dur_range, self.vocab.mask_idx)
+        if keep_position_enc: return self.new(masked_data, position=self.position)
+        return self.new(masked_data)
+    
+    def pad_to(self, bptt):
+        data = pad_seq(self.data, bptt, self.vocab.pad_idx)
+        pos = pad_seq(self.position, bptt, 0)
+        return self.new(data, stream=self._stream, position=pos)
         
+
+def pad_seq(seq, bptt, value):
+    pad_len = max(bptt-seq.shape[0], 0)
+    return np.pad(seq, (0, pad_len), 'constant', constant_values=value)[:bptt]
+
+# def partenc2seq2seq(part_np, part_type, vocab, add_eos=True):
+#     part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
+#     s2s_out = npenc2idxenc(part_np, vocab=vocab, start_seq=part_meta)
+#     if add_eos: s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
+#     return s2s_out
+
+# def s2s_combine2chordarr(np1, np2, vocab):
+#     if len(np1.shape) == 1: np1 = idxenc2npenc(np1, vocab)
+#     if len(np2.shape) == 1: np2 = idxenc2npenc(np2, vocab)
+#     p1 = npenc2chordarr(np1)
+#     p2 = npenc2chordarr(np2)
+#     return chordarr_combine_parts(p1, p2)
+     
+# def stream2melody_chord(stream, vocab):
+#     chordarr = stream2chordarr(stream) # 2.
+#     _,num_parts,_ = chordarr.shape
+#     if num_parts != 2: 
+#         raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
+    
+#         p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
+#         sorted(avg_pitch
+#         p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
+#     mpart = partenc2seq2seq(p1, part_type=MSEQ, vocab=vocab)
+#     cpart = partenc2seq2seq(p2, part_type=CSEQ, vocab=vocab)
+#     return mpart, cpart
 
 def to_tensor(t, device=None):
     t = t if isinstance(t, torch.Tensor) else torch.tensor(t)
@@ -131,10 +191,16 @@ def tfm_transpose(x, value, vocab):
     x[(x >= vocab.note_range[0]) & (x < vocab.note_range[1])] += value
     return x
 
-def rand_transpose_tfm(t, vocab, rand_range=(0,24), p=0.5):
-    if np.random.rand() < p:
-        transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
-        if isinstance(t, (list, tuple)) and len(t) == 2: 
-            return [tfm_transpose(x, transpose_value, vocab) for x in t]
-        return tfm_transpose(t, transpose_value, vocab)
-    return t
+# Utility for predictions
+def mask_input(xb, mask_range, replacement_idx):
+    xb = xb.copy()
+    xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = replacement_idx
+    return xb
+
+# def rand_transpose_tfm(t, vocab, rand_range=(0,24), p=0.5):
+#     if np.random.rand() < p:
+#         transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
+#         if isinstance(t, (list, tuple)) and len(t) == 2: 
+#             return [tfm_transpose(x, transpose_value, vocab) for x in t]
+#         return tfm_transpose(t, transpose_value, vocab)
+#     return t
