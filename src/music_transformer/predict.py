@@ -11,6 +11,7 @@
 from fastai.basics import *
 from fastai.text.learner import LanguageLearner, get_language_model, _model_meta
 from .model import *
+from .transform import MusicItem
 from ..numpy_encode import SAMPLE_FREQ
 from ..utils.top_k_top_p import top_k_top_p
 
@@ -62,7 +63,7 @@ class MusicLearner(LanguageLearner):
         node_idx = torch.multinomial(torch.exp(-scores), 1).item()
         return [i.item() for i in nodes[node_idx][xb_length:] ]
 
-    def predict(self, x:Tensor, n_words:int=128,
+    def predict(self, item:MusicItem, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=40, top_p=0.9):
         "Return the `n_words` that come after `text`."
@@ -74,7 +75,7 @@ class MusicLearner(LanguageLearner):
 
         bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
         vocab = self.data.vocab
-
+        x = item.to_tensor()
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
 
@@ -102,7 +103,7 @@ class MusicLearner(LanguageLearner):
 
                 new_idx.append(idx)
                 x = x.new_tensor([idx])
-        return np.array(new_idx)
+        return vocab.musicify(np.array(new_idx))
     
 
 # For vue app?

@@ -161,24 +161,33 @@ def seq_prefix(seq_type, vocab):
     return np.array([start_token, vocab.pad_idx])
 
 def idxenc2npenc(t, vocab, validate=True):
-    if validate: t = to_valid_npenc(t, vocab.npenc_range)
+    if validate: t = to_valid_idxenc(t, vocab.npenc_range)
     t = t.copy().reshape(-1, 2)
     if t.shape[0] == 0: return
         
     t[:, 0] = t[:, 0] - vocab.note_range[0]
     t[:, 1] = t[:, 1] - vocab.dur_range[0]
     
-    is_note = (t[:, 0] < VALTSEP) | (t[:, 0] >= NOTE_SIZE)
-    invalid_note_idx = is_note.argmax()
-    if invalid_note_idx > 0: 
-        print('Non midi note detected. Only returning valid portion. Index, seed', invalid_note_idx, t.shape)
-        return t[:invalid_note_idx]
+    if validate: return to_valid_npenc(t)
     return t
 
-def to_valid_npenc(t, valid_range):
+def to_valid_idxenc(t, valid_range):
     r = valid_range
     t = t[np.where((t >= r[0]) & (t < r[1]))]
     if t.shape[-1] % 2 == 1: t = t[..., :-1]
+    return t
+
+def to_valid_npenc(t):
+    is_note = (t[:, 0] < VALTSEP) | (t[:, 0] >= NOTE_SIZE)
+    invalid_note_idx = is_note.argmax()
+    is_dur = (t[:, 1] < 0) | (t[:, 1] >= DUR_SIZE)
+    invalid_dur_idx = is_dur.argmax()
+
+    if max(invalid_note_idx, invalid_dur_idx) > 0: 
+        first_invalid = max(invalid_dur_idx, invalid_note_idx)
+        if invalid_note_idx > 0 and invalid_dur_idx > 0: first_invalid = min(invalid_dur_idx, invalid_note_idx)
+        print('Non midi note detected. Only returning valid portion. Index, seed', first_invalid, t.shape)
+        return t[:first_invalid]
     return t
 
 def position_enc(idxenc, vocab):
@@ -191,7 +200,7 @@ def position_enc(idxenc, vocab):
     
     posenc = np.zeros_like(idxenc)
     posenc[sep_idxs+2] = dur_vals
-    return -posenc.cumsum()
+    return posenc.cumsum()
 
 def position_tfm(idxenc, vocab):
     posenc = position_enc(idxenc, vocab)
