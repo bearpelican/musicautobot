@@ -1,10 +1,14 @@
 from __future__ import annotations
 from ..numpy_encode import *
 import numpy as np
+from enum import Enum
 import torch
+from ..vocab import *
 from functools import partial
 
+
 # MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
+SEQType = Enum('SEQType', 'Mask, Sentence, Melody, Chords, Empty')
 
 class MusicItem():
     def __init__(self, data, vocab, stream=None, position=None):
@@ -29,9 +33,9 @@ class MusicItem():
         return MusicItem(idx, vocab=vocab, position=pos)
     def to_idx(self): return self.data, self.position
     
-#     @classmethod
-#     def empty(cls, vocab, seq_type:str=None):
-#         return MusicItem(np.array([vocab.bos_idx, vocab.pad_idx])
+    @classmethod
+    def empty(cls, vocab, seq_type=SEQType.Sentence):
+        return MusicItem(seq_prefix(seq_type, vocab), vocab)
 
     @property
     def stream(self, bpm=120):
@@ -70,7 +74,7 @@ class MusicItem():
     
     def mask_notes(self):
         masked_data = mask_input(self.data, self.vocab.note_range, self.vocab.mask_idx)
-        return self.new(masked_data, self.position)
+        return self.new(masked_data, position=self.position)
     
     def mask_duration(self, keep_position_enc=True):
         masked_data = mask_input(self.data, self.vocab.dur_range, self.vocab.mask_idx)
@@ -82,7 +86,6 @@ class MusicItem():
         pos = pad_seq(self.position, bptt, 0)
         return self.new(data, stream=self._stream, position=pos)
         
-
 def pad_seq(seq, bptt, value):
     pad_len = max(bptt-seq.shape[0], 0)
     return np.pad(seq, (0, pad_len), 'constant', constant_values=value)[:bptt]
@@ -136,7 +139,7 @@ def idxenc2stream(arr, vocab, bpm=120):
     return npenc2stream(npenc, bpm=bpm)
 
 # single stream instead of note,dur
-def npenc2idxenc(t, vocab, start_seq=None):
+def npenc2idxenc(t, vocab, seq_type=SEQType.Sentence, add_eos=False):
     "Transforms numpy array from 2 column (note, duration) matrix to a single column"
     "[[n1, d1], [n2, d2], ...] -> [n1, d1, n2, d2]"
     if isinstance(t, (list, tuple)) and len(t) == 2: 
@@ -145,8 +148,17 @@ def npenc2idxenc(t, vocab, start_seq=None):
     
     t[:, 0] = t[:, 0] + vocab.note_range[0]
     t[:, 1] = t[:, 1] + vocab.dur_range[0]
-    if start_seq is None: start_seq = np.array([vocab.bos_idx, vocab.pad_idx])
-    return np.concatenate([start_seq, t.reshape(-1)])
+    
+    prefix = seq_prefix(seq_type, vocab)
+    suffix = np.array([vocab.stoi[EOS]]) if add_eos else np.empty(0, dtype=int)
+    return np.concatenate([prefix, t.reshape(-1), suffix])
+
+def seq_prefix(seq_type, vocab):
+    if seq_type == SEQType.Empty: return np.empty(0, dtype=int)
+    start_token = vocab.bos_idx
+    if seq_type == SEQType.Chords: start_token = vocab.stoi[CSEQ]
+    if seq_type == SEQType.Melody: start_token = vocab.stoi[MSEQ]
+    return np.array([start_token, vocab.pad_idx])
 
 def idxenc2npenc(t, vocab, validate=True):
     if validate: t = to_valid_npenc(t, vocab.npenc_range)

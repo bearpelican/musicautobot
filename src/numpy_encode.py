@@ -286,7 +286,7 @@ def stream2npenc_parts(stream, sort_pitch=True):
     chordarr = stream2chordarr(stream)
     _,num_parts,_ = chordarr.shape
     parts = [part_enc(chordarr, i) for i in range(num_parts)]
-    return sorted(parts, key=avg_pitch) if sort_pitch else parts
+    return sorted(parts, key=avg_pitch, reverse=True) if sort_pitch else parts
 
 def chordarr_combine_parts(parts):
     max_ts = max([p.shape[0] for p in parts])

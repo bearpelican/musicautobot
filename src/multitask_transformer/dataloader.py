@@ -1,5 +1,4 @@
 from fastai.basics import *
-from ..vocab import *
 from ..music_transformer.transform import *
 from ..music_transformer.dataloader import MusicDataBunch, MusicItemList
 # Sequence 2 Sequence Translate
@@ -25,8 +24,8 @@ class MultitrackItem():
         
     @classmethod
     def from_npenc_parts(cls, mpart, cpart, vocab):
-        mpart = partenc2seq2seq(mpart, part_type=MSEQ, vocab=vocab)
-        cpart = partenc2seq2seq(cpart, part_type=CSEQ, vocab=vocab)
+        mpart = npenc2idxenc(mpart, seq_type=SEQType.Melody, vocab=vocab, add_eos=True)
+        cpart = npenc2idxenc(cpart, seq_type=SEQType.Chords, vocab=vocab, add_eos=True)
         return MultitrackItem(MusicItem(mpart, vocab), MusicItem(cpart, vocab))
         
     @classmethod
@@ -130,11 +129,10 @@ def pad_seq(seq, bptt, value):
 #     pad_len = max(bptt-seq.shape[0], 0)
 #     return np.pad(seq, [(0, pad_len),(0,0)], 'constant', constant_values=value)[:bptt]
     
-def partenc2seq2seq(part_np, part_type, vocab, add_eos=True):
-    part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
-    s2s_out = npenc2idxenc(part_np, vocab=vocab, start_seq=part_meta)
-    if add_eos: s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
-    return s2s_out
+# def partenc2seq2seq(part_np, seq_type, vocab, add_eos=True):
+#     s2s_out = npenc2idxenc(part_np, vocab=vocab, seq_type=seq_type)
+#     if add_eos: s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
+#     return s2s_out
 
 def s2s_combine2chordarr(np1, np2, vocab):
     if len(np1.shape) == 1: np1 = idxenc2npenc(np1, vocab)

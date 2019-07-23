@@ -108,30 +108,32 @@ class MultitaskLearner(Learner):
 
         return MusicItem(x.cpu().numpy(), vocab)
 
-    def predict_s2s(self, xb_msk:Tensor, xb_lm:Tensor, n_words:int=128,
+
+    def predict_s2s(self, input_item:MusicItem, target_item:MusicItem, n_words:int=128,
                     temperatures:float=(1.0,1.0),
                     top_k=30, top_p=0.8):
         self.model.reset()
         vocab = self.data.vocab
-        x_lm = xb_lm.tolist()
-        lm_pos = (neg_position_enc(xb_lm.cpu().numpy(), vocab)).tolist()
-        last_pos = lm_pos[-1]
+        targ = target_item.data.tolist()
+        targ_pos = target_item.position.tolist()
+        last_pos = targ_pos[-1]
 
-        msk_pos = torch.tensor(neg_position_enc(xb_msk.cpu().numpy(), vocab), device=xb_msk.device)
-        x_enc = self.model.encoder(xb_msk.view(1, -1), msk_pos.view(1, -1))
+        # Input doesn't change. We can reuse the encoder output on each prediction
+        inp, inp_pos = input_item.to_tensor()[None], input_item.get_pos_tensor()[None]
+        x_enc = self.model.encoder(inp, inp_pos)
 
-        max_pos = msk_pos[-1] - SAMPLE_FREQ * 4
+        max_pos = input_item.position[-1] - SAMPLE_FREQ * 4 # Only predict until both tracks/parts have the same length
 
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
 
                 # Next Word
-                x, pos = torch.tensor(x_lm, device=xb_lm.device)[None], torch.tensor(lm_pos, device=xb_lm.device)[None]
+                x, pos = torch.tensor(targ, device=x_enc.device)[None], torch.tensor(targ_pos, device=x_enc.device)[None]
                 dec = self.model.decoder(x, pos, x_enc) # all tasks include mask decoding
                 res = F.softmax(self.model.head(dec), dim=-1)[-1, -1]
 
                 # Use first temperatures value if last prediction was duration
-                temperature = temperatures[0] if (len(x_lm)==0 or vocab.is_duration(x_lm[-1])) else temperatures[1]
+                temperature = temperatures[0] if (len(targ)==0 or vocab.is_duration(targ[-1])) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
 
                 res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
@@ -142,68 +144,55 @@ class MultitaskLearner(Learner):
                     print('Predicting BOS/EOS')
                     break
 
-                if x_lm and x_lm[-1]==vocab.sep_idx: 
+                if targ and targ[-1]==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
                     last_pos = last_pos - duration # position is negative
                     if last_pos < max_pos:
                         print('Predicted past counter-part length. Returning early')
                         break
 
-                lm_pos.append(last_pos)
-                x_lm.append(idx)
+                targ_pos.append(last_pos)
+                targ.append(idx)
 
-        return np.array(x_lm)
+        return vocab.musicify(np.array(targ))
+
     
 
 # High level prediction functions from midi file
 
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
-    vocab = learn.data.vocab
-    mpart, cpart = midi_extract_melody_chords(midi, vocab=vocab)
+    multitrack_item = MultitrackItem.from_file(file, learn.data.vocab)
+    melody, chords = multitrack_item.melody, multitrack_item.chords
     
-    x_np, y_np = (cpart, mpart) if pred_melody else (mpart, cpart)
+    inp, targ = (chords, melody) if pred_melody else (melody, chords)
     
     # if seed_len is passed, cutoff sequence so we can predict the rest
-    y_cut = y_np if seed_len is None else trim_tfm(y_np, vocab=vocab, to_beat=seed_len)
+    if seed_len is not None: targ = targ.trim_to_beat(seed_len)
+        
+    pred = learn.predict_s2s(inp, targ, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
+
+    part_order = (pred, inp) if pred_melody else (inp, pred)
     
-    x, y = torch.tensor(x_np), torch.tensor(y_cut)
-    if torch.cuda.is_available(): x, y = x.cuda(), y.cuda()
-    pred = learn.predict_s2s(x, y, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-
-    part_order = [pred, cpart] if pred_melody else [mpart, cpart]
-    chordarr_comb = s2s_combine2chordarr(*part_order, vocab)
-
-    return chordarr_comb
-
+    return MultitrackItem(*part_order)
 
 def nw_predict_from_midi(learn, midi=None, n_words=400, 
                       temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
     vocab = learn.data.vocab
-    
-    seed = MusicItem.from_file(midi, learn.data.vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
+    seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
     if seed_len is not None: seed = seed.trim_to_beat(seed_len)
         
     pred = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
     return seed.append(pred)
-#     return np.concatenate((seed_np,pred), axis=0)
 
 
-def mask_predict_from_midi(learn, midi=None,
-                           temperatures=(1.0,1.0), top_k=30, top_p=0.7, 
-                           predict_notes=True, **kwargs):
-    seed_np = midi2idxenc(midi, vocab=learn.data.vocab) # music21 can handle bytes directly
-    x = torch.tensor(seed_np)
-    vocab = learn.data.vocab
-    pos = torch.tensor(neg_position_enc(x.cpu().numpy(), vocab), device=x.device)
-    mask_range = vocab.note_range if predict_notes else vocab.dur_range
-    x_msk = mask_input(x, mask_range=mask_range, replacement_idx=vocab.mask_idx)
-    if torch.cuda.is_available(): 
-        x_msk = x_msk.cuda()
-        pos = pos.cuda()
-    pred = learn.predict_mask(x_msk, pos, temperatures=temperatures, top_k=top_k, top_p=top_p)
+
+def mask_predict_from_midi(learn, midi=None, predict_notes=True,
+                           temperatures=(1.0,1.0), top_k=30, top_p=0.7, **kwargs):
+    item = MusicItem.from_file(midi, learn.data.vocab)
+    masked_item = item.mask_notes() if predict_notes else item.mask_duration()
+    pred = learn.predict_mask(masked_item, temperatures=temperatures, top_k=top_k, top_p=top_p)
     return pred
-
 
 # LOSS AND METRICS
 

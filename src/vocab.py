@@ -1,6 +1,6 @@
 from fastai.basics import *
 from .numpy_encode import *
-from .music_transformer.transform import MusicItem
+from .music_transformer import transform
 
 BOS = 'xxbos'
 PAD = 'xxpad'
@@ -40,7 +40,7 @@ class MusicVocab():
         return sep.join([self.itos[i] for i in nums]) if sep is not None else [self.itos[i] for i in nums]
     
     def musicify(self, idxenc):
-        return MusicItem(idxenc, self)
+        return transform.MusicItem(idxenc, self)
     
     @property 
     def mask_idx(self): return self.stoi[MASK]
