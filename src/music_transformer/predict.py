@@ -1,13 +1,3 @@
-# from enum import Enum
-
-# import torch.nn as nn
-# import torch
-
-# from fastai.text import *
-# from fastai.text.models.transformer import *
-# from fastai.text.models.transformer import init_transformer
-# from fastai.callbacks.tracker import *
-
 from fastai.basics import *
 from fastai.text.learner import LanguageLearner, get_language_model, _model_meta
 from .model import *
@@ -103,19 +93,13 @@ class MusicLearner(LanguageLearner):
 
                 new_idx.append(idx)
                 x = x.new_tensor([idx])
-        return vocab.musicify(np.array(new_idx))
+        return vocab.to_music_item(np.array(new_idx))
     
-
-# For vue app?
-# NOTE: looks like npenc does not include the separator. 
-# This means we don't have to remove the last (separator) step from the seed in order to keep predictions
-# def predict_from_midi(learn, midi=None, n_words=600, 
-#                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, **kwargs):
-#     seed_np = midi2npenc(midi, skip_last_rest=True) # music21 can handle bytes directly
-#     xb = torch.tensor(to_single_stream(seed_np))[None]
-#     pred, seed = learn.predict_topk(xb, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-#     seed = to_double_stream(seed)
-#     pred = to_double_stream(pred)
-#     full = np.concatenate((seed,pred), axis=0)
-    
-#     return pred, seed, full
+def nw_predict_from_midi(learn, midi=None, n_words=400, 
+                      temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
+    vocab = learn.data.vocab
+    seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
+    if seed_len is not None: seed = seed.trim_to_beat(seed_len)
+        
+    pred = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
+    return seed.append(pred)

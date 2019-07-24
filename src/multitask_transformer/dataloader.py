@@ -94,19 +94,7 @@ class S2SPreloader(Callback):
             item = item.transpose(val)
         item = item.pad_to(self.bptt+1)
         ((m_x, m_pos), (c_x, c_pos)) = item.to_idx()
-#         m_x = pad_seq(m.data, self.bptt+1, self.vocab.pad_idx)
-#         m_pos = pad_seq(m.position, self.bptt+1, 0)
-#         c_x = pad_seq(c.data, self.bptt+1, self.vocab.pad_idx)
-#         c_pos = pad_seq(c.position, self.bptt+1, 0)
         return m_x, m_pos, c_x, c_pos
-#         return {
-#             'm': pad_seq(m.data, self.bptt+1, self.vocab.pad_idx),
-#             'm_pos': pad_seq(m.position, self.bptt+1, 0),
-#             'c': pad_seq(c.data, self.bptt+1, self.vocab.pad_idx),
-#             'c_pos': pad_seq(c.position, self.bptt+1, 0),
-#         }
-        # WARNING: we are padding position encodings too. However, pos is negative, so should be fine
-#         return ,  # offset bptt for decoder shift
     
     def __len__(self):
         return len(self.dataset)
@@ -125,15 +113,6 @@ def pad_seq(seq, bptt, value):
     pad_len = max(bptt-seq.shape[0], 0)
     return np.pad(seq, (0, pad_len), 'constant', constant_values=value)[:bptt]
     
-# def pad_seq(seq, bptt, value):
-#     pad_len = max(bptt-seq.shape[0], 0)
-#     return np.pad(seq, [(0, pad_len),(0,0)], 'constant', constant_values=value)[:bptt]
-    
-# def partenc2seq2seq(part_np, seq_type, vocab, add_eos=True):
-#     s2s_out = npenc2idxenc(part_np, vocab=vocab, seq_type=seq_type)
-#     if add_eos: s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
-#     return s2s_out
-
 def s2s_combine2chordarr(np1, np2, vocab):
     if len(np1.shape) == 1: np1 = idxenc2npenc(np1, vocab)
     if len(np2.shape) == 1: np2 = idxenc2npenc(np2, vocab)
@@ -141,44 +120,11 @@ def s2s_combine2chordarr(np1, np2, vocab):
     p2 = npenc2chordarr(np2)
     return chordarr_combine_parts((p1, p2))
 
-# def midi_extract_melody_chords(midi, vocab):
-#     stream = file2stream(midi) # 1.
-#     parts = stream2npenc_parts(stream)
-#     num_parts = len(parts)
-
-#     if num_parts == 1:
-#         # if predicting melody, assume only track is chord track
-#         p1, p2 = part_enc(chordarr, 0), np.zeros((0,2), dtype=int)
-#         p1, p2 = (p2, p1) if pred_melody else (p1, p2)
-#     elif num_parts == 2:
-#         p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
-#         p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
-#     else:
-#         raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
-        
-#     mpart = partenc2seq2seq(p1, part_type=MSEQ, vocab=vocab)
-#     cpart = partenc2seq2seq(p2, part_type=CSEQ, vocab=vocab)
-#     return mpart, cpart
-
 
 # DATALOADING AND TRANSFORMATIONS
 
-# MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
-
-# MLM Transform - DEPRECATED
-def msklm_mask(shape, p, tile):
-    p = p / tile # scale probability
-    rand_mask = torch.rand(*shape) < p
-    if tile > 1:
-        rand_mask = torch.repeat_interleave(rand_mask, tile, dim=1)[:rand_mask.shape[0], :rand_mask.shape[1]]
-        
-    lm_mask = torch.roll(rand_mask, 1, dims=1)
-    lm_mask[:, 0] = 0
-    lm_mask = rand_mask & lm_mask
-    return rand_mask, lm_mask
-
 def mask_tfm(b, vocab, p=0.2):
-# def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
+    # def mask_tfm(b, word_range=vocab.npenc_range, pad_idx=vocab.pad_idx, 
 #              mask_idx=vocab.mask_idx, p=0.2):
     # p = replacement probability
     word_range = vocab.npenc_range
@@ -192,18 +138,6 @@ def mask_tfm(b, vocab, p=0.2):
     wrong_word = (rand > (p*.8)) & (rand <= (p*.9)) # 10% = wrong word
     x[wrong_word] = torch.randint(*word_range, [wrong_word.sum().item()], device=x.device)
     return x, y
-
-# Utility for predictions
-# def mask_note_or_dur(b):
-#     x, y = b
-#     x,x_pos = x[...,0], x[...,1]
-#     y,y_pos = y[...,0], y[...,1]
-#     x = x.clone()
-#     rand = torch.rand(x.shape, device=x.device) < 0.9
-#     mask_range = vocab.dur_range if random.randint(0, 1) == 0 else vocab.note_range
-#     x[(x >= mask_range[0]) & (x < mask_range[1]) & rand] = vocab.mask_idx
-#     return (x, None, y_pos, None), (y, MLMType.Mask)
-
 
 # def mask_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p_mask=0.2):
 def mask_lm_tfm(b, vocab, p_mask=0.2):

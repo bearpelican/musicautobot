@@ -1,11 +1,3 @@
-# from .fastai_data import *
-# from .encode_data import *
-# from .music_transformer import *
-# from fastai.basics import *
-# from fastai.text.models.transformer import _line_shift, init_transformer
-# from fastai.text.models.awd_lstm import *
-# from fastai.text.models.transformer import *
-# from fastai.callbacks.rnn import RNNTrainer
 from fastai.basics import *
 from ..vocab import *
 from ..utils.top_k_top_p import top_k_top_p
@@ -69,7 +61,7 @@ class MultitaskLearner(Learner):
                 new_idx.append(idx)
                 x = x.new_tensor([idx])
                 pos = pos.new_tensor([last_pos])
-        return MusicItem(np.array(new_idx), vocab)
+        return vocab.to_music_item(np.array(new_idx))
 
     def predict_mask(self, masked_item:MusicItem, pos=None,
                     temperatures:float=(1.0,1.0),
@@ -95,8 +87,10 @@ class MultitaskLearner(Learner):
                 res[vocab.sep_idx] = 0.
                 res[vocab.stoi[EOS]] = 0
 
-                # Use first temperatures value if last prediction was duration
                 prev_idx = x[midx-1]
+                res = filter_invalid_indexes(res, prev_idx, vocab)
+
+                # Use first temperatures value if last prediction was duration
                 temperature = temperatures[0] if vocab.is_duration(prev_idx) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
 
@@ -106,7 +100,7 @@ class MultitaskLearner(Learner):
 
                 x[midx] = idx
 
-        return MusicItem(x.cpu().numpy(), vocab)
+        return vocab.to_music_item(MusicItem(x.cpu().numpy())
 
     def predict_s2s(self, input_item:MusicItem, target_item:MusicItem, n_words:int=128,
                         temperatures:float=(1.0,1.0), top_k=30, top_p=0.8,
@@ -157,8 +151,14 @@ class MultitaskLearner(Learner):
                 targ_pos.append(last_pos)
                 targ.append(idx)
 
-        return vocab.musicify(np.array(targ))
+        return vocab.to_music_item(np.array(targ))
     
+def filter_invalid_indexes(res, prev_idx, vocab):
+    if vocab.is_duration(prev_idx):
+        res[list(range(*vocab.dur_range))] = 0
+    else:
+        res[list(range(*vocab.note_rage))] = 0
+    return res
 
 # High level prediction functions from midi file
 
@@ -177,14 +177,14 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     part_order = (pred, inp) if pred_melody else (inp, pred)
     return MultitrackItem(*part_order)
 
-def nw_predict_from_midi(learn, midi=None, n_words=400, 
-                      temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
-    vocab = learn.data.vocab
-    seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
-    if seed_len is not None: seed = seed.trim_to_beat(seed_len)
+# def nw_predict_from_midi(learn, midi=None, n_words=400, 
+#                       temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
+#     vocab = learn.data.vocab
+#     seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
+#     if seed_len is not None: seed = seed.trim_to_beat(seed_len)
         
-    pred = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-    return seed.append(pred)
+#     pred = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
+#     return seed.append(pred)
 
 
 
