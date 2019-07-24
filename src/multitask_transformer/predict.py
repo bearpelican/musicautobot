@@ -1,7 +1,6 @@
 from fastai.basics import *
 from ..vocab import *
 from ..utils.top_k_top_p import top_k_top_p
-from ..utils.midifile import is_empty_midi
 from ..music_transformer.transform import *
 from .model import get_multitask_model
 from .dataloader import *
@@ -46,10 +45,12 @@ class MultitaskLearner(Learner):
                 temperature = temperatures[0] if (len(new_idx)==0 or vocab.is_duration(new_idx[-1])) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
 
+                prev_idx = new_idx[-1] if len(new_idx) else -1
+                res = filter_invalid_indexes(res, prev_idx, vocab)
                 res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
                 idx = torch.multinomial(res, 1).item()
 
-                if new_idx and new_idx[-1]==vocab.sep_idx: 
+                if prev_idx==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
                     sep_count += duration
                     last_pos = last_pos + duration
@@ -100,39 +101,37 @@ class MultitaskLearner(Learner):
 
                 x[midx] = idx
 
-        return vocab.to_music_item(MusicItem(x.cpu().numpy())
+        return vocab.to_music_item(x.cpu().numpy())
 
-    def predict_s2s(self, input_item:MusicItem, target_item:MusicItem, n_words:int=128,
+    def predict_s2s(self, input_item:MusicItem, target_item:MusicItem, n_words:int=256,
                         temperatures:float=(1.0,1.0), top_k=30, top_p=0.8,
                         use_memory=True):
         vocab = self.data.vocab
+        
+        # Input doesn't change. We can reuse the encoder output on each prediction
+        inp, inp_pos = input_item.to_tensor(), input_item.get_pos_tensor()
+        x_enc = self.model.encoder(inp[None], inp_pos[None])
+        
+        # target
         targ = target_item.data.tolist()
         targ_pos = target_item.position.tolist()
         last_pos = targ_pos[-1]
         self.model.reset()
 
-        # Input doesn't change. We can reuse the encoder output on each prediction
-        inp, inp_pos = input_item.to_tensor('cpu'), input_item.get_pos_tensor('cpu')
-        x_enc = self.model.encoder(inp[None], inp_pos[None])
-
         max_pos = input_item.position[-1] + SAMPLE_FREQ * 4 # Only predict until both tracks/parts have the same length
-
+        x, pos = inp.new_tensor(targ), inp_pos.new_tensor(targ_pos)
+        
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
-                if use_memory:
-                    # Relying on memory for kv. Only need last prediction index
-                    x, pos = inp.new_tensor([targ[-1]]), inp_pos.new_tensor([targ_pos[-1]])
-                else:
-                    # Reset memory after each prediction, since we feeding the whole sequence every time
-                    self.model.reset()
-                    x, pos = inp.new_tensor(targ), inp_pos.new_tensor(targ_pos)
                 dec = self.model.decoder(x[None], pos[None], x_enc)
                 res = F.softmax(self.model.head(dec), dim=-1)[-1, -1]
 
                 # Use first temperatures value if last prediction was duration
                 temperature = temperatures[0] if (len(targ)==0 or vocab.is_duration(targ[-1])) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
-
+                    
+                prev_idx = targ[-1] if len(targ) else -1
+                res = filter_invalid_indexes(res, prev_idx, vocab)
                 res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
                 idx = torch.multinomial(res, 1).item()
                 #         idx = res.argmax()
@@ -141,7 +140,7 @@ class MultitaskLearner(Learner):
                     print('Predicting BOS/EOS')
                     break
 
-                if targ and targ[-1]==vocab.sep_idx: 
+                if prev_idx == vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
                     last_pos = last_pos + duration
                     if last_pos > max_pos:
@@ -150,14 +149,22 @@ class MultitaskLearner(Learner):
 
                 targ_pos.append(last_pos)
                 targ.append(idx)
+                
+                if use_memory:
+                    # Relying on memory for kv. Only need last prediction index
+                    x, pos = inp.new_tensor([targ[-1]]), inp_pos.new_tensor([targ_pos[-1]])
+                else:
+                    # Reset memory after each prediction, since we feeding the whole sequence every time
+                    self.model.reset()
+                    x, pos = inp.new_tensor(targ), inp_pos.new_tensor(targ_pos)
 
         return vocab.to_music_item(np.array(targ))
     
 def filter_invalid_indexes(res, prev_idx, vocab):
-    if vocab.is_duration(prev_idx):
+    if vocab.is_duration(prev_idx) or prev_idx == vocab.pad_idx:
         res[list(range(*vocab.dur_range))] = 0
     else:
-        res[list(range(*vocab.note_rage))] = 0
+        res[list(range(*vocab.note_range))] = 0
     return res
 
 # High level prediction functions from midi file

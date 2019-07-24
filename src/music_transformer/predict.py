@@ -4,6 +4,7 @@ from .model import *
 from .transform import MusicItem
 from ..numpy_encode import SAMPLE_FREQ
 from ..utils.top_k_top_p import top_k_top_p
+from ..utils.midifile import is_empty_midi
 
 def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.,
                         pretrained_path:PathOrStr=None, **learn_kwargs) -> 'LanguageLearner':
