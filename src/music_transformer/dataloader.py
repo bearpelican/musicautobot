@@ -25,15 +25,20 @@ class MusicDataBunch(DataBunch):
         return cls(*dls, path=path, device=device, dl_tfms=dl_tfms, collate_fn=collate_fn, no_check=no_check)
     
     @classmethod    
-    def from_folder(cls, path:PathOrStr, processors=None, extensions='.npy', split_pct=0.1, 
-                    vocab=None, list_cls=None, **kwargs):
+    def from_folder(cls, path:PathOrStr, extensions='.npy', **kwargs):
         files = get_files(path, extensions=extensions, recurse=True);
+        return cls.from_files(files, path, **kwargs)
+    
+    @classmethod
+    def from_files(cls, files, path, processors=None, split_pct=0.1, 
+                   vocab=None, list_cls=None, **kwargs):
         if vocab is None: vocab = MusicVocab.create()
         if list_cls is None: list_cls = MusicItemList
         src = (list_cls(items=files, path=path, processor=processors, vocab=vocab)
                 .split_by_rand_pct(split_pct, seed=6)
                 .label_const(label_cls=LMLabelList))
         return src.databunch(**kwargs)
+        
 
 def partially_apply_vocab(tfm, vocab):
     if 'vocab' in inspect.getfullargspec(tfm).args:
