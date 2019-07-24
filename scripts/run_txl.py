@@ -16,8 +16,8 @@ from src.serve import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v16/midi_encode/sf4/')
-parser.add_argument('--cache', type=str, default='tmp/dmp')
+parser.add_argument('--path', type=str, default='../data/midi/v19/midi_encode/')
+parser.add_argument('--data_file', type=str, default='cached/all.pkl')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
 parser.add_argument("--local_rank", type=int, default=0)
@@ -48,13 +48,13 @@ if is_distributed:
 
 path = Path(args.path)
 
-from src import serve
-config = getattr(serve, args.config)(vocab)
+from src import config
+config = getattr(config, args.config)()
 
-config['bptt'] = args.bptt
-config['bs'] = args.batch_size
 if args.no_transpose: config['transpose_range'] = None
-data = load_music_data(path=path, cache_name=args.cache, vocab=vocab, y_offset=1, **config)
+data = load_data(path, args.data_file, 
+                    bs=args.batch_size, bptt=args.bptt, transpose_range=config['transpose_range'],
+                    dl_tfms=mask_lm_tfm, preloader_cls=position_preloader)
 
 opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=1e-4)
 if args.lamb:
@@ -65,12 +65,11 @@ learn = music_model_learner(data, config, drop_mult=1.5, opt_func=opt_func)
 if not args.half: learn.clip_grad(0.5)
 
 if args.load:
-    load_path = Path(args.path)/args.load
-    state = torch.load(load_path, map_location='cpu')
+    state = torch.load(path/args.load, map_location='cpu')
     get_model(learn.model).load_state_dict(state['model'], strict=False)
     learn.model.cuda()
 if args.save:
-    save_path = Path(args.path)/learn.model_dir/args.save
+    save_path = path/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
 if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, max_scale=2**18)
 if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')

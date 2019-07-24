@@ -2,6 +2,8 @@
 from fastai.callback import Callback
 from typing import Callable
 
+__all__ = ['StackedDataBunch']
+
 # DataLoading
 class StackedDataBunch():
     def __init__(self, dbs, num_it=100):
