@@ -67,7 +67,7 @@ data = load_data(args.path, Path('piano_duet')/args.data_file,
 
 datasets.append(data)
 
-s2s_data = load_data(args.path, Path('piano_duet')/args.data_file, 
+s2s_data = load_data(args.path, Path('s2s_encode')/args.data_file, 
                     bs=args.batch_size//4, bptt=args.bptt*2, transpose_range=config['transpose_range'],
                      preloader_cls=S2SPreloader, dl_tfms=melody_chord_tfm)
 

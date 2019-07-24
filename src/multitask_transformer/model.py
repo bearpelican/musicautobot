@@ -110,6 +110,7 @@ class TransformerEmbedding(nn.Module):
         return emb
     
     def relative_pos_enc(self, emb):
+#         return torch.arange(640-1, -1, -1).float().cuda()
         seq_len = emb.shape[1] + self.mem_len
         pos = torch.arange(seq_len-1, -1, -1, device=emb.device, dtype=emb.dtype) # backwards (txl pos encoding)
         return self.pos_enc(pos)
