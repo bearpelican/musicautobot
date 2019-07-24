@@ -2,8 +2,9 @@ import music21
 import torch
 
 from fastai.distributed import *
-from fastai.text.models.transformer import *
+#from fastai.text.models.transformer import *
 from apex.optimizers import FusedAdam
+from fastai.callbacks import *
 
 import numpy as np
 
@@ -53,15 +54,16 @@ setup_distrib(args.local_rank)
 path = Path(args.path)
 
 from src import config
-config = getattr(serve, args.config)()
+config = getattr(config, args.config)()
 
 if args.no_transpose: config['transpose_range'] = None
 
 datasets = []
 
+
 data = load_data(args.path, Path('piano_duet')/args.data_file, 
-                    bs=args.batch_size, bptt=args.bptt, transpose_range=config['transpose_range'],
-                    dl_tfms=mask_lm_tfm, preloader_cls=position_preloader)
+                 bs=args.batch_size, bptt=args.bptt, transpose_range=config['transpose_range'],
+                 encode_position=True, dl_tfms=mask_lm_tfm)
 
 datasets.append(data)
 
@@ -71,17 +73,17 @@ s2s_data = load_data(args.path, Path('piano_duet')/args.data_file,
 
 datasets.append(s2s_data)
 
-combined_data = StackedData(datasets)
+combined_data = StackedDataBunch(datasets)
 
 # Load Optimizer
 eps = 1e-3 if args.half else 1e-6
 opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=eps)
 if args.lamb:
-    from src.lamb import Lamb
+    from src.utils.lamb import Lamb
     opt_func = partial(Lamb, eps=eps)
     
 # Load Learner
-learn = multitask_model_learner(datasets[0], config.copy(), opt_func=opt_func)
+learn = multitask_model_learner(combined_data, config.copy(), opt_func=opt_func)
 if not args.half: learn.clip_grad(0.5)
 
 # learn.callbacks.append(MLMTrainer(learn, datasets))
