@@ -97,7 +97,7 @@ if args.save:
     save_path = path/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
 if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, max_scale=2**18)
-if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=args.cache+'/dist_logs')
+if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=path/'dist_logs')
 if args.data_parallel: learn = learn.to_parallel()
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 

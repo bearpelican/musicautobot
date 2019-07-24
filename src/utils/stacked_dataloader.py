@@ -25,13 +25,14 @@ class StackedDataBunch():
 # Helper functions
 class StackedDataset(Callback):
     def __init__(self, dss):
-        self.dss = self.dss
+        self.dss = dss
     def __getattr__(self, attr):
         def redirected(self, *args, **kwargs):
             for ds in self.dss:
                 if hasattr(ds, attr):
                     getattr(ds, attr)(*args, **kwargs)
         return redirected
+    def __len__(self)->int: return sum([len(ds) for ds in self.dss])
 
 class StackedDataloader():
     def __init__(self, dls, num_it=100):
@@ -55,3 +56,8 @@ class StackedDataloader():
                     iters.remove(iters[self.dl_idx])
                     break
 #         raise StopIteration
+
+    def new(self, **kwargs):
+        "Create a new copy of `self` with `kwargs` replacing current values."
+        new_dls = [dl.new(**kwargs) for dl in self.dls]
+        return StackedDataloader(new_dls, self.num_it)
