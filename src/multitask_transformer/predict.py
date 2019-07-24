@@ -108,28 +108,31 @@ class MultitaskLearner(Learner):
 
         return MusicItem(x.cpu().numpy(), vocab)
 
-
     def predict_s2s(self, input_item:MusicItem, target_item:MusicItem, n_words:int=128,
-                    temperatures:float=(1.0,1.0),
-                    top_k=30, top_p=0.8):
-        self.model.reset()
+                        temperatures:float=(1.0,1.0), top_k=30, top_p=0.8,
+                        use_memory=True):
         vocab = self.data.vocab
         targ = target_item.data.tolist()
         targ_pos = target_item.position.tolist()
         last_pos = targ_pos[-1]
+        self.model.reset()
 
         # Input doesn't change. We can reuse the encoder output on each prediction
-        inp, inp_pos = input_item.to_tensor()[None], input_item.get_pos_tensor()[None]
-        x_enc = self.model.encoder(inp, inp_pos)
+        inp, inp_pos = input_item.to_tensor('cpu'), input_item.get_pos_tensor('cpu')
+        x_enc = self.model.encoder(inp[None], inp_pos[None])
 
         max_pos = input_item.position[-1] + SAMPLE_FREQ * 4 # Only predict until both tracks/parts have the same length
 
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
-
-                # Next Word
-                x, pos = torch.tensor(targ, device=x_enc.device)[None], torch.tensor(targ_pos, device=x_enc.device)[None]
-                dec = self.model.decoder(x, pos, x_enc) # all tasks include mask decoding
+                if use_memory:
+                    # Relying on memory for kv. Only need last prediction index
+                    x, pos = inp.new_tensor([targ[-1]]), inp_pos.new_tensor([targ_pos[-1]])
+                else:
+                    # Reset memory after each prediction, since we feeding the whole sequence every time
+                    self.model.reset()
+                    x, pos = inp.new_tensor(targ), inp_pos.new_tensor(targ_pos)
+                dec = self.model.decoder(x[None], pos[None], x_enc)
                 res = F.softmax(self.model.head(dec), dim=-1)[-1, -1]
 
                 # Use first temperatures value if last prediction was duration
@@ -147,7 +150,7 @@ class MultitaskLearner(Learner):
                 if targ and targ[-1]==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
                     last_pos = last_pos + duration
-                    if last_pos < max_pos:
+                    if last_pos > max_pos:
                         print('Predicted past counter-part length. Returning early')
                         break
 
@@ -155,14 +158,13 @@ class MultitaskLearner(Learner):
                 targ.append(idx)
 
         return vocab.musicify(np.array(targ))
-
     
 
 # High level prediction functions from midi file
 
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
-    multitrack_item = MultitrackItem.from_file(file, learn.data.vocab)
+    multitrack_item = MultitrackItem.from_file(midi, learn.data.vocab)
     melody, chords = multitrack_item.melody, multitrack_item.chords
     
     inp, targ = (chords, melody) if pred_melody else (melody, chords)
@@ -171,9 +173,8 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     if seed_len is not None: targ = targ.trim_to_beat(seed_len)
         
     pred = learn.predict_s2s(inp, targ, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-
-    part_order = (pred, inp) if pred_melody else (inp, pred)
     
+    part_order = (pred, inp) if pred_melody else (inp, pred)
     return MultitrackItem(*part_order)
 
 def nw_predict_from_midi(learn, midi=None, n_words=400, 

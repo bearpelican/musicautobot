@@ -102,8 +102,8 @@ class TransformerEmbedding(nn.Module):
         self.mem_len = mem_len
     
     def forward(self, inp, pos):
-        beat_enc = self.beat_enc(pe % self.beat_len)
-        bar_pos = pe // self.beat_len % self.max_bar_len
+        beat_enc = self.beat_enc(pos % self.beat_len)
+        bar_pos = pos // self.beat_len % self.max_bar_len
         bar_pos[bar_pos >= self.max_bar_len] = self.max_bar_len - 1
         bar_enc = self.bar_enc((bar_pos))
         emb = self.drop(self.embed(inp) + beat_enc + bar_enc)

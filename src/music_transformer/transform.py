@@ -180,14 +180,13 @@ def to_valid_idxenc(t, valid_range):
 def to_valid_npenc(t):
     is_note = (t[:, 0] < VALTSEP) | (t[:, 0] >= NOTE_SIZE)
     invalid_note_idx = is_note.argmax()
-    is_dur = (t[:, 1] < 0) | (t[:, 1] >= DUR_SIZE)
-    invalid_dur_idx = is_dur.argmax()
+    invalid_dur_idx = (t[:, 1] < 0).argmax()
 
-    if max(invalid_note_idx, invalid_dur_idx) > 0: 
-        first_invalid = max(invalid_dur_idx, invalid_note_idx)
-        if invalid_note_idx > 0 and invalid_dur_idx > 0: first_invalid = min(invalid_dur_idx, invalid_note_idx)
-        print('Non midi note detected. Only returning valid portion. Index, seed', first_invalid, t.shape)
-        return t[:first_invalid]
+    invalid_idx = max(invalid_dur_idx, invalid_note_idx)
+    if invalid_idx > 0: 
+        if invalid_note_idx > 0 and invalid_dur_idx > 0: invalid_idx = min(invalid_dur_idx, invalid_note_idx)
+        print('Non midi note detected. Only returning valid portion. Index, seed', invalid_idx, t.shape)
+        return t[:invalid_idx]
     return t
 
 def position_enc(idxenc, vocab):
