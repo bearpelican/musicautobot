@@ -68,7 +68,7 @@ data = load_data(args.path, Path('piano_duet')/args.data_file,
 datasets.append(data)
 
 s2s_data = load_data(args.path, Path('s2s_encode')/args.data_file, 
-                    bs=args.batch_size//4, bptt=args.bptt*2, transpose_range=config['transpose_range'],
+                    bs=args.batch_size//4, bptt=args.bptt, transpose_range=config['transpose_range'],
                      preloader_cls=S2SPreloader, dl_tfms=melody_chord_tfm)
 
 datasets.append(s2s_data)
@@ -91,8 +91,8 @@ if not args.half: learn.clip_grad(0.5)
 
 if args.load:
     state = torch.load(path/args.load, map_location='cpu')
-    get_model(learn.model).load_state_dict(state['model'], strict=False).cuda()
-    # learn.model.cuda()
+    get_model(learn.model).load_state_dict(state['model'], strict=False)
+    learn.model.cuda()
 if args.save:
     save_path = path/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
