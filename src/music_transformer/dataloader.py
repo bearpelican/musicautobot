@@ -78,6 +78,16 @@ class OpenNPFileProcessor(PreProcessor):
     def process_one(self,item):
         return np.load(item, allow_pickle=True) if isinstance(item, Path) else item
 
+class Midi2ItemProcessor(PreProcessor):
+    "Skips midi preprocessing step. And encodes midi files to MusicItems"
+    def process_one(self,item):
+        item = MusicItem.from_file(item, vocab=self.vocab)
+        return item.to_idx()
+    
+    def process(self, ds):
+        self.vocab = ds.vocab
+        super().process(ds)
+    
 ## For npenc dataset
 class MusicPreloader(Callback):
     "Transforms the tokens in `dataset` to a stream of contiguous batches for language modelling."

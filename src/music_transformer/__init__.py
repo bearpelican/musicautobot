@@ -1,3 +1,3 @@
 from .dataloader import *
 from .model import *
-from .predict import *
+from .learner import *

@@ -5,8 +5,8 @@ from ..music_transformer.transform import *
 from .model import get_multitask_model
 from .dataloader import *
 
-def multitask_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., pretrained:bool=False,
-                        pretrained_fnames:OptStrTuple=None, **learn_kwargs) -> 'LanguageLearner':
+def multitask_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1., 
+                            pretrained_path:PathOrStr=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
     vocab = data.vocab
     vocab_size = len(vocab)
@@ -14,6 +14,11 @@ def multitask_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.
     metrics = [AverageMultiMetric(partial(m, pad_idx=vocab.pad_idx)) for m in [mask_acc, lm_acc, c2m_acc, m2c_acc]]
     loss_func = MultiLoss(ignore_index=data.vocab.pad_idx)
     learn = MultitaskLearner(data, model, loss_func=loss_func, metrics=metrics, **learn_kwargs)
+    
+    if pretrained_path:
+        state = torch.load(pretrained_path, map_location='cpu')
+        get_model(model).load_state_dict(state['model'], strict=False)
+        
     return learn
 
 class MultitaskLearner(Learner):
@@ -184,17 +189,6 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     part_order = (pred, inp) if pred_melody else (inp, pred)
     return MultitrackItem(*part_order)
 
-# def nw_predict_from_midi(learn, midi=None, n_words=400, 
-#                       temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
-#     vocab = learn.data.vocab
-#     seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
-#     if seed_len is not None: seed = seed.trim_to_beat(seed_len)
-        
-#     pred = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p)
-#     return seed.append(pred)
-
-
-
 def mask_predict_from_midi(learn, midi=None, predict_notes=True,
                            temperatures=(1.0,1.0), top_k=30, top_p=0.7, **kwargs):
     item = MusicItem.from_file(midi, learn.data.vocab)
@@ -224,8 +218,8 @@ def acc_ignore_pad(input:Tensor, targ:Tensor, pad_idx)->Rank0Tensor:
 def acc_index(inputs, targets, key, pad_idx):
     return acc_ignore_pad(inputs.get(key), targets.get(key), pad_idx)
     
-def mask_acc(inputs, targets, pad_idx): return acc_index(inputs, targets, 'lm', pad_idx)
-def lm_acc(inputs, targets, pad_idx): return acc_index(inputs, targets, 'msk', pad_idx)
+def mask_acc(inputs, targets, pad_idx): return acc_index(inputs, targets, 'msk', pad_idx)
+def lm_acc(inputs, targets, pad_idx): return acc_index(inputs, targets, 'lm', pad_idx)
 def c2m_acc(inputs, targets, pad_idx): return acc_index(inputs, targets, 'c2m', pad_idx)
 def m2c_acc(inputs, targets, pad_idx): return acc_index(inputs, targets, 'm2c', pad_idx)
 
