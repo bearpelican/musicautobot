@@ -28,9 +28,12 @@ INFO_TYPES = set(['TIME_SIGNATURE', 'KEY_SIGNATURE', 'SET_TEMPO'])
 
 def file2mf(fp):
     mf = music21.midi.MidiFile()
-    mf.open(fp)
-    mf.read()
-    mf.close()
+    if isinstance(fp, bytes):
+        mf.readstr(fp)
+    else:
+        mf.open(fp)
+        mf.read()
+        mf.close()
     return mf
 
 def mf2stream(mf): return music21.midi.translate.midiFileToStream(mf)
