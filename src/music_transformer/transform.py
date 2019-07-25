@@ -36,9 +36,13 @@ class MusicItem():
         return MusicItem(seq_prefix(seq_type, vocab), vocab)
 
     @property
-    def stream(self, bpm=120):
-        self._stream = idxenc2stream(self.data, self.vocab, bpm=bpm) if self._stream is None else self._stream
+    def stream(self):
+        self._stream = self.to_stream() if self._stream is None else self._stream
         return self._stream
+    
+    def to_stream(self, bpm=120):
+        return idxenc2stream(self.data, self.vocab, bpm=bpm)
+
 
     def to_tensor(self, device=None):
         return to_tensor(self.data, device)

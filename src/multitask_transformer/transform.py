@@ -32,13 +32,16 @@ class MultitrackItem():
     def to_idx(self): return np.array((self.melody.to_idx(), self.chords.to_idx()))
     
     @property
-    def stream(self, bpm=120):
-        if self._stream is None:
-            ps = self.melody.to_npenc(), self.chords.to_npenc()
-            ps = [npenc2chordarr(p) for p in ps]
-            chordarr = chordarr_combine_parts(ps)
-            self._stream = chordarr2stream(chordarr)
+    def stream(self):
+        self._stream = self.to_stream(bpm) if self._stream is None else self._stream
         return self._stream
+    
+    def to_stream(self, bpm=120):
+        ps = self.melody.to_npenc(), self.chords.to_npenc()
+        ps = [npenc2chordarr(p) for p in ps]
+        chordarr = chordarr_combine_parts(ps)
+        return chordarr2stream(chordarr, bpm=bpm)
+
     
     def show(self, format:str=None):
         return self.stream.show(format)
