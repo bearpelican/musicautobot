@@ -31,7 +31,7 @@ parser.add_argument('--epochs', type=int, default=5, help='num epochs')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--div_factor', type=int, default=10, help='learning rate div factor')
 parser.add_argument('--save_every', action='store_true', help='Save every epoch')
-parser.add_argument('--config', type=str, default='mlm_config', help='serve.py config name')
+parser.add_argument('--config', type=str, default='multitask_config', help='serve.py config name')
 parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
 parser.add_argument('--data_parallel', action='store_true', help='DataParallel instead of DDP')
 parser.add_argument('--s2s_mask_window', type=int, default=1,
@@ -86,8 +86,7 @@ if args.lamb:
 learn = multitask_model_learner(combined_data, config.copy(), opt_func=opt_func)
 if not args.half: learn.clip_grad(0.5)
 
-# learn.callbacks.append(MLMTrainer(learn, datasets))
-# learn.callbacks.append(MLMTrainer(learn, datasets, starting_mask_window=args.s2s_mask_window))
+# learn.callbacks.append(MTTrainer(learn, datasets, starting_mask_window=args.s2s_mask_window))
 
 if args.load:
     state = torch.load(path/args.load, map_location='cpu')

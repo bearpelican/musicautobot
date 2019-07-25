@@ -245,7 +245,7 @@ class AverageMultiMetric(AverageMetric):
     
 
 # MODEL LOADING
-class MLMTrainer(LearnerCallback):
+class MTTrainer(LearnerCallback):
     "`Callback` that regroups lr adjustment to seq_len, AR and TAR."
     def __init__(self, learn:Learner, dataloaders=None, starting_mask_window=1):
         super().__init__(learn)

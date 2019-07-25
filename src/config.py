@@ -26,7 +26,7 @@ def default_config():
 
     return config
 
-def mlm_config():
+def multitask_config():
     config = default_config()
     config['bias'] = True
     config['enc_layers'] = 8

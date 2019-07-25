@@ -6,8 +6,6 @@ import torch
 from ..vocab import *
 from functools import partial
 
-
-# MLMType = Enum('MLMType', 'Mask, NextWord, M2C, C2M')
 SEQType = Enum('SEQType', 'Mask, Sentence, Melody, Chords, Empty')
 
 class MusicItem():

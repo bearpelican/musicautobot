@@ -10,9 +10,9 @@ def get_multitask_model(vocab_size:int, config:dict=None, drop_mult:float=1., pa
     n_hid = config['d_model']
     mem_len = config.pop('mem_len')
     embed = TransformerEmbedding(vocab_size, n_hid, embed_p=config['embed_p'], mem_len=mem_len, pad_idx=pad_idx)
-    encoder = MLMEncoder(embed, n_hid, n_layers=config['enc_layers'], mem_len=0, **config) # encoder doesn't need memory
-    decoder = MLMEncoder(embed, n_hid, is_decoder=True, n_layers=config['dec_layers'], mem_len=mem_len, **config)
-    head = MLMLinearDecoder(n_hid, vocab_size, tie_encoder=embed.embed, **config)
+    encoder = MTEncoder(embed, n_hid, n_layers=config['enc_layers'], mem_len=0, **config) # encoder doesn't need memory
+    decoder = MTEncoder(embed, n_hid, is_decoder=True, n_layers=config['dec_layers'], mem_len=mem_len, **config)
+    head = MTLinearDecoder(n_hid, vocab_size, tie_encoder=embed.embed, **config)
     model = MultiTransformer(encoder, decoder, head, mem_len=mem_len)
     return model.apply(init_transformer)
 
@@ -115,7 +115,7 @@ class TransformerEmbedding(nn.Module):
         pos = torch.arange(seq_len-1, -1, -1, device=emb.device, dtype=emb.dtype) # backwards (txl pos encoding)
         return self.pos_enc(pos)
 
-class MLMLinearDecoder(nn.Module):
+class MTLinearDecoder(nn.Module):
     "To go on top of a RNNCore module and create a Language Model."
     initrange=0.1
 
@@ -134,7 +134,7 @@ class MLMLinearDecoder(nn.Module):
 
     
 # DECODER TRANSLATE BLOCK
-class MLMEncoder(nn.Module):
+class MTEncoder(nn.Module):
     def __init__(self, embed:nn.Module, n_hid:int, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
                  resid_p:float=0., attn_p:float=0., ff_p:float=0., bias:bool=True, scale:bool=True,
                  act:Activation=Activation.ReLU, double_drop:bool=True, mem_len:int=512, is_decoder=False, **kwargs):
@@ -143,7 +143,7 @@ class MLMEncoder(nn.Module):
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.v = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
         self.n_layers,self.d_model = n_layers,d_model
-        self.layers = nn.ModuleList([MLMEncoderBlock(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
+        self.layers = nn.ModuleList([MTEncoderBlock(n_heads, d_model, d_head, d_inner, resid_p=resid_p, attn_p=attn_p,
                       ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, mem_len=mem_len,
                       ) for k in range(n_layers)])
 
@@ -174,7 +174,7 @@ class MLMEncoder(nn.Module):
                         r=pos_enc, g_u=self.u, g_v=self.v)
         return lm_emb
 
-class MLMEncoderBlock(nn.Module):
+class MTEncoderBlock(nn.Module):
     "Decoder block of a Transformer model."
     #Can't use Sequential directly cause more than one input...
     def __init__(self, n_heads:int, d_model:int, d_head:int, d_inner:int, resid_p:float=0., attn_p:float=0., ff_p:float=0.,
