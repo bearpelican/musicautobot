@@ -1,6 +1,9 @@
 # Added files
-data/
-data_old/
+data/*
+!data/midi
+data/midi/*
+!data/midi/examples
+
 models/
 tmp_out/
 data_serve/
