@@ -26,13 +26,14 @@ class StackedDataBunch():
 class StackedDataset(Callback):
     def __init__(self, dss):
         self.dss = dss
-    def __getattr__(self, attr):
+    def __getattribute__(self, attr):
+        if attr == 'dss': return super().__getattribute__(attr)
         def redirected(*args, **kwargs):
             for ds in self.dss:
-                if hasattr(ds, attr):
-                    getattr(ds, attr)(*args, **kwargs)
+                if hasattr(ds, attr): getattr(ds, attr)(*args, **kwargs)
         return redirected
     def __len__(self)->int: return sum([len(ds) for ds in self.dss])
+    def __repr__(self): return '\n'.join([self.__class__.__name__] + [repr(ds) for ds in self.dss])
 
 class StackedDataloader():
     def __init__(self, dls, num_it=100):

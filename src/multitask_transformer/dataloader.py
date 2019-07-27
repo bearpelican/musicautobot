@@ -48,6 +48,7 @@ class S2SPreloader(Callback):
                  transpose_range=(0,12), **kwargs):
         self.dataset,self.bptt = dataset,bptt
         self.vocab = self.dataset.vocab
+        self.transpose_range = transpose_range
         self.rand_transpose = partial(rand_transpose_value, rand_range=transpose_range) if transpose_range is not None else None
         
     def __getitem__(self, k:int):

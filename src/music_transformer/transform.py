@@ -14,7 +14,9 @@ class MusicItem():
         self.vocab = vocab
         self._stream = stream
         self._position = position
-    def __repr__(self): return self.vocab.textify(self.data)
+    def __repr__(self): return '\n'.join([
+        f'\n{self.__class__.__name__} - {self.data.shape}',
+        f'{self.vocab.textify(self.data[:10])}...'])
     def __len__(self): return len(self.data)
 
     @classmethod
@@ -43,9 +45,10 @@ class MusicItem():
     def to_stream(self, bpm=120):
         return idxenc2stream(self.data, self.vocab, bpm=bpm)
 
-
     def to_tensor(self, device=None):
         return to_tensor(self.data, device)
+    
+    def to_text(self): return self.vocab.textify(self.data)
     
     @property
     def position(self): 
