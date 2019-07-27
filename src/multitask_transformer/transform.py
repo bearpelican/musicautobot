@@ -33,7 +33,7 @@ class MultitrackItem():
     
     @property
     def stream(self):
-        self._stream = self.to_stream(bpm) if self._stream is None else self._stream
+        self._stream = self.to_stream() if self._stream is None else self._stream
         return self._stream
     
     def to_stream(self, bpm=120):

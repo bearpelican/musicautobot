@@ -27,7 +27,7 @@ class StackedDataset(Callback):
     def __init__(self, dss):
         self.dss = dss
     def __getattr__(self, attr):
-        def redirected(self, *args, **kwargs):
+        def redirected(*args, **kwargs):
             for ds in self.dss:
                 if hasattr(ds, attr):
                     getattr(ds, attr)(*args, **kwargs)
@@ -42,6 +42,12 @@ class StackedDataloader():
         self.dl_idx = -1
         
     def __len__(self)->int: return sum([len(dl) for dl in self.dls])
+    def __getattr__(self, attr):
+        def redirected(*args, **kwargs):
+            for dl in self.dls:
+                if hasattr(dl, attr):
+                    getattr(dl, attr)(*args, **kwargs)
+        return redirected
         
     def __iter__(self):
         "Process and returns items from `DataLoader`."
