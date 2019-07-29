@@ -1,3 +1,7 @@
+## MusicAutobot
+
+Using Deep Learning Transformers to generate pop music
+
 ## Environment setup:  
 
 #### Anaconda
@@ -33,27 +37,25 @@ os.environ['QT_QPA_FONTDIR']='/usr/share/fonts'
 
 `git clone git@github.com:bearpelican/pytorch_midi_generator.git`
 
-`pip install -r requirements.txt`
+`cd midi_generator`
 
-`mkdir -p data/midi`
+`conda env update -f environment.yml`
 
-`cd data/midi`
-
-`wget https://s3-us-west-2.amazonaws.com/ashaw-music/v3/midi_transcribe_v3_shortdur_wmodels.tar.gz`
-
-`tar -xzvf midi_transcribe_v3_shortdur.tar.gz`
+`source activate midi`
 
 ## Generating music
 
 Start Jupyter notebook:  
 `jupyter notebook`
 
-Open up `ULMFit-2-testing.ipynb`
+Open up `notebook/examples/MultitaskGenerate.ipynb`
 
 You should be able to run through all the cells
 
 
 ## Training
+
+``
 
 `SCRIPT=run_gpt.py bash run_multi.sh --path data/midi/midi_transcribe_v3_shortdur/ --batch_size 8 --lr .0001 --epochs 5 --save gpt/clc/v3ep50`
 
