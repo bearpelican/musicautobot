@@ -66,9 +66,9 @@ These scripts are
 
 Insall anaconda: https://www.anaconda.com/distribution/  
 
-`git clone git@github.com:bearpelican/pytorch_midi_generator.git`
+`git clone https://github.com/bearpelican/musicautobot.git`
 
-`cd midi_generator`
+`cd musicautobot`
 
 `conda env update -f environment.yml`
 
@@ -79,25 +79,9 @@ If you want to be able to show scores in a jupyter notebook, install musescore:
 
 MacOS:  
 Download here: https://musescore.org/en/download  
-You may need to set music21 environment path in jupyter notebook:  
-```python
-music21.environment.set('musicxmlPath', '/Applications/MuseScore 3.app/Contents/MacOS/mscore')
-music21.environment.set('musescoreDirectPNGPath', '/Applications/MuseScore 3.app/Contents/MacOS/mscore')
-```
 
 Ubuntu:  
-`sudo apt-get install musescore`  
-```python
-music21.environment.set('musicxmlPath', '/usr/bin/musescore')
-music21.environment.set('musescoreDirectPNGPath', '/usr/bin/musescore')
-
-os.environ['QT_QPA_PLATFORM']='offscreen'
-os.environ['QT_QPA_FONTDIR']='/usr/share/fonts'
-```
-
-
-This project is built on top of [fast.ai's](https://github.com/fastai/fastai) powerful deep learning library - which is built on top of pytorch
-
+`sudo apt-get install musescore` 
 
 
 ## Data
@@ -110,5 +94,10 @@ For some good data sources, please look here:
 * [Reddit](https://www.reddit.com/r/datasets/comments/3akhxy/the_largest_midi_collection_on_the_internet/)
 * [wayne391](https://github.com/wayne391/Lead-Sheet-Dataset)
 * [Lakh](https://colinraffel.com/projects/lmd/)
+
+
+## Credits
+
+This project is built on top of [fast.ai's](https://github.com/fastai/fastai) powerful deep learning library - which is built on top of pytorch
 
 
