@@ -13,7 +13,7 @@ from fastai.text.models.transformer import *
 import sys
 sys.path.insert(0, '..')
 
-from src.music_transformer import *
+from musicautobot.music_transformer import *
 
 
 import argparse
@@ -49,7 +49,7 @@ if is_distributed:
 
 path = Path(args.path)
 
-from src import config
+from musicautobot import config
 config = getattr(config, args.config)()
 
 if args.no_transpose: config['transpose_range'] = None
@@ -58,7 +58,7 @@ data = load_data(path, args.data_file,
 
 opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=1e-4)
 if args.lamb:
-    from src.lamb import Lamb
+    from musicautobot.lamb import Lamb
     opt_func = partial(Lamb, eps=1e-4)
     
 learn = music_model_learner(data, config, drop_mult=1.5, opt_func=opt_func)

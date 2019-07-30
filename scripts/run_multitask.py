@@ -11,9 +11,9 @@ import numpy as np
 import sys
 sys.path.insert(0, '..')
 
-from src.music_transformer import *
-from src.multitask_transformer import *
-from src.utils.stacked_dataloader import StackedDataBunch
+from musicautobot.music_transformer import *
+from musicautobot.multitask_transformer import *
+from musicautobot.utils.stacked_dataloader import StackedDataBunch
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -54,7 +54,7 @@ setup_distrib(args.local_rank)
 
 path = Path(args.path)
 
-from src import config
+from musicautobot import config
 config = getattr(config, args.config)()
 
 if args.no_transpose: config['transpose_range'] = None
@@ -80,7 +80,7 @@ combined_data = StackedDataBunch(datasets)
 eps = 1e-3 if args.half else 1e-6
 opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=eps)
 if args.lamb:
-    from src.utils.lamb import Lamb
+    from musicautobot.utils.lamb import Lamb
     opt_func = partial(Lamb, eps=eps)
     
 # Load Learner

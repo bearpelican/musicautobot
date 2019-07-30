@@ -13,8 +13,8 @@ This project aims to leverage these powerful language models and apply them to m
 
 ### Implementation
 
-1. [MusicTransformer](src/music_transformer) - This basic model uses [Transformer-XL](https://github.com/kimiyoung/transformer-xl) to take a sequence of music notes and predict the next note.
-2. [MultitaskTransformer](src/multitask_transformer) - Built on top of MusicTransformer, this model is trained on multiple tasks:
+1. [MusicTransformer](musicautobot/music_transformer) - This basic model uses [Transformer-XL](https://github.com/kimiyoung/transformer-xl) to take a sequence of music notes and predict the next note.
+2. [MultitaskTransformer](musicautobot/multitask_transformer) - Built on top of MusicTransformer, this model is trained on multiple tasks:
  * Next Note Prediction (same as MusicTransformer)
  * [BERT](https://github.com/google-research/bert) Token Masking
  * Sequence To Sequence Translation - Using chords to predict melody and vice versa.
@@ -43,13 +43,13 @@ Example notebook [here](notebooks/multitask_transformer/Generate.ipynb).
  
 ### Library
 
-* [src](src) Rename to musicautobot
- * [numpy_encode](src/numpy_encode.py) - Leverages music21's incredible [library](https://web.mit.edu/music21/) to transform midi files into tensors for training
- * [config](src/config.py) - Default model parameters
- * [vocab](src/vocab.py) - Dictionary for tokenizing midi to tensor. 
- * [music_transformer](src/music_transformer) - File structure similar to fastai's library.
+* [musicautobot](musicautobot)
+ * [numpy_encode](musicautobot/numpy_encode.py) - Leverages music21's incredible [library](https://web.mit.edu/music21/) to transform midi files into tensors for training
+ * [config](musicautobot/config.py) - Default model parameters
+ * [vocab](musicautobot/vocab.py) - Dictionary for tokenizing midi to tensor. 
+ * [music_transformer](musicautobot/music_transformer) - File structure similar to fastai's library.
    * Learner, Model, Transform - MusicItem, Dataloader
- * [multitask_transformer](src/multitasl_transformer) - File structure similar to fastai's library.
+ * [multitask_transformer](musicautobot/multitask_transformer) - File structure similar to fastai's library.
    * Learner, Model, Transform - MusicItem, Dataloader
 
 ### Scripts
