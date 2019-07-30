@@ -1,8 +1,10 @@
 # Added files
 data/*
 !data/midi
+!data/single_bar_example.mid
 data/midi/*
 !data/midi/examples
+
 
 models/
 tmp_out/
