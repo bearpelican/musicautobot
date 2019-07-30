@@ -99,10 +99,10 @@ Unfortunately I cannot provide the dataset used for training the model.
 
 Here's some suggestions:
 
-* [Classical Archives](https://www.classicalarchives.com/) - incredible library of high quality midi data
+* [Classical Archives](https://www.classicalarchives.com/) - incredible catalog of high quality classical midi
+* [HookTheory](https://www.hooktheory.com/) - great data for sequence to sequence predictions. Need to manually copy files into hookpad 
 * [Reddit](https://www.reddit.com/r/datasets/comments/3akhxy/the_largest_midi_collection_on_the_internet/) - 130k files
-* [wayne391](https://github.com/wayne391/Lead-Sheet-Dataset)
-* [Lakh](https://colinraffel.com/projects/lmd/)
+* [Lakh](https://colinraffel.com/projects/lmd/) - great research dataset
 
 
 ## Acknowledgements
