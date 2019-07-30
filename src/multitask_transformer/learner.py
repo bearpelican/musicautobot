@@ -2,6 +2,7 @@ from fastai.basics import *
 from ..vocab import *
 from ..utils.top_k_top_p import top_k_top_p
 from ..music_transformer.transform import *
+from ..music_transformer.learner import filter_invalid_indexes
 from .model import get_multitask_model
 from .dataloader import *
 

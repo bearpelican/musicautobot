@@ -2,9 +2,9 @@ import music21
 import torch
 
 from fastai.distributed import *
-#from fastai.text.models.transformer import *
-from apex.optimizers import FusedAdam
-from fastai.callbacks import *
+from fastai.callbacks import SaveModelCallback
+try: from apex.optimizers import FusedAdam
+except: from torch.optim import Adam as FusedAdam
 
 import numpy as np
 
