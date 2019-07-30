@@ -18,8 +18,8 @@ from src.utils.stacked_dataloader import StackedDataBunch
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--path', type=str, default='../data/numpy/')
-parser.add_argument('--data_file', type=str, default='cached/all.pkl')
-parser.add_argument('--s2s_data_file', type=str, default='cached/all.pkl')
+parser.add_argument('--data_file', type=str, default='musicitem_data_save.pkl')
+parser.add_argument('--s2s_data_file', type=str, default='multiitem_data_save.pkl')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
 parser.add_argument("--local_rank", type=int, default=0)
@@ -62,13 +62,13 @@ if args.no_transpose: config['transpose_range'] = None
 datasets = []
 
 
-data = load_data(args.path, Path('piano_duet')/args.data_file, 
+data = load_data(args.path, args.data_file, 
                  bs=args.batch_size, bptt=args.bptt, transpose_range=config['transpose_range'],
                  encode_position=True, dl_tfms=mask_lm_tfm)
 
 datasets.append(data)
 
-s2s_data = load_data(args.path, Path('s2s_encode')/args.data_file, 
+s2s_data = load_data(args.path, args.s2s_data_file, 
                     bs=args.batch_size//4, bptt=args.bptt, transpose_range=config['transpose_range'],
                      preloader_cls=S2SPreloader, dl_tfms=melody_chord_tfm)
 

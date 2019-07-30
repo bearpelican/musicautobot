@@ -27,7 +27,7 @@ These extra tasks allow us to generate some really cool predictions.
 ```
 Example notebook [here](notebooks/multitask_transformer/Generate.ipynb).
 
-#### Example Notebooks
+### Example Notebooks
 
 1. MusicTransformer
  * [Train](notebooks/music_transformer/Train.ipynb) - End to end example on how to create a dataset from midi files and train a model from scratch
@@ -41,7 +41,7 @@ Example notebook [here](notebooks/multitask_transformer/Generate.ipynb).
  * [Midi2Tensor](notebooks/data_encoding/Midi2Tensor.ipynb) - Shows how the libary internally encodes midi files to tensors for training.
  * [MusicItem](notebooks/data_encoding/MusicItem-Transforms.ipynb) - MusicItem is a wrapper that makes it easy to manipulate midi data. Convert midi to tensor, apply data transformations, even play music or display the notes within browser.
  
-#### Library
+### Library
 
 * [src](src) Rename to musicautobot
  * [numpy_encode](src/numpy_encode.py) - Leverages music21's incredible [library](https://web.mit.edu/music21/) to transform midi files into tensors for training
@@ -52,16 +52,19 @@ Example notebook [here](notebooks/multitask_transformer/Generate.ipynb).
  * [multitask_transformer](src/multitasl_transformer) - File structure similar to fastai's library.
    * Learner, Model, Transform - MusicItem, Dataloader
 
-#### Scripts
+### Scripts
 
+These scripts are 
+* [run_multitask.py](scripts/run_multitask.py) - CLI script for training multitask model
+ * Usage: `python run_multitask.py --epochs 14 --save multitask_model --batch_size=16 --bptt=512 --lamb --data_parallel --lr 1e-4`
+* [run_music_transformer.py](scripts/run_music_transformer.py) - CLI script for training music transformer.
+ * Usage: `python run_multitask.py --epochs 14 --save music_model --batch_size=16 --bptt=512 --lr 1e-4`
+* [run_ddp.sh](scripts/run_ddp.sh) - Helper method to train with multiple GPUs. Only works with run_music_transformer.py
+ * Usage: `SCRIPT=run_multitask.py bash run_ddp.sh --epochs 14 --save music_model --batch_size=16 --bptt=512 --lr 1e-4`
 
+### Installation
 
-#### Installation
-
-#### Anaconda
-Recommend installing anaconda: https://www.anaconda.com/distribution/  
-
-
+Insall anaconda: https://www.anaconda.com/distribution/  
 
 `git clone git@github.com:bearpelican/pytorch_midi_generator.git`
 
@@ -69,7 +72,7 @@ Recommend installing anaconda: https://www.anaconda.com/distribution/
 
 `conda env update -f environment.yml`
 
-`source activate midi`
+`source activate musicautobot`
 
 #### Musescore
 If you want to be able to show scores in a jupyter notebook, install musescore:  
@@ -96,31 +99,16 @@ os.environ['QT_QPA_FONTDIR']='/usr/share/fonts'
 This project is built on top of [fast.ai's](https://github.com/fastai/fastai) powerful deep learning library - which is built on top of pytorch
 
 
-## Generating music
-
-Start Jupyter notebook:  
-`jupyter notebook`
-
-Open up `notebook/examples/MultitaskGenerate.ipynb`
-
-You should be able to run through all the cells
-
-
-## Training
-
-``
-
-`SCRIPT=run_gpt.py bash run_multi.sh --path data/midi/midi_transcribe_v3_shortdur/ --batch_size 8 --lr .0001 --epochs 5 --save gpt/clc/v3ep50`
-
 
 ## Data
 
-The `1-DataFormatting-#-XXXX.ipynb` notebooks are the steps to encode midi files to text to numerical tensors.
+Unfortunately I cannot provide the dataset used for training the model.
 
-`data_collection` directory contains information on how midi data was scraped. In all, there are 33k midi files collected.
+For some good data sources, please look here:
 
-### Dataset
-The dataset here `https://s3-us-west-2.amazonaws.com/ashaw-music/v3/midi_transcribe_v3_shortdur_wmodels.tar.gz` has already been transformed to text format.
+* [Classical Archives](https://www.classicalarchives.com/)
+* [Reddit](https://www.reddit.com/r/datasets/comments/3akhxy/the_largest_midi_collection_on_the_internet/)
+* [wayne391](https://github.com/wayne391/Lead-Sheet-Dataset)
+* [Lakh](https://colinraffel.com/projects/lmd/)
 
-Encoding format:
-Take a looks at `Tutorial-EncodingFormat.ipynb` for better idea of how midi is encoded
+
