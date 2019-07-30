@@ -8,6 +8,7 @@ models/
 tmp_out/
 data_serve/
 notebooks/data_collection/musescore/*.json
+notebooks/scratch
 .vscode
 .DS_Store
 

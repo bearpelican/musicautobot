@@ -37,7 +37,8 @@ class MusicVocab():
 
     def textify(self, nums:Collection[int], sep=' ') -> List[str]:
         "Convert a list of `nums` to their tokens."
-        return sep.join([self.itos[i] for i in nums]) if sep is not None else [self.itos[i] for i in nums]
+        items = [self.itos[i] for i in nums]
+        return sep.join(items) if sep is not None else items
     
     def to_music_item(self, idxenc):
         return transform.MusicItem(idxenc, self)

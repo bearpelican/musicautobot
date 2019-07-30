@@ -165,13 +165,6 @@ class MultitaskLearner(Learner):
 
         return vocab.to_music_item(np.array(targ))
     
-def filter_invalid_indexes(res, prev_idx, vocab):
-    if vocab.is_duration(prev_idx) or prev_idx == vocab.pad_idx:
-        res[list(range(*vocab.dur_range))] = 0
-    else:
-        res[list(range(*vocab.note_range))] = 0
-    return res
-
 # High level prediction functions from midi file
 
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 

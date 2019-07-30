@@ -119,8 +119,7 @@ def timestep2npenc(timestep, note_range=PIANO_RANGE, enc_type=None):
 
 # 1.
 def npenc2chordarr(npenc, note_size=NOTE_SIZE):
-    max_vals = npenc.max(axis=0)
-    num_instruments = 1 if len(npenc.shape) <= 2 else max_vals[-1]
+    num_instruments = 1 if len(npenc.shape) <= 2 else npenc.max(axis=0)[-1]
     
     max_len = npenc_len(npenc)
     # score_arr = (steps, inst, note)
@@ -273,15 +272,6 @@ def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
 
 # sequence 2 sequence convenience functions
 
-# def chordarr_combine_parts(p1, p2):
-#     max_ts = max(p1.shape[0], p2.shape[0])
-#     p1w = ((0,max_ts-p1.shape[0]),(0,0),(0,0))
-#     p1_pad = np.pad(p1, p1w, 'constant')
-#     p2w = ((0,max_ts-p2.shape[0]),(0,0),(0,0))
-#     p2_pad = np.pad(p2, p2w, 'constant')
-#     chordarr_comb = np.concatenate((p1_pad, p2_pad), axis=1)
-#     return chordarr_comb
-
 def stream2npenc_parts(stream, sort_pitch=True):
     chordarr = stream2chordarr(stream)
     _,num_parts,_ = chordarr.shape
@@ -297,20 +287,6 @@ def chordarr_combine_parts(parts):
 def pad_part_to(p, target_size):
     pad_width = ((0,target_size-p.shape[0]),(0,0),(0,0))
     return np.pad(p, pad_width, 'constant')
-    
-# def chordarr_extract_parts(chordarr):
-#     _,num_parts,_ = chordarr.shape
-
-#     if num_parts == 1:
-#         # if predicting melody, assume only track is chord track
-#         p1, p2 = part_enc(chordarr, 0), np.zeros((0,2), dtype=int)
-#         p1, p2 = (p2, p1) if pred_melody else (p1, p2)
-#     elif num_parts == 2:
-#         p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
-#         p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
-#     else:
-#         raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
-#     return p1, p2
 
 def part_enc(chordarr, part):
     partarr = chordarr[:,part:part+1,:]

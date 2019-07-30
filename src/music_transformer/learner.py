@@ -79,6 +79,8 @@ class MusicLearner(LanguageLearner):
                 temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
                 if temperature != 1.: res.pow_(1 / temperature)
 
+                prev_idx = new_idx[-1] if len(new_idx) else x[-1].item()
+                res = filter_invalid_indexes(res, prev_idx, vocab)
                 res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
                 idx = torch.multinomial(res, 1).item()
 
@@ -104,3 +106,10 @@ def nw_predict_from_midi(learn, midi=None, n_words=400,
         
     pred = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
     return seed.append(pred)
+
+def filter_invalid_indexes(res, prev_idx, vocab):
+    if vocab.is_duration(prev_idx) or prev_idx == vocab.pad_idx:
+        res[list(range(*vocab.dur_range))] = 0
+    else:
+        res[list(range(*vocab.note_range))] = 0
+    return res

@@ -17,13 +17,13 @@ class MultitrackItem():
             stream = separate_melody_chord(stream)
             
         mpart, cpart = stream2npenc_parts(stream)
-        return cls.from_npenc_parts(mpart, cpart, vocab)
+        return cls.from_npenc_parts(mpart, cpart, vocab, stream)
         
     @classmethod
-    def from_npenc_parts(cls, mpart, cpart, vocab):
+    def from_npenc_parts(cls, mpart, cpart, vocab, stream=None):
         mpart = npenc2idxenc(mpart, seq_type=SEQType.Melody, vocab=vocab, add_eos=True)
         cpart = npenc2idxenc(cpart, seq_type=SEQType.Chords, vocab=vocab, add_eos=True)
-        return MultitrackItem(MusicItem(mpart, vocab), MusicItem(cpart, vocab))
+        return MultitrackItem(MusicItem(mpart, vocab), MusicItem(cpart, vocab), stream)
         
     @classmethod
     def from_idx(cls, item, vocab):
@@ -51,6 +51,8 @@ class MultitrackItem():
         return MultitrackItem(self.melody.transpose(val), self.chords.transpose(val))
     def pad_to(self, val):
         return MultitrackItem(self.melody.pad_to(val), self.chords.pad_to(val))
+    def trim_to_beat(self, beat):
+        return MultitrackItem(self.melody.trim_to_beat(beat), self.chords.trim_to_beat(beat))
     
 def combine2chordarr(np1, np2, vocab):
     if len(np1.shape) == 1: np1 = idxenc2npenc(np1, vocab)

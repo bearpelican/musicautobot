@@ -21,7 +21,10 @@ class MusicItem():
 
     @classmethod
     def from_file(cls, midi_file, vocab):
-        return MusicItem(midi2idxenc(midi_file, vocab), vocab, file2stream(midi_file))
+        stream = file2stream(midi_file)
+        chordarr = stream2chordarr(stream) # 2.
+        npenc = chordarr2npenc(chordarr) # 3.
+        return MusicItem(npenc2idxenc(npenc, vocab), vocab, stream)
         
     @classmethod
     def from_npenc(cls, npenc, vocab):
@@ -48,7 +51,7 @@ class MusicItem():
     def to_tensor(self, device=None):
         return to_tensor(self.data, device)
     
-    def to_text(self): return self.vocab.textify(self.data)
+    def to_text(self, sep=' '): return self.vocab.textify(self.data, sep)
     
     @property
     def position(self): 
@@ -94,32 +97,6 @@ class MusicItem():
 def pad_seq(seq, bptt, value):
     pad_len = max(bptt-seq.shape[0], 0)
     return np.pad(seq, (0, pad_len), 'constant', constant_values=value)[:bptt]
-
-# def partenc2seq2seq(part_np, part_type, vocab, add_eos=True):
-#     part_meta = np.array([vocab.stoi[part_type], vocab.pad_idx])
-#     s2s_out = npenc2idxenc(part_np, vocab=vocab, start_seq=part_meta)
-#     if add_eos: s2s_out = np.pad(s2s_out, (0,1), 'constant', constant_values=vocab.stoi[EOS])
-#     return s2s_out
-
-# def s2s_combine2chordarr(np1, np2, vocab):
-#     if len(np1.shape) == 1: np1 = idxenc2npenc(np1, vocab)
-#     if len(np2.shape) == 1: np2 = idxenc2npenc(np2, vocab)
-#     p1 = npenc2chordarr(np1)
-#     p2 = npenc2chordarr(np2)
-#     return chordarr_combine_parts(p1, p2)
-     
-# def stream2melody_chord(stream, vocab):
-#     chordarr = stream2chordarr(stream) # 2.
-#     _,num_parts,_ = chordarr.shape
-#     if num_parts != 2: 
-#         raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
-    
-#         p1, p2 = [part_enc(chordarr, i) for i in range(num_parts)]
-#         sorted(avg_pitch
-#         p1, p2 = (p1, p2) if avg_pitch(p1) > avg_pitch(p2) else (p2, p1)
-#     mpart = partenc2seq2seq(p1, part_type=MSEQ, vocab=vocab)
-#     cpart = partenc2seq2seq(p2, part_type=CSEQ, vocab=vocab)
-#     return mpart, cpart
 
 def to_tensor(t, device=None):
     t = t if isinstance(t, torch.Tensor) else torch.tensor(t)
@@ -168,7 +145,7 @@ def seq_prefix(seq_type, vocab):
 def idxenc2npenc(t, vocab, validate=True):
     if validate: t = to_valid_idxenc(t, vocab.npenc_range)
     t = t.copy().reshape(-1, 2)
-    if t.shape[0] == 0: return
+    if t.shape[0] == 0: return t
         
     t[:, 0] = t[:, 0] - vocab.note_range[0]
     t[:, 1] = t[:, 1] - vocab.dur_range[0]
@@ -220,11 +197,3 @@ def mask_input(xb, mask_range, replacement_idx):
     xb = xb.copy()
     xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = replacement_idx
     return xb
-
-# def rand_transpose_tfm(t, vocab, rand_range=(0,24), p=0.5):
-#     if np.random.rand() < p:
-#         transpose_value = np.random.randint(*rand_range)-rand_range[1]//2
-#         if isinstance(t, (list, tuple)) and len(t) == 2: 
-#             return [tfm_transpose(x, transpose_value, vocab) for x in t]
-#         return tfm_transpose(t, transpose_value, vocab)
-#     return t

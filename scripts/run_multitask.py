@@ -17,8 +17,9 @@ from src.utils.stacked_dataloader import StackedDataBunch
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v19/')
+parser.add_argument('--path', type=str, default='../data/numpy/')
 parser.add_argument('--data_file', type=str, default='cached/all.pkl')
+parser.add_argument('--s2s_data_file', type=str, default='cached/all.pkl')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
 parser.add_argument("--local_rank", type=int, default=0)
@@ -86,8 +87,6 @@ if args.lamb:
 learn = multitask_model_learner(combined_data, config.copy(), opt_func=opt_func)
 if not args.half: learn.clip_grad(0.5)
 
-# learn.callbacks.append(MTTrainer(learn, datasets, starting_mask_window=args.s2s_mask_window))
-
 if args.load:
     state = torch.load(path/args.load, map_location='cpu')
     get_model(learn.model).load_state_dict(state['model'], strict=False)
@@ -100,7 +99,6 @@ if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=path/
 if args.data_parallel: learn = learn.to_parallel()
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
 
-# if not args.lamb: learn.fit_one_cycle(2, args.lr/2, div_factor=50, pct_start=0.9) # no need for warmup with lamb
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.3, final_div=50, wd=args.wd)
 
 if args.local_rank == 0: learn.save(f'{args.save}')
