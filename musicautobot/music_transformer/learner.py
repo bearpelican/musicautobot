@@ -6,12 +6,13 @@ from ..numpy_encode import SAMPLE_FREQ
 from ..utils.top_k_top_p import top_k_top_p
 from ..utils.midifile import is_empty_midi
 
-def music_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.,
+_model_meta[MusicTransformerXL] = _model_meta[TransformerXL] # copy over fastai's model metadata
+
+def music_model_learner(data:DataBunch, arch=MusicTransformerXL, config:dict=None, drop_mult:float=1.,
                         pretrained_path:PathOrStr=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
-    _model_meta[MusicTransformerXL] = _model_meta[TransformerXL] # copy over fastai's model metadata
-    meta = _model_meta[MusicTransformerXL]
-    model = get_language_model(MusicTransformerXL, len(data.vocab.itos), config=config, drop_mult=drop_mult)
+    meta = _model_meta[arch]
+    model = get_language_model(arch, len(data.vocab.itos), config=config, drop_mult=drop_mult)
     learn = MusicLearner(data, model, split_func=meta['split_lm'], **learn_kwargs)
 
     if pretrained_path:
