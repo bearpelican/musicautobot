@@ -1,6 +1,7 @@
 from fastai.basics import *
 from ..vocab import *
 from ..utils.top_k_top_p import top_k_top_p
+from ..utils.midifile import is_empty_midi
 from ..music_transformer.transform import *
 from ..music_transformer.learner import filter_invalid_indexes
 from .model import get_multitask_model
@@ -68,7 +69,10 @@ class MultitaskLearner(Learner):
                 new_idx.append(idx)
                 x = x.new_tensor([idx])
                 pos = pos.new_tensor([last_pos])
-        return vocab.to_music_item(np.array(new_idx))
+
+        pred = vocab.to_music_item(np.array(new_idx))
+        full = item.append(pred)
+        return pred, full
 
     def predict_mask(self, masked_item:MusicItem, pos=None,
                     temperatures:float=(1.0,1.0),
@@ -167,6 +171,14 @@ class MultitaskLearner(Learner):
         return vocab.to_music_item(np.array(targ))
     
 # High level prediction functions from midi file
+def nw_predict_from_midi(learn, midi=None, n_words=400, 
+                      temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
+    vocab = learn.data.vocab
+    seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
+    if seed_len is not None: seed = seed.trim_to_beat(seed_len)
+        
+    pred, full = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
+    return full
 
 def s2s_predict_from_midi(learn, midi=None, n_words=200, 
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
