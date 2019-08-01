@@ -97,7 +97,9 @@ class MusicLearner(LanguageLearner):
 
                 new_idx.append(idx)
                 x = x.new_tensor([idx])
-        return vocab.to_music_item(np.array(new_idx))
+        pred = vocab.to_music_item(np.array(new_idx))
+        full = seed.append(pred)
+        return pred, full
     
 def nw_predict_from_midi(learn, midi=None, n_words=400, 
                       temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
@@ -105,8 +107,8 @@ def nw_predict_from_midi(learn, midi=None, n_words=400,
     seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
     if seed_len is not None: seed = seed.trim_to_beat(seed_len)
         
-    pred = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
-    return seed.append(pred)
+    pred, full = learn.predict_nw(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
+    return full
 
 def filter_invalid_indexes(res, prev_idx, vocab):
     if vocab.is_duration(prev_idx) or prev_idx == vocab.pad_idx:

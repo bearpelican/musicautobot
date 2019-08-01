@@ -20,15 +20,15 @@ class MusicItem():
     def __len__(self): return len(self.data)
 
     @classmethod
-    def from_file(cls, midi_file, vocab):
-        stream = file2stream(midi_file)
+    def from_file(cls, midi_file, vocab): 
+        return cls.from_stream(file2stream(midi_file), vocab)
+    @classmethod
+    def from_stream(cls, stream, vocab):
         chordarr = stream2chordarr(stream) # 2.
         npenc = chordarr2npenc(chordarr) # 3.
-        return MusicItem(npenc2idxenc(npenc, vocab), vocab, stream)
-        
+        return cls.from_npenc(npenc, vocab, stream)
     @classmethod
-    def from_npenc(cls, npenc, vocab):
-        return MusicItem(npenc2idxenc(npenc, vocab), vocab)
+    def from_npenc(cls, npenc, vocab, stream=None): return MusicItem(npenc2idxenc(npenc, vocab), vocab)
     
     @classmethod
     def from_idx(cls, item, vocab):
@@ -93,6 +93,10 @@ class MusicItem():
         data = pad_seq(self.data, bptt, self.vocab.pad_idx)
         pos = pad_seq(self.position, bptt, 0)
         return self.new(data, stream=self._stream, position=pos)
+    
+    def split_stream_parts(self):
+        self._stream = separate_melody_chord(self.stream)
+        return self.stream
         
 def pad_seq(seq, bptt, value):
     pad_len = max(bptt-seq.shape[0], 0)
@@ -104,10 +108,11 @@ def to_tensor(t, device=None):
     else: t.to(device)
     return t
             
-def trim_tfm(idxenc, vocab, to_beat=None, sample_freq=SAMPLE_FREQ):
+def trim_tfm(idxenc, vocab, to_beat=None, sample_freq=SAMPLE_FREQ, trim_sep=True):
     if to_beat is None: return idxenc
     pos = position_enc(idxenc, vocab)
     cutoff = np.searchsorted(pos, to_beat * sample_freq)
+    if trim_sep and cutoff > 2: cutoff = cutoff - 2 # ma
     return idxenc[:cutoff]
     
 def midi2idxenc(midi_file, vocab):
