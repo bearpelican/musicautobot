@@ -4,6 +4,7 @@ from .model import *
 from .transform import MusicItem
 from ..numpy_encode import SAMPLE_FREQ
 from ..utils.top_k_top_p import top_k_top_p
+from ..utils.midifile import is_empty_midi
 
 _model_meta[MusicTransformerXL] = _model_meta[TransformerXL] # copy over fastai's model metadata
 
@@ -100,6 +101,16 @@ class MusicLearner(LanguageLearner):
         full = item.append(pred)
         return pred, full
     
+# High level prediction functions from midi file
+def predict_from_midi(learn, midi=None, n_words=400, 
+                      temperatures=(1.0,1.0), top_k=30, top_p=0.6, seed_len=None, **kwargs):
+    vocab = learn.data.vocab
+    seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
+    if seed_len is not None: seed = seed.trim_to_beat(seed_len)
+        
+    pred, full = learn.predict(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
+    return full
+
 def filter_invalid_indexes(res, prev_idx, vocab):
     if vocab.is_duration(prev_idx) or prev_idx == vocab.pad_idx:
         res[list(range(*vocab.dur_range))] = 0

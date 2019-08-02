@@ -1,0 +1,28 @@
+
+{
+  "name": "Midi Generator",
+  "description": "",
+  "repository": "https://github.com/bearpelican/vue_midi_generator",
+  "logo": "https://static1.squarespace.com/static/5b7ec8e536099bcb6fd1b54f/t/5b989a2bc2241bdafc1f5a39/1536806734803/?format=50w",
+  "keywords": ["flask", "vue"],
+  "env": {
+    "FLASK_ENV": {
+      "description": "Flask Enviroment",
+      "value": "production"
+    },
+    "SECRET": {
+      "description": "Flask Secret Key",
+      "value": "YourKeyHere"
+    }
+   },
+  "addons": [
+   ],
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    },
+    {
+      "url": "heroku/python"
+    }
+  ]
+}

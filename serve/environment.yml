@@ -1,0 +1,11 @@
+name: midi
+channels:
+- defaults
+dependencies:
+- gunicorn
+- flask
+- boto3
+- pip:
+  - flask-restplus
+  - python-dotenv
+  - flask_cors
