@@ -15,7 +15,8 @@ CORS(app)
 
 # app.logger.info('>>> {}'.format(Config.FLASK_ENV))
 
-
+@app.route('/hello')
+def hello(): return 'hello'
 
 # api_bp = Blueprint('api_bp', __name__, url_prefix='/api')
 

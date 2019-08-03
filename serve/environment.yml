@@ -1,4 +1,4 @@
-name: midi
+name: musicautobot
 channels:
 - defaults
 dependencies:
