@@ -107,7 +107,7 @@ def predict_from_midi(learn, midi=None, n_words=400,
     vocab = learn.data.vocab
     seed = MusicItem.from_file(midi, vocab) if not is_empty_midi(midi) else MusicItem.empty(vocab)
     if seed_len is not None: seed = seed.trim_to_beat(seed_len)
-        
+
     pred, full = learn.predict(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
     return full
 

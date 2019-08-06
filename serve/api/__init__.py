@@ -29,6 +29,10 @@ def hello(): return 'hello'
 
 from .config import Config
 
-# Import prediction api
-from .predict import *
-# from .predict_multitask import *
+# Import prediction api (choose only one)
+
+# MusicTransformer API
+# from .predict import *
+
+# Multitask API
+from .predict_multitask import *

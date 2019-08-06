@@ -28,6 +28,7 @@ def predict_midi():
     bpm = float(args['bpm']) # (AS) TODO: get bpm from midi file instead
     temperatures = (float(args.get('noteTemp', 1.2)), float(args.get('durationTemp', 0.8)))
     n_words = int(args.get('nSteps', 200))
+    seed_len = int(args.get('seedLen', 12))
     # debugging 1 - send exact midi back
     # with open('/tmp/test.mid', 'wb') as f:
     #     f.write(midi)
@@ -55,7 +56,7 @@ def predict_midi():
 
     # Main logic
     try:
-        full = predict_from_midi(learn, midi=midi, n_words=n_words, temperatures=temperatures)
+        full = predict_from_midi(learn, midi=midi, n_words=n_words, seed_len=seed_len, temperatures=temperatures)
         stream = separate_melody_chord(full.to_stream(bpm=bpm))
         midi_out = Path(stream.write("midi"))
         print('Wrote to temporary file:', midi_out)

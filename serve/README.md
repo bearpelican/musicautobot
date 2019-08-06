@@ -11,13 +11,14 @@ Installation:
 cd serve
 conda env update -f environment.yml
 
+Set S3 BUCKET in api/api.cfg
 
 
 Running server:
 
-Set S3 BUCKET in api/api.cfg
+conda activate musicautobot
 
-Running on local host:
+Local Host:
 python run.py
 
 Production:
