@@ -211,3 +211,13 @@ class MusicPreloader(Callback):
                 row[ibuf:ibuf+n] = rag[ri-n:ri][::-1]
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
+    
+def position_tfm(b):
+    "Batch transform for training with positional encoding"
+    x,y = b
+    x = {
+        'x': x[...,0],
+        'pos': x[...,1]
+    }
+    return x, y[...,0]
+    
