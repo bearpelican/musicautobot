@@ -102,7 +102,7 @@ class MusicPreloader(Callback):
 
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
                  shuffle:bool=False, y_offset:int=1, 
-                 transpose_range=(0,24), transpose_p=0.5,
+                 transpose_range=(0,12), transpose_p=0.5,
                  encode_position=False,
                  **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths

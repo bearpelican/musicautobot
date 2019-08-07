@@ -86,17 +86,10 @@ class TransformerEmbedding(nn.Module):
         self.pad_idx = pad_idx
         
         self.embed = nn.Embedding(vocab_size, emb_sz, padding_idx=pad_idx)
-        # See https://arxiv.org/abs/1711.09160
-        with torch.no_grad(): trunc_normal_(self.embed.weight, std=0.01)
         self.pos_enc = PositionalEncoding(emb_sz)
-        self.initrange = 0.05
         self.beat_len, self.max_bar_len = beat_len, max_bar_len
         self.beat_enc = nn.Embedding(beat_len, emb_sz, padding_idx=0)
         self.bar_enc = nn.Embedding(max_bar_len, emb_sz, padding_idx=0)
-
-        self.beat_enc.weight.data.uniform_(-self.initrange, self.initrange)
-        self.bar_enc.weight.data.uniform_(-self.initrange, self.initrange)
-        
         
         self.drop = nn.Dropout(embed_p)
         self.mem_len = mem_len

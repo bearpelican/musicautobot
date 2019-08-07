@@ -28,7 +28,7 @@ class MusicItem():
         npenc = chordarr2npenc(chordarr) # 3.
         return cls.from_npenc(npenc, vocab, stream)
     @classmethod
-    def from_npenc(cls, npenc, vocab, stream=None): return MusicItem(npenc2idxenc(npenc, vocab), vocab)
+    def from_npenc(cls, npenc, vocab, stream=None): return MusicItem(npenc2idxenc(npenc, vocab), vocab, stream)
     
     @classmethod
     def from_idx(cls, item, vocab):
