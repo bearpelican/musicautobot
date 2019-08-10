@@ -196,9 +196,9 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     return MultitrackItem(*part_order)
 
 def mask_predict_from_midi(learn, midi=None, predict_notes=True,
-                           temperatures=(1.0,1.0), top_k=30, top_p=0.7, **kwargs):
+                           temperatures=(1.0,1.0), top_k=30, top_p=0.7, section=None, **kwargs):
     item = MusicItem.from_file(midi, learn.data.vocab)
-    masked_item = item.mask_notes() if predict_notes else item.mask_duration()
+    masked_item = item.mask_pitch(section) if predict_notes else item.mask_duration(section)
     pred = learn.predict_mask(masked_item, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
     return pred
 

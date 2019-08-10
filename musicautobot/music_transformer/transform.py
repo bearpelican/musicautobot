@@ -71,8 +71,8 @@ class MusicItem():
     def new(self):
         return partial(type(self), vocab=self.vocab)
 
-    def trim_to_beat(self, beat):
-        return self.new(trim_tfm(self.data, self.vocab, beat))
+    def trim_to_beat(self, beat, include_last_sep=False):
+        return self.new(trim_to_beat(self.data, self.position, beat, include_last_sep))
     
     def transpose(self, interval):
         return self.new(tfm_transpose(self.data, interval, self.vocab), position=self._position)
@@ -80,14 +80,16 @@ class MusicItem():
     def append(self, item:MusicItem):
         return self.new(np.concatenate((self.data, item.data), axis=0))
     
-    def mask_notes(self):
-        masked_data = mask_input(self.data, self.vocab.note_range, self.vocab.mask_idx)
-        return self.new(masked_data, position=self.position)
+    def mask_pitch(self, section=None):
+        return self.new(self.mask(self.vocab.note_range, section), position=self.position)
     
-    def mask_duration(self, keep_position_enc=True):
-        masked_data = mask_input(self.data, self.vocab.dur_range, self.vocab.mask_idx)
+    def mask_duration(self, section=None, keep_position_enc=True):
+        masked_data = self.mask(self.vocab.dur_range, section)
         if keep_position_enc: return self.new(masked_data, position=self.position)
         return self.new(masked_data)
+
+    def mask(self, token_range, section_range=None):
+        return mask_section(self.data, self.position, token_range, replace_with=self.vocab.mask_idx, section_range=section_range)
     
     def pad_to(self, bptt):
         data = pad_seq(self.data, bptt, self.vocab.pad_idx)
@@ -107,13 +109,6 @@ def to_tensor(t, device=None):
     if device is None and torch.cuda.is_available(): t = t.cuda()
     else: t.to(device)
     return t
-            
-def trim_tfm(idxenc, vocab, to_beat=None, sample_freq=SAMPLE_FREQ, trim_sep=True):
-    if to_beat is None: return idxenc
-    pos = position_enc(idxenc, vocab)
-    cutoff = np.searchsorted(pos, to_beat * sample_freq)
-    if trim_sep and cutoff > 2: cutoff = cutoff - 2 # ma
-    return idxenc[:cutoff]
     
 def midi2idxenc(midi_file, vocab):
     "Converts midi file to index encoding for training"
@@ -188,17 +183,41 @@ def position_enc(idxenc, vocab):
     posenc[sep_idxs+2] = dur_vals
     return posenc.cumsum()
 
-def position_tfm(idxenc, vocab):
-    posenc = position_enc(idxenc, vocab)
-    return np.stack([idxenc, posenc], axis=1)
+def beat2index(pos, beat, include_last_sep=True, sample_freq=SAMPLE_FREQ, side='left'):
+    cutoff = np.searchsorted(pos, beat * sample_freq, side=side)
+    if include_last_sep or cutoff < 2: return cutoff
+    return cutoff - 2
+
+# TRANSFORMS
 
 def tfm_transpose(x, value, vocab):
     x = x.copy()
     x[(x >= vocab.note_range[0]) & (x < vocab.note_range[1])] += value
     return x
 
-# Utility for predictions
+def trim_to_beat(idxenc, pos, to_beat=None, include_last_sep=True):
+    if to_beat is None: return idxenc
+    cutoff = beat2index(pos, to_beat, include_last_sep)
+    return idxenc[:cutoff]
+
+def trim_tfm(idxenc, vocab, to_beat=None, trim_sep=True):
+    pos = position_enc(idxenc, vocab)
+    return trim_to_beat(idxenc, pos, to_beat=to_beat, include_last_sep=not trim_sep)
+
 def mask_input(xb, mask_range, replacement_idx):
     xb = xb.copy()
     xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = replacement_idx
+    return xb
+
+def mask_section(xb, pos, token_range, replace_with, section_range=None):
+    xb = xb.copy()
+    token_mask = (xb >= token_range[0]) & (xb < token_range[1])
+
+    if section_range is None: section_range = (None, None)
+    section_mask = np.zeros_like(xb, dtype=bool)
+    start_idx = beat2index(pos, section_range[0]) if section_range[0] is not None else 0
+    end_idx = beat2index(pos, section_range[1], include_last_sep=False) if section_range[1] is not None else xb.shape[0]
+    section_mask[start_idx:end_idx+1] = True
+    
+    xb[token_mask & section_mask] = replace_with
     return xb

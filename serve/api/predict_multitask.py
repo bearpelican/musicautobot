@@ -25,12 +25,20 @@ if torch.cuda.is_available(): learn.model.cuda()
 def predict_midi():
     args = request.form.to_dict()
     midi = request.files['midi'].read()
-    print('PREDICTING UNILM:', args)
+    print('Prediction Args:', args)
+
+    # Universal parameters
     bpm = float(args['bpm']) # (AS) TODO: get bpm from midi file instead
     prediction_type = args.get('predictionType', 'next') 
     temperatures = (float(args.get('noteTemp', 1.2)), float(args.get('durationTemp', 0.8)))
+
+    # Parameters for NextSeq and Melody/Chords
     n_words = int(args.get('nSteps', 200))
     seed_len = int(args.get('seedLen', 12))
+
+    # Parameters for Masking
+    mask_start = int(args['maskStart']) if 'maskStart' in args else None
+    mask_end = int(args['maskEnd']) if 'maskEnd' in args else None
 
     # Main logic
     try:
@@ -41,8 +49,8 @@ def predict_midi():
             full = s2s_predict_from_midi(learn, midi=midi, n_words=n_words, temperatures=temperatures, seed_len=seed_len, 
                                          pred_melody=(prediction_type == 'melody'), use_memory=True)
             stream = full.to_stream(bpm=bpm)
-        elif prediction_type in ['notes', 'rhythm']:
-            full = mask_predict_from_midi(learn, midi=midi, temperatures=temperatures, predict_notes=(prediction_type == 'notes'))
+        elif prediction_type in ['pitch', 'rhythm']:
+            full = mask_predict_from_midi(learn, midi=midi, temperatures=temperatures, predict_notes=(prediction_type == 'pitch'), section=(mask_start, mask_end))
             stream = separate_melody_chord(full.to_stream(bpm=bpm))
         midi_out = Path(stream.write("midi"))
         print('Wrote to temporary file:', midi_out)

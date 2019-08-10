@@ -197,6 +197,7 @@ class MusicPreloader(Callback):
                 item = item.transpose(self.transpose_values[ix].item())
                 
             if self.encode_position:
+                # Positions are colomn stacked with indexes. This makes it easier to keep in sync
                 rag = np.stack([item.data, item.position], axis=1)
             else:
                 rag = item.data
@@ -211,8 +212,8 @@ class MusicPreloader(Callback):
                 row[ibuf:ibuf+n] = rag[ri-n:ri][::-1]
             ibuf += n
         return ro, ri + ((n-overlap) if forward else -(n-overlap))
-    
-def position_tfm(b):
+
+def batch_position_tfm(b):
     "Batch transform for training with positional encoding"
     x,y = b
     x = {
