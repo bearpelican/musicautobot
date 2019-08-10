@@ -37,8 +37,11 @@ def predict_midi():
     seed_len = int(args.get('seedLen', 12))
 
     # Parameters for Masking
-    mask_start = int(args['maskStart']) if 'maskStart' in args else None
-    mask_end = int(args['maskEnd']) if 'maskEnd' in args else None
+    mask_start, mask_end = None, None
+    try:
+        mask_start = int(args['maskStart'])
+        mask_end = int(args['maskEnd'])
+    except: pass
 
     # Main logic
     try:
