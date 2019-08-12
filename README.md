@@ -92,6 +92,28 @@ source activate musicautobot
     
     MacOS - [download](https://musescore.org/en/download)
 
+## Flask Server
+
+Installation:  
+```bash
+cd serve
+
+conda env update -f environment.yml
+```
+
+#### S3 Bucket
+You need to setup an s3 bucket to save your predictions.
+After you've created a bucket, update the config [api/api.cfg](api/api.cfg) with the new bucket name.
+
+Development:
+```bash
+python run.py
+```
+
+Production:
+```bash
+gunicorn -b 127.0.0.1:5000 run_guni:app  --timeout 180 --workers 8
+```
 
 ## Data
 
