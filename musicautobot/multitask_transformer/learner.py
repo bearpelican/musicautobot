@@ -35,6 +35,8 @@ class MultitaskLearner(Learner):
         last_pos = pos[-1] if len(pos) else 0
         y = torch.tensor([0])
 
+        start_pos = last_pos
+
         sep_count = 0
         bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
         vocab = self.data.vocab
@@ -46,7 +48,7 @@ class MultitaskLearner(Learner):
                 res = F.softmax(res, dim=-1)
 
                 # bar = 16 beats
-                if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
+                if ((last_pos - start_pos) // 16) <= min_bars: res[vocab.bos_idx] = 0.
 
                 # Use first temperatures value if last prediction was duration
                 temperature = temperatures[0] if (len(new_idx)==0 or vocab.is_duration(new_idx[-1])) else temperatures[1]
@@ -59,8 +61,13 @@ class MultitaskLearner(Learner):
 
                 if prev_idx==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
-                    sep_count += duration
                     last_pos = last_pos + duration
+
+                    bars_pred = (last_pos - start_pos) // 16
+                    abs_bar = last_pos // 16
+                    # if (bars % 8 == 0) and (bars_pred > min_bars): break
+                    if (i / n_words > 0.80) and (abs_bar % 4 == 0): break
+
 
                 if idx==vocab.bos_idx: 
                     print('Predicted BOS token. Returning prediction...')

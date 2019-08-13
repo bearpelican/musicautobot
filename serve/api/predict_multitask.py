@@ -31,6 +31,7 @@ def predict_midi():
     bpm = float(args['bpm']) # (AS) TODO: get bpm from midi file instead
     prediction_type = args.get('predictionType', 'next') 
     temperatures = (float(args.get('noteTemp', 1.2)), float(args.get('durationTemp', 0.8)))
+    top_k, top_p = (float(args.get('topK', 20)), float(args.get('topP', 0.9)))
 
     # Parameters for NextSeq and Melody/Chords
     n_words = int(args.get('nSteps', 200))
