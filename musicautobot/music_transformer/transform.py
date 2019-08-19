@@ -185,7 +185,7 @@ def position_enc(idxenc, vocab):
 
 def beat2index(pos, beat, include_last_sep=True, sample_freq=SAMPLE_FREQ, side='left'):
     cutoff = np.searchsorted(pos, beat * sample_freq, side=side)
-    if include_last_sep or cutoff < 2: return cutoff
+    if include_last_sep or cutoff < 2 or cutoff == len(pos): return cutoff
     return cutoff - 2
 
 # TRANSFORMS
