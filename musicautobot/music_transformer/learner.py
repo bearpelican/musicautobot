@@ -71,7 +71,7 @@ class MusicLearner(LanguageLearner):
             for i in progress_bar(range(n_words), leave=True):
                 # Predict
                 with torch.no_grad():
-                    logits = self.model(x[None])[0][-1]
+                    logits = self.model(x[None])[0][-1][-1]
                 # res = self.pred_batch(batch=(x[None],y))[0][-1] # returns softmax values which we don't wnat
 
                 # Temperature
