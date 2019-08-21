@@ -96,24 +96,6 @@ class MultitaskLearner(Learner):
         full = item.append(pred)
         return pred, full
 
-    # def filter_sample(self, logits, prev_idx, temperatures, top_k, top_p, filter_value=-float('Inf')):
-    #     vocab = self.data.vocab
-
-    #     # Temperature
-    #     temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
-    #     if temperature != 1.: logits = logits / temperature
-
-    #     # Filter
-    #     logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
-    #     logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
-
-    #     # Sample
-    #     probs = F.softmax(logits, dim=-1)
-    #     idx = torch.multinomial(probs, 1).item()
-
-    #     num_choices = probs.nonzero().reshape[-1]
-
-
     def predict_mask(self, masked_item:MusicItem,
                     temperatures:float=(1.0,1.0),
                     top_k=20, top_p=0.8):
@@ -146,7 +128,7 @@ class MultitaskLearner(Learner):
             filter_value = -float('Inf')
             special_idxs = [vocab.bos_idx, vocab.sep_idx, vocab.stoi[EOS]]
             logits[special_idxs] = filter_value # Don't allow any special tokens (as we are only removing notes and durations)
-            # logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
+            logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
             logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
 
             # Sampling
