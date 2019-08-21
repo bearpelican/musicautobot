@@ -40,7 +40,6 @@ class MusicLearner(LanguageLearner):
         with torch.no_grad():
             for k in progress_bar(range(n_words), leave=False):
                 out = F.log_softmax(self.model(xb)[0][:,-1], dim=-1)
-    #             if no_unk: out[:,self.data.vocab.stoi[UNK]] = -float('Inf')
                 values, indices = out.topk(top_k, dim=-1)
                 scores = (-values + scores[:,None]).view(-1)
                 indices_idx = torch.arange(0,nodes.size(0))[:,None].expand(nodes.size(0), top_k).contiguous().view(-1)
@@ -70,20 +69,27 @@ class MusicLearner(LanguageLearner):
         x = item.to_tensor()
         with torch.no_grad():
             for i in progress_bar(range(n_words), leave=True):
+                # Predict
+                with torch.no_grad():
+                    logits = self.model(x[None])[0][-1]
+                # res = self.pred_batch(batch=(x[None],y))[0][-1] # returns softmax values which we don't wnat
 
-                res = self.pred_batch(batch=(x[None],y))[0][-1]
-
-                # bar = 16 beats
-                if (sep_count // 16) <= min_bars: res[vocab.bos_idx] = 0.
-
+                # Temperature
                 # Use first temperatures value if last prediction was duration
-                temperature = temperatures[0] if (len(new_idx)==0 or self.data.vocab.is_duration(new_idx[-1])) else temperatures[1]
-                if temperature != 1.: res.pow_(1 / temperature)
-
                 prev_idx = new_idx[-1] if len(new_idx) else x[-1].item()
-                res = filter_invalid_indexes(res, prev_idx, vocab)
-                res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
-                idx = torch.multinomial(res, 1).item()
+                temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
+                if temperature != 1.: logits = logits / temperature
+
+                # Filter
+                filter_value = -float('Inf')
+                # bar = 16 beats
+                if (sep_count // 16) <= min_bars: logits[vocab.bos_idx] = filter_value
+                logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
+                logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
+
+                # Sample
+                probs = F.softmax(logits, dim=-1)
+                idx = torch.multinomial(probs, 1).item()
 
                 if new_idx and new_idx[-1]==vocab.sep_idx: 
                     duration = idx - vocab.dur_range[0]
@@ -111,9 +117,9 @@ def predict_from_midi(learn, midi=None, n_words=400,
     pred, full = learn.predict(seed, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
     return full
 
-def filter_invalid_indexes(res, prev_idx, vocab):
-    if vocab.is_duration(prev_idx) or prev_idx == vocab.pad_idx:
-        res[list(range(*vocab.dur_range))] = 0
+def filter_invalid_indexes(res, prev_idx, vocab, filter_value=-float('Inf')):
+    if vocab.is_duration_or_pad(prev_idx):
+        res[list(range(*vocab.dur_range))] = filter_value
     else:
-        res[list(range(*vocab.note_range))] = 0
+        res[list(range(*vocab.note_range))] = filter_value
     return res

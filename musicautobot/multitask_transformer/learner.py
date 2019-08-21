@@ -41,47 +41,80 @@ class MultitaskLearner(Learner):
         bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
         vocab = self.data.vocab
 
-        with torch.no_grad():
-            for i in progress_bar(range(n_words), leave=True):
-                batch = { 'lm': { 'x': x[None], 'pos': pos[None] } }, y
-                res = self.pred_batch(batch=batch)['lm'][-1][-1]
-                res = F.softmax(res, dim=-1)
+        repeat_count = 0
 
-                # bar = 16 beats
-                if ((last_pos - start_pos) // 16) <= min_bars: res[vocab.bos_idx] = 0.
+        for i in progress_bar(range(n_words), leave=True):
+            batch = { 'lm': { 'x': x[None], 'pos': pos[None] } }, y
+            logits = self.pred_batch(batch=batch)['lm'][-1][-1]
 
-                # Use first temperatures value if last prediction was duration
-                temperature = temperatures[0] if (len(new_idx)==0 or vocab.is_duration(new_idx[-1])) else temperatures[1]
-                if temperature != 1.: res.pow_(1 / temperature)
+            prev_idx = new_idx[-1] if len(new_idx) else vocab.pad_idx
 
-                prev_idx = new_idx[-1] if len(new_idx) else -1
-                res = filter_invalid_indexes(res, prev_idx, vocab)
-                res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
-                idx = torch.multinomial(res, 1).item()
+            # Temperature
+            # Use first temperatures value if last prediction was duration
+            temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
+            repeat_penalty = max(0, np.log(repeat_count/4)/5) * temperature
+            temperature += repeat_penalty
+            if temperature != 1.: logits = logits / temperature
+                
 
-                if prev_idx==vocab.sep_idx: 
-                    duration = idx - vocab.dur_range[0]
-                    last_pos = last_pos + duration
+            # Filter
+            # bar = 16 beats
+            filter_value = -float('Inf')
+            if ((last_pos - start_pos) // 16) <= min_bars: logits[vocab.bos_idx] = filter_value
 
-                    bars_pred = (last_pos - start_pos) // 16
-                    abs_bar = last_pos // 16
-                    # if (bars % 8 == 0) and (bars_pred > min_bars): break
-                    if (i / n_words > 0.80) and (abs_bar % 4 == 0): break
+            logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
+            logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
+            
+            # Sample
+            probs = F.softmax(logits, dim=-1)
+            idx = torch.multinomial(probs, 1).item()
+
+            # Update repeat count
+            num_choices = len(probs.nonzero().view(-1))
+            if num_choices <= 2: repeat_count += 1
+            else: repeat_count = 0
+
+            if prev_idx==vocab.sep_idx: 
+                duration = idx - vocab.dur_range[0]
+                last_pos = last_pos + duration
+
+                bars_pred = (last_pos - start_pos) // 16
+                abs_bar = last_pos // 16
+                # if (bars % 8 == 0) and (bars_pred > min_bars): break
+                if (i / n_words > 0.80) and (abs_bar % 4 == 0): break
 
 
-                if idx==vocab.bos_idx: 
-                    print('Predicted BOS token. Returning prediction...')
-                    break
+            if idx==vocab.bos_idx: 
+                print('Predicted BOS token. Returning prediction...')
+                break
 
-                new_idx.append(idx)
-                x = x.new_tensor([idx])
-                pos = pos.new_tensor([last_pos])
+            new_idx.append(idx)
+            x = x.new_tensor([idx])
+            pos = pos.new_tensor([last_pos])
 
         pred = vocab.to_music_item(np.array(new_idx))
         full = item.append(pred)
         return pred, full
 
-    def predict_mask(self, masked_item:MusicItem, pos=None,
+    # def filter_sample(self, logits, prev_idx, temperatures, top_k, top_p, filter_value=-float('Inf')):
+    #     vocab = self.data.vocab
+
+    #     # Temperature
+    #     temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
+    #     if temperature != 1.: logits = logits / temperature
+
+    #     # Filter
+    #     logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
+    #     logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
+
+    #     # Sample
+    #     probs = F.softmax(logits, dim=-1)
+    #     idx = torch.multinomial(probs, 1).item()
+
+    #     num_choices = probs.nonzero().reshape[-1]
+
+
+    def predict_mask(self, masked_item:MusicItem,
                     temperatures:float=(1.0,1.0),
                     top_k=20, top_p=0.8):
         x = masked_item.to_tensor()
@@ -91,32 +124,41 @@ class MultitaskLearner(Learner):
         self.model.reset()
         mask_idxs = (x == vocab.mask_idx).nonzero().view(-1)
 
-        with torch.no_grad():
-            for midx in progress_bar(mask_idxs, leave=True):
-                # Using original positions, otherwise model gets too off track
-        #         pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
+        repeat_count = 0
 
-                # Next Word
-                res = self.pred_batch(batch=({ 'msk': { 'x': x[None], 'pos': pos[None] } }, y) )['msk'][0]
-                res = F.softmax(res[midx], dim=-1) # task1, task2 - (bs x ts x vocab)
+        for midx in progress_bar(mask_idxs, leave=True):
+            prev_idx = x[midx-1]
 
-                # Don't allow any special tokens (as we are only removing notes and durations)
-                res[vocab.bos_idx] = 0.
-                res[vocab.sep_idx] = 0.
-                res[vocab.stoi[EOS]] = 0
+            # Using original positions, otherwise model gets too off track
+            # pos = torch.tensor(-position_enc(xb[0].cpu().numpy()), device=xb.device)[None]
+    
+            # Next Word
+            logits = self.pred_batch(batch=({ 'msk': { 'x': x[None], 'pos': pos[None] } }, y) )['msk'][0][midx]
 
-                prev_idx = x[midx-1]
-                res = filter_invalid_indexes(res, prev_idx, vocab)
+            # Temperature
+            # Use first temperatures value if last prediction was duration
+            temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
+            repeat_penalty = max(0, np.log(repeat_count/4)/5) * temperature
+            temperature += repeat_penalty
+            if temperature != 1.: logits = logits / temperature
 
-                # Use first temperatures value if last prediction was duration
-                temperature = temperatures[0] if vocab.is_duration(prev_idx) else temperatures[1]
-                if temperature != 1.: res.pow_(1 / temperature)
+            # Filter
+            filter_value = -float('Inf')
+            special_idxs = [vocab.bos_idx, vocab.sep_idx, vocab.stoi[EOS]]
+            logits[special_idxs] = filter_value # Don't allow any special tokens (as we are only removing notes and durations)
+            # logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
+            logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
 
-                res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
-                idx = torch.multinomial(res, 1).item()
-                #         idx = res.argmax()
+            # Sampling
+            probs = F.softmax(logits, dim=-1)
+            idx = torch.multinomial(probs, 1).item()
 
-                x[midx] = idx
+            # Update repeat count
+            num_choices = len(probs.nonzero().view(-1))
+            if num_choices <= 2: repeat_count += 1
+            else: repeat_count = 0
+
+            x[midx] = idx
 
         return vocab.to_music_item(x.cpu().numpy())
 
@@ -126,8 +168,9 @@ class MultitaskLearner(Learner):
         vocab = self.data.vocab
         
         # Input doesn't change. We can reuse the encoder output on each prediction
-        inp, inp_pos = input_item.to_tensor(), input_item.get_pos_tensor()
-        x_enc = self.model.encoder(inp[None], inp_pos[None])
+        with torch.no_grad():
+            inp, inp_pos = input_item.to_tensor(), input_item.get_pos_tensor()
+            x_enc = self.model.encoder(inp[None], inp_pos[None])
         
         # target
         targ = target_item.data.tolist()
@@ -135,45 +178,60 @@ class MultitaskLearner(Learner):
         last_pos = targ_pos[-1]
         self.model.reset()
 
+        repeat_count = 0
+
         max_pos = input_item.position[-1] + SAMPLE_FREQ * 4 # Only predict until both tracks/parts have the same length
         x, pos = inp.new_tensor(targ), inp_pos.new_tensor(targ_pos)
         
-        with torch.no_grad():
-            for i in progress_bar(range(n_words), leave=True):
+        for i in progress_bar(range(n_words), leave=True):
+            # Predict
+            with torch.no_grad():
                 dec = self.model.decoder(x[None], pos[None], x_enc)
-                res = F.softmax(self.model.head(dec), dim=-1)[-1, -1]
+                logits = self.model.head(dec)[-1, -1]
 
-                # Use first temperatures value if last prediction was duration
-                temperature = temperatures[0] if (len(targ)==0 or vocab.is_duration(targ[-1])) else temperatures[1]
-                if temperature != 1.: res.pow_(1 / temperature)
-                    
-                prev_idx = targ[-1] if len(targ) else -1
-                res = filter_invalid_indexes(res, prev_idx, vocab)
-                res = top_k_top_p(res, top_k=top_k, top_p=top_p, filter_value=0)
-                idx = torch.multinomial(res, 1).item()
-                #         idx = res.argmax()
+            # Temperature
+            # Use first temperatures value if last prediction was duration
+            prev_idx = targ[-1] if len(targ) else vocab.pad_idx
+            temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
+            repeat_penalty = max(0, np.log(repeat_count/4)/5) * temperature
+            temperature += repeat_penalty
+            if temperature != 1.: logits = logits / temperature
+                
+            # Filter
+            filter_value = -float('Inf')
+            logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
+            logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
 
-                if idx == vocab.bos_idx | idx == vocab.stoi[EOS]: 
-                    print('Predicting BOS/EOS')
+            # Sample
+            probs = F.softmax(logits, dim=-1)
+            idx = torch.multinomial(probs, 1).item()
+
+            # Update repeat count
+            num_choices = len(probs.nonzero().view(-1))
+            if num_choices <= 2: repeat_count += 1
+            else: repeat_count = 0
+
+            if idx == vocab.bos_idx | idx == vocab.stoi[EOS]: 
+                print('Predicting BOS/EOS')
+                break
+
+            if prev_idx == vocab.sep_idx: 
+                duration = idx - vocab.dur_range[0]
+                last_pos = last_pos + duration
+                if last_pos > max_pos:
+                    print('Predicted past counter-part length. Returning early')
                     break
 
-                if prev_idx == vocab.sep_idx: 
-                    duration = idx - vocab.dur_range[0]
-                    last_pos = last_pos + duration
-                    if last_pos > max_pos:
-                        print('Predicted past counter-part length. Returning early')
-                        break
-
-                targ_pos.append(last_pos)
-                targ.append(idx)
-                
-                if use_memory:
-                    # Relying on memory for kv. Only need last prediction index
-                    x, pos = inp.new_tensor([targ[-1]]), inp_pos.new_tensor([targ_pos[-1]])
-                else:
-                    # Reset memory after each prediction, since we feeding the whole sequence every time
-                    self.model.reset()
-                    x, pos = inp.new_tensor(targ), inp_pos.new_tensor(targ_pos)
+            targ_pos.append(last_pos)
+            targ.append(idx)
+            
+            if use_memory:
+                # Relying on memory for kv. Only need last prediction index
+                x, pos = inp.new_tensor([targ[-1]]), inp_pos.new_tensor([targ_pos[-1]])
+            else:
+                # Reset memory after each prediction, since we feeding the whole sequence every time
+                self.model.reset()
+                x, pos = inp.new_tensor(targ), inp_pos.new_tensor(targ_pos)
 
         return vocab.to_music_item(np.array(targ))
     

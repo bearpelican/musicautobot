@@ -12,6 +12,7 @@ def top_k_top_p(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
             top_k >0: keep only top k tokens with highest probability (top-k filtering).
             top_p >0.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
     """
+    logits = logits.clone()
     assert logits.dim() == 1  # batch size 1 for now - could be updated for more but the code would be less clear
     top_k = min(top_k, logits.size(-1))  # Safety check
     if top_k > 0:

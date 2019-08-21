@@ -99,6 +99,9 @@ class MusicItem():
     def split_stream_parts(self):
         self._stream = separate_melody_chord(self.stream)
         return self.stream
+
+    def split_parts(self):
+        return self.new(self.data, stream=separate_melody_chord(self.stream), position=self.position)
         
 def pad_seq(seq, bptt, value):
     pad_len = max(bptt-seq.shape[0], 0)

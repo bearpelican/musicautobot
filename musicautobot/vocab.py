@@ -60,6 +60,8 @@ class MusicVocab():
 
     def is_duration(self, idx): 
         return idx >= self.dur_range[0] and idx < self.dur_range[1]
+    def is_duration_or_pad(self, idx):
+        return idx == self.pad_idx or self.is_duration(idx)
         
     def __getstate__(self):
         return {'itos':self.itos}
