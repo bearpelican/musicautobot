@@ -31,7 +31,7 @@ def predict_midi():
     bpm = float(args['bpm']) # (AS) TODO: get bpm from midi file instead
     prediction_type = args.get('predictionType', 'next') 
     temperatures = (float(args.get('noteTemp', 1.2)), float(args.get('durationTemp', 0.8)))
-    top_k, top_p = (float(args.get('topK', 20)), float(args.get('topP', 0.9)))
+    top_k, top_p = (int(args.get('topK', 20)), float(args.get('topP', 0.9)))
 
     # Parameters for NextSeq and Melody/Chords
     n_words = int(args.get('nSteps', 200))
@@ -47,14 +47,14 @@ def predict_midi():
     # Main logic
     try:
         if prediction_type == 'next':
-            full = nw_predict_from_midi(learn, midi=midi, n_words=n_words, seed_len=seed_len, temperatures=temperatures)
+            full = nw_predict_from_midi(learn, midi=midi, n_words=n_words, seed_len=seed_len, temperatures=temperatures, top_k=top_k, top_p=top_p)
             stream = separate_melody_chord(full.to_stream(bpm=bpm))
         elif prediction_type in ['melody', 'chords']:
             full = s2s_predict_from_midi(learn, midi=midi, n_words=n_words, temperatures=temperatures, seed_len=seed_len, 
-                                         pred_melody=(prediction_type == 'melody'), use_memory=True)
+                                         pred_melody=(prediction_type == 'melody'), use_memory=True, top_k=top_k, top_p=top_p)
             stream = full.to_stream(bpm=bpm)
         elif prediction_type in ['pitch', 'rhythm']:
-            full = mask_predict_from_midi(learn, midi=midi, temperatures=temperatures, predict_notes=(prediction_type == 'pitch'), section=(mask_start, mask_end))
+            full = mask_predict_from_midi(learn, midi=midi, temperatures=temperatures, predict_notes=(prediction_type == 'pitch'), section=(mask_start, mask_end), top_k=top_k, top_p=top_p)
             stream = separate_melody_chord(full.to_stream(bpm=bpm))
         midi_out = Path(stream.write("midi"))
         print('Wrote to temporary file:', midi_out)
