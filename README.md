@@ -66,6 +66,8 @@ python run_multitask.py --epochs 14 --save music_model --batch_size=16 --bptt=51
 SCRIPT=run_multitask.py bash run_ddp.sh --epochs 14 --save music_model --batch_size=16 --bptt=512 --lr 1e-4
 ```
 
+**Commands must be run inside the `scripts/` folder**
+
 ## Installation
 
 1. Install anaconda: https://www.anaconda.com/distribution/  
