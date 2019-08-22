@@ -90,7 +90,7 @@ class MusicItem():
         return self.new(masked_data)
 
     def mask(self, token_range, section_range=None):
-        return mask_section(self.data, self.position, vocab, token_range, section_range=section_range)
+        return mask_section(self.data, self.position, token_range, self.vocab.mask_idx, section_range=section_range)
     
     def pad_to(self, bptt):
         data = pad_seq(self.data, bptt, self.vocab.pad_idx)
@@ -187,11 +187,15 @@ def position_enc(idxenc, vocab):
     posenc[sep_idxs+2] = dur_vals
     return posenc.cumsum()
 
-def beat2index(idxenc, pos, vocab, beat, include_last_sep=True, sample_freq=SAMPLE_FREQ, side='left', ):
-    cutoff = np.searchsorted(pos, beat * sample_freq, side=side)
-    if len(idxenc) < 4 or include_last_sep: return cutoff
-    if idxenc[cutoff - 3] == vocab.sep_idx: return cutoff - 2
+def beat2index(idxenc, pos, vocab, beat, include_last_sep=False):
+    cutoff = find_beat(pos, beat)
+    if cutoff < 2: return 2 # always leave starter tokens
+    if len(idxenc) < 2 or include_last_sep: return cutoff
+    if idxenc[cutoff - 2] == vocab.sep_idx: return cutoff - 2
     return cutoff
+
+def find_beat(pos, beat, sample_freq=SAMPLE_FREQ, side='left'):
+    return np.searchsorted(pos, beat * sample_freq, side=side)
 
 # TRANSFORMS
 
@@ -210,15 +214,15 @@ def mask_input(xb, mask_range, replacement_idx):
     xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = replacement_idx
     return xb
 
-def mask_section(xb, pos, vocab, token_range, section_range=None):
+def mask_section(xb, pos, token_range, replacement_idx, section_range=None):
     xb = xb.copy()
     token_mask = (xb >= token_range[0]) & (xb < token_range[1])
 
     if section_range is None: section_range = (None, None)
     section_mask = np.zeros_like(xb, dtype=bool)
-    start_idx = beat2index(xb, pos, vocab, section_range[0]) + 1 if section_range[0] is not None else 0
-    end_idx = beat2index(xb, pos, vocab, section_range[1], include_last_sep=False) if section_range[1] is not None else xb.shape[0]
-    section_mask[start_idx:end_idx+1] = True
+    start_idx = find_beat(pos, section_range[0]) if section_range[0] is not None else 0
+    end_idx = find_beat(pos, section_range[1]) if section_range[1] is not None else xb.shape[0]
+    section_mask[start_idx:end_idx] = True
     
-    xb[token_mask & section_mask] = vocab.mask_idx
+    xb[token_mask & section_mask] = replacement_idx
     return xb
