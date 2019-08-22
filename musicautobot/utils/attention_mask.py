@@ -6,7 +6,7 @@ def window_mask(x_len, device, m_len=0, size=(1,1)):
     mem_mask = torch.zeros((x_len,m_len), device=device)
     tri_mask = torch.triu(torch.ones((x_len//win_size+1,x_len//win_size+1), device=device),diagonal=k)
     window_mask = tri_mask.repeat_interleave(win_size,dim=0).repeat_interleave(win_size,dim=1)[:x_len,:x_len]
-    window_mask[...,0] = 0 # Always allowing first index to see. Otherwise you'll get NaN loss
+    if x_len: window_mask[...,0] = 0 # Always allowing first index to see. Otherwise you'll get NaN loss
     mask = torch.cat((mem_mask, window_mask), dim=1).byte()[None,None]
 #     if m_len == 0: mask[...,0] = 0 # attention needs to see at least first column otherwise NaN
     return mask

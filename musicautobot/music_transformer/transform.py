@@ -73,7 +73,7 @@ class MusicItem():
         return partial(type(self), vocab=self.vocab)
 
     def trim_to_beat(self, beat, include_last_sep=False):
-        return self.new(trim_to_beat(self.data, self.position, beat, include_last_sep))
+        return self.new(trim_to_beat(self.data, self.position, self.vocab, beat, include_last_sep))
     
     def transpose(self, interval):
         return self.new(tfm_transpose(self.data, interval, self.vocab), position=self._position)
@@ -90,7 +90,7 @@ class MusicItem():
         return self.new(masked_data)
 
     def mask(self, token_range, section_range=None):
-        return mask_section(self.data, self.position, token_range, replace_with=self.vocab.mask_idx, section_range=section_range)
+        return mask_section(self.data, self.position, vocab, token_range, section_range=section_range)
     
     def pad_to(self, bptt):
         data = pad_seq(self.data, bptt, self.vocab.pad_idx)
@@ -187,10 +187,11 @@ def position_enc(idxenc, vocab):
     posenc[sep_idxs+2] = dur_vals
     return posenc.cumsum()
 
-def beat2index(pos, beat, include_last_sep=True, sample_freq=SAMPLE_FREQ, side='left'):
+def beat2index(idxenc, pos, vocab, beat, include_last_sep=True, sample_freq=SAMPLE_FREQ, side='left', ):
     cutoff = np.searchsorted(pos, beat * sample_freq, side=side)
-    if include_last_sep or cutoff < 2 or cutoff == len(pos): return cutoff
-    return cutoff - 2
+    if len(idxenc) < 4 or include_last_sep: return cutoff
+    if idxenc[cutoff - 3] == vocab.sep_idx: return cutoff - 2
+    return cutoff
 
 # TRANSFORMS
 
@@ -199,29 +200,25 @@ def tfm_transpose(x, value, vocab):
     x[(x >= vocab.note_range[0]) & (x < vocab.note_range[1])] += value
     return x
 
-def trim_to_beat(idxenc, pos, to_beat=None, include_last_sep=True):
+def trim_to_beat(idxenc, pos, vocab, to_beat=None, include_last_sep=True):
     if to_beat is None: return idxenc
-    cutoff = beat2index(pos, to_beat, include_last_sep)
+    cutoff = beat2index(idxenc, pos, vocab, to_beat, include_last_sep=include_last_sep)
     return idxenc[:cutoff]
-
-def trim_tfm(idxenc, vocab, to_beat=None, trim_sep=True):
-    pos = position_enc(idxenc, vocab)
-    return trim_to_beat(idxenc, pos, to_beat=to_beat, include_last_sep=not trim_sep)
 
 def mask_input(xb, mask_range, replacement_idx):
     xb = xb.copy()
     xb[(xb >= mask_range[0]) & (xb < mask_range[1])] = replacement_idx
     return xb
 
-def mask_section(xb, pos, token_range, replace_with, section_range=None):
+def mask_section(xb, pos, vocab, token_range, section_range=None):
     xb = xb.copy()
     token_mask = (xb >= token_range[0]) & (xb < token_range[1])
 
     if section_range is None: section_range = (None, None)
     section_mask = np.zeros_like(xb, dtype=bool)
-    start_idx = beat2index(pos, section_range[0]) if section_range[0] is not None else 0
-    end_idx = beat2index(pos, section_range[1], include_last_sep=False) if section_range[1] is not None else xb.shape[0]
+    start_idx = beat2index(xb, pos, vocab, section_range[0]) + 1 if section_range[0] is not None else 0
+    end_idx = beat2index(xb, pos, vocab, section_range[1], include_last_sep=False) if section_range[1] is not None else xb.shape[0]
     section_mask[start_idx:end_idx+1] = True
     
-    xb[token_mask & section_mask] = replace_with
+    xb[token_mask & section_mask] = vocab.mask_idx
     return xb
