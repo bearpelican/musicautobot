@@ -55,7 +55,7 @@ def stream2chordarr(s, note_size=NOTE_SIZE, sample_freq=SAMPLE_FREQ, max_note_du
     score_arr = np.zeros((maxTimeStep, len(s.parts), NOTE_SIZE))
 
     def note_data(pitch, note):
-        return (pitch.midi, round(note.offset*sample_freq), round(note.duration.quarterLength*sample_freq))
+        return (pitch.midi, int(round(note.offset*sample_freq)), int(round(note.duration.quarterLength*sample_freq)))
 
     for idx,part in enumerate(s.parts):
         notes=[]
@@ -90,7 +90,7 @@ def chordarr2npenc(chordarr, skip_last_rest=True):
             result.extend(flat_time)
             wait_count = 1
     if wait_count > 0 and not skip_last_rest: result.append([VALTSEP, wait_count])
-    return np.array(result, dtype=int)
+    return np.array(result, dtype=int).reshape(-1, 2) # reshaping. Just in case result is empty
 
 # Note: not worrying about overlaps - as notes will still play. just look tied
 # http://web.mit.edu/music21/doc/moduleReference/moduleStream.html#music21.stream.Stream.getOverlaps
@@ -145,24 +145,24 @@ def npenc_len(npenc):
 # 2.
 def chordarr2stream(arr, sample_freq=SAMPLE_FREQ, bpm=120):
     duration = music21.duration.Duration(1. / sample_freq)
-    stream = music21.stream.Stream()
+    stream = music21.stream.Score()
     stream.append(music21.meter.TimeSignature(TIMESIG))
     stream.append(music21.tempo.MetronomeMark(number=bpm))
     stream.append(music21.key.KeySignature(0))
     for inst in range(arr.shape[1]):
-        p = partarr2stream(arr[:,inst,:], duration, stream=music21.stream.Part())
+        p = partarr2stream(arr[:,inst,:], duration)
         stream.append(p)
     stream = stream.transpose(0)
     return stream
 
 # 2b.
-def partarr2stream(partarr, duration, stream=None):
+def partarr2stream(partarr, duration):
     "convert instrument part to music21 chords"
-    if stream is None: stream = music21.stream.Stream()
-    stream.append(music21.instrument.Piano())
-    part_append_duration_notes(partarr, duration, stream) # notes already have duration calculated
+    part = music21.stream.Part()
+    part.append(music21.instrument.Piano())
+    part_append_duration_notes(partarr, duration, part) # notes already have duration calculated
 
-    return stream
+    return part
 
 def part_append_duration_notes(partarr, duration, stream):
     "convert instrument part to music21 chords"
@@ -214,7 +214,7 @@ def remove_overlaps(stream, separate_chords=True):
 
 # seperates notes and chords to different tracks
 def separate_melody_chord(stream):
-    new_stream = music21.stream.Stream()
+    new_stream = music21.stream.Score()
     if stream.timeSignature: new_stream.append(stream.timeSignature)
     new_stream.append(stream.metronomeMarkBoundaries()[0][-1])
     if stream.keySignature: new_stream.append(stream.keySignature)

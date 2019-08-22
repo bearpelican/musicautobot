@@ -24,6 +24,7 @@ class MusicItem():
         return cls.from_stream(file2stream(midi_file), vocab)
     @classmethod
     def from_stream(cls, stream, vocab):
+        if not isinstance(stream, music21.stream.Score): stream = stream.voicesToParts()
         chordarr = stream2chordarr(stream) # 2.
         npenc = chordarr2npenc(chordarr) # 3.
         return cls.from_npenc(npenc, vocab, stream)
