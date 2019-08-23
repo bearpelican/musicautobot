@@ -17,8 +17,8 @@ from musicautobot.utils.stacked_dataloader import StackedDataBunch
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/numpy/')
-parser.add_argument('--data_file', type=str, default='musicitem_data_save.pkl')
+parser.add_argument('--path', type=str, default='../data/midi/v19/')
+parser.add_argument('--data_file', type=str, default='cached/all.pkl')
 parser.add_argument('--s2s_data_file', type=str, default='multiitem_data_save.pkl')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
@@ -61,13 +61,13 @@ config['mask_size'] = args.mask_size
 datasets = []
 transpose_range = None if args.no_transpose else (0,12)
 
-data = load_data(args.path, args.data_file, 
+data = load_data(args.path, Path('piano_duet')/args.data_file, 
                  bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range,
                  encode_position=True, dl_tfms=mask_lm_tfm_default)
 
 datasets.append(data)
 
-s2s_data = load_data(args.path, args.s2s_data_file, 
+s2s_data = load_data(args.path, Path('s2s_encode')/args.data_file, 
                     bs=args.batch_size//4, bptt=args.bptt, transpose_range=transpose_range,
                      preloader_cls=S2SPreloader, dl_tfms=melody_chord_tfm)
 
@@ -84,7 +84,7 @@ if args.lamb:
     
 # Load Learner
 learn = multitask_model_learner(combined_data, config.copy(), opt_func=opt_func)
-if not args.half: learn.clip_grad(0.5)
+if not args.half: learn.clip_grad(1.0)
 
 if args.load:
     state = torch.load(path/args.load, map_location='cpu')
@@ -93,7 +93,7 @@ if args.load:
 if args.save:
     save_path = path/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
-if args.half: learn = learn.to_fp16(clip=0.5, dynamic=True, max_scale=2**18)
+if args.half: learn = learn.to_fp16(clip=1.0, dynamic=True, max_scale=2**18)
 if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=path/'dist_logs')
 if args.data_parallel: learn = learn.to_parallel()
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
