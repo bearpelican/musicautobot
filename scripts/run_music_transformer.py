@@ -18,7 +18,7 @@ from musicautobot.music_transformer import *
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v19/')
+parser.add_argument('--path', type=str, default='../data/midi/v20/')
 parser.add_argument('--data_file', type=str, default='cached/all.pkl')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
@@ -26,6 +26,7 @@ parser.add_argument("--local_rank", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=12)
 parser.add_argument("--mem_len", type=int, default=512)
 parser.add_argument("--bptt", type=int, default=512)
+parser.add_argument("--num_workers", type=int, default=1)
 parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--lamb', action='store_true', help='Use lamb optimizer')
 parser.add_argument('--wd', type=float, default=1e-3, help='weight decay for adam')
@@ -51,18 +52,19 @@ path = Path(args.path)
 
 from musicautobot import config
 config = getattr(config, args.config)()
+config['encode_position'] = True
 
 transpose_range = None if args.no_transpose else (0,12)
-data = load_data(path, args.data_file, encode_position=True
-                    bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range)
+data = load_data(path, args.data_file, encode_position=config['encode_position'], dl_tfms=[batch_position_tfm],
+                    bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range, num_workers=args.num_workers)
 
 eps = 1e-2 if args.half else 1e-6
 opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=eps)
 if args.lamb:
-    from musicautobot.lamb import Lamb
+    from musicautobot.utils.lamb import Lamb
     opt_func = partial(Lamb, eps=eps)
     
-learn = music_model_learner(data, config, drop_mult=1.5, opt_func=opt_func, encode_position=True)
+learn = music_model_learner(data, config=config, drop_mult=1.5, opt_func=opt_func)
 if not args.half: learn.clip_grad(1.0)
 
 if args.load:
@@ -76,7 +78,6 @@ if args.half: learn = learn.to_fp16(clip=1.0, dynamic=True, max_scale=2**18)
 if is_distributed: learn = learn.to_distributed(args.local_rank, cache_dir=path/'dist_logs')
 if args.parallel: learn = learn.to_parallel()
 if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'{args.save}_best'))
-    every='epoch'))
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.2, final_div=200, wd=args.wd)
 

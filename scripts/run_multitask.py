@@ -17,13 +17,14 @@ from musicautobot.utils.stacked_dataloader import StackedDataBunch
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v19/')
+parser.add_argument('--path', type=str, default='../data/midi/v20/')
 parser.add_argument('--data_file', type=str, default='cached/all.pkl')
 parser.add_argument('--s2s_data_file', type=str, default='multiitem_data_save.pkl')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)
 parser.add_argument("--local_rank", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=4)
+parser.add_argument("--num_workers", type=int, default=12)
 parser.add_argument("--bptt", type=int, default=1024)
 parser.add_argument('--half', action='store_true', help='Use half precision')
 parser.add_argument('--lamb', action='store_true', help='Use lamb optimizer')
@@ -61,15 +62,16 @@ config['mask_size'] = args.mask_size
 datasets = []
 transpose_range = None if args.no_transpose else (0,12)
 
+mlm_tfm = partial(mask_lm_tfm_default, mask_p=0.4)
 data = load_data(args.path, Path('piano_duet')/args.data_file, 
                  bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range,
-                 encode_position=True, dl_tfms=mask_lm_tfm_default)
+                 encode_position=True, dl_tfms=mlm_tfm, num_workers=args.num_workers)
 
 datasets.append(data)
 
 s2s_data = load_data(args.path, Path('s2s_encode')/args.data_file, 
                     bs=args.batch_size//4, bptt=args.bptt, transpose_range=transpose_range,
-                     preloader_cls=S2SPreloader, dl_tfms=melody_chord_tfm)
+                     preloader_cls=S2SPreloader, dl_tfms=melody_chord_tfm, num_workers=args.num_workers)
 
 datasets.append(s2s_data)
 
