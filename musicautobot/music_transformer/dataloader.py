@@ -12,12 +12,12 @@ class MusicDataBunch(DataBunch):
     def create(cls, train_ds, valid_ds, test_ds=None, path:PathOrStr='.', no_check:bool=False, bs=64, val_bs:int=None, 
                num_workers:int=0, device:torch.device=None, collate_fn:Callable=data_collate, 
                dl_tfms:Optional[Collection[Callable]]=None, bptt:int=70,
-               preloader_cls=None, shuffle_dl=False, **kwargs) -> DataBunch:
+               preloader_cls=None, shuffle_dl=False, transpose_range=(0,12), **kwargs) -> DataBunch:
         "Create a `TextDataBunch` in `path` from the `datasets` for language modelling."
         datasets = cls._init_ds(train_ds, valid_ds, test_ds)
         preloader_cls = MusicPreloader if preloader_cls is None else preloader_cls
         val_bs = ifnone(val_bs, bs)
-        datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, **kwargs) 
+        datasets = [preloader_cls(ds, shuffle=(i==0), bs=(bs if i==0 else val_bs), bptt=bptt, transpose_range=transpose_range, **kwargs) 
                     for i,ds in enumerate(datasets)]
         val_bs = bs
         dl_tfms = [partially_apply_vocab(tfm, train_ds.vocab) for tfm in listify(dl_tfms)]
@@ -102,7 +102,7 @@ class MusicPreloader(Callback):
 
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
                  shuffle:bool=False, y_offset:int=1, 
-                 transpose_range=(0,12), transpose_p=0.5,
+                 transpose_range=None, transpose_p=0.5,
                  encode_position=False,
                  **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths

@@ -52,14 +52,15 @@ path = Path(args.path)
 from musicautobot import config
 config = getattr(config, args.config)()
 
-if args.no_transpose: config['transpose_range'] = None
+transpose_range = None if args.no_transpose else (0,12)
 data = load_data(path, args.data_file, 
-                    bs=args.batch_size, bptt=args.bptt, transpose_range=config['transpose_range'])
+                    bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range)
 
-opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=1e-4)
+eps = 1e-2 if args.half else 1e-6
+opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=eps)
 if args.lamb:
     from musicautobot.lamb import Lamb
-    opt_func = partial(Lamb, eps=1e-4)
+    opt_func = partial(Lamb, eps=eps)
     
 learn = music_model_learner(data, config, drop_mult=1.5, opt_func=opt_func)
 if not args.half: learn.clip_grad(0.5)

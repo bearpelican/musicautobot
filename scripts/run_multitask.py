@@ -35,8 +35,7 @@ parser.add_argument('--save_every', action='store_true', help='Save every epoch'
 parser.add_argument('--config', type=str, default='multitask_config', help='serve.py config name')
 parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
 parser.add_argument('--data_parallel', action='store_true', help='DataParallel instead of DDP')
-parser.add_argument('--s2s_mask_window', type=int, default=1,
-                    help='Starting mask window size for sequence2sequence task. Basically teacher forcing')
+parser.add_argument('--mask_size', type=int, default=1, help='Starting mask window size for sequence2sequence task. Basically teacher forcing')
 
 args = parser.parse_args()
 args.path = Path(args.path)
@@ -56,20 +55,20 @@ path = Path(args.path)
 
 from musicautobot import config
 config = getattr(config, args.config)()
+config['mask_size'] = args.mask_size
 
-if args.no_transpose: config['transpose_range'] = None
 
 datasets = []
-
+transpose_range = None if args.no_transpose else (0,12)
 
 data = load_data(args.path, args.data_file, 
-                 bs=args.batch_size, bptt=args.bptt, transpose_range=config['transpose_range'],
-                 encode_position=True, dl_tfms=mask_lm_tfm)
+                 bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range,
+                 encode_position=True, dl_tfms=mask_lm_tfm_default)
 
 datasets.append(data)
 
 s2s_data = load_data(args.path, args.s2s_data_file, 
-                    bs=args.batch_size//4, bptt=args.bptt, transpose_range=config['transpose_range'],
+                    bs=args.batch_size//4, bptt=args.bptt, transpose_range=transpose_range,
                      preloader_cls=S2SPreloader, dl_tfms=melody_chord_tfm)
 
 datasets.append(s2s_data)
@@ -77,7 +76,7 @@ datasets.append(s2s_data)
 combined_data = StackedDataBunch(datasets)
 
 # Load Optimizer
-eps = 1e-3 if args.half else 1e-6
+eps = 1e-2 if args.half else 1e-6
 opt_func = partial(FusedAdam, betas=(0.9,0.99), eps=eps)
 if args.lamb:
     from musicautobot.utils.lamb import Lamb

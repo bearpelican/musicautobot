@@ -130,7 +130,8 @@ class MTLinearDecoder(nn.Module):
 class MTEncoder(nn.Module):
     def __init__(self, embed:nn.Module, n_hid:int, n_layers:int, n_heads:int, d_model:int, d_head:int, d_inner:int, 
                  resid_p:float=0., attn_p:float=0., ff_p:float=0., bias:bool=True, scale:bool=True,
-                 act:Activation=Activation.ReLU, double_drop:bool=True, mem_len:int=512, is_decoder=False, **kwargs):
+                 act:Activation=Activation.ReLU, double_drop:bool=True, mem_len:int=512, is_decoder=False,
+                 mask_size=1, mask_p=0.3, **kwargs):
         super().__init__()
         self.embed = embed
         self.u = nn.Parameter(torch.Tensor(n_heads, 1, d_head)) #Remove 1 for einsum implementation of attention
@@ -140,7 +141,7 @@ class MTEncoder(nn.Module):
                       ff_p=ff_p, bias=bias, scale=scale, act=act, double_drop=double_drop, mem_len=mem_len,
                       ) for k in range(n_layers)])
 
-        self.mask_size = 1
+        self.mask_size, self.mask_p = mask_size, mask_p
         self.is_decoder = is_decoder
     
         nn.init.normal_(self.u, 0., 0.02)
@@ -158,7 +159,7 @@ class MTEncoder(nn.Module):
         # Masks
         if self.is_decoder:
             lm_mask = rand_window_mask(lm_len, self.embed.mem_len, x_lm.device,
-                                       max_size=self.mask_size, p=0.3, is_eval=not self.training)
+                                       max_size=self.mask_size, p=self.mask_p, is_eval=not self.training)
         else:
             lm_mask = None
         
