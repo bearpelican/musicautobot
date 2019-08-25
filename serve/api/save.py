@@ -4,6 +4,7 @@ import boto3
 import json
 from pathlib import Path
 from . import app
+from flask import Response, send_from_directory, send_file, request, jsonify
 
 s3 = boto3.client('s3')
 bucket = app.config['S3_BUCKET']
@@ -34,13 +35,15 @@ def to_s3(file, args):
     print('Saved IDS:', s3_id, s3_id[::-1])
     return s3_id[::-1]
 
-# @app.route('/store/save', methods=['POST'])
-# def save_store():
-#     args = request.form.to_dict()
-#     midi = request.files['midi'].read()
-#     print('Saving store:', args)
-#     s3_id = to_s3(midi, args)
-#     result = {
-#         'result': s3_id
-#     }
-#     return jsonify(result)
+@app.route('/store/save', methods=['POST'])
+def save_store():
+    args = request.form.to_dict()
+    midi = request.files['midi'].read()
+    print('Saving store:', args)
+#    stream = file2stream(midi) # 1.
+#    midi_out = Path(stream.write("midi"))
+    s3_id = to_s3(midi, args)
+    result = {
+        'result': s3_id
+    }
+    return jsonify(result)

@@ -231,7 +231,6 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
     multitrack_item = MultitrackItem.from_file(midi, learn.data.vocab)
     melody, chords = multitrack_item.melody, multitrack_item.chords
-    
     inp, targ = (chords, melody) if pred_melody else (melody, chords)
     
     # if seed_len is passed, cutoff sequence so we can predict the rest
