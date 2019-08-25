@@ -63,7 +63,7 @@ config['mask_steps'] = args.mask_steps
 datasets = []
 transpose_range = None if args.no_transpose else (0,12)
 
-mlm_tfm = mask_pitchdur if args.mask_pitchdur else partial(mask_lm_tfm_default, mask_p=0.4)
+mlm_tfm = mask_lm_tfm_pitchdur if args.mask_pitchdur else partial(mask_lm_tfm_default, mask_p=0.4)
 data = load_data(args.path, Path('piano_duet')/args.data_file, 
                  bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range,
                  encode_position=True, dl_tfms=mlm_tfm, num_workers=args.num_workers)
