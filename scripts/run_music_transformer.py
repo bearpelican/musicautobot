@@ -36,6 +36,7 @@ parser.add_argument('--div_factor', type=int, default=10, help='learning rate di
 parser.add_argument('--config', type=str, default='default_config', help='serve.py config name')
 parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
 parser.add_argument('--parallel', action='store_true', help='Run in dataparallel')
+parser.add_argument('--mask_steps', type=int, default=1, help='Attention mask - max number of random steps. Basically teacher forcing')
 
 args = parser.parse_args()
 is_distributed = num_distrib() > 0
@@ -53,6 +54,7 @@ path = Path(args.path)
 from musicautobot import config
 config = getattr(config, args.config)()
 config['encode_position'] = True
+config['mask_steps'] = args.mask_steps
 
 transpose_range = None if args.no_transpose else (0,12)
 data = load_data(path, args.data_file, encode_position=config['encode_position'], dl_tfms=[batch_position_tfm],

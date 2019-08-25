@@ -36,7 +36,8 @@ parser.add_argument('--save_every', action='store_true', help='Save every epoch'
 parser.add_argument('--config', type=str, default='multitask_config', help='serve.py config name')
 parser.add_argument('--no_transpose', action='store_true', help='No transpose data augmentation')
 parser.add_argument('--data_parallel', action='store_true', help='DataParallel instead of DDP')
-parser.add_argument('--mask_size', type=int, default=1, help='Starting mask window size for sequence2sequence task. Basically teacher forcing')
+parser.add_argument('--mask_steps', type=int, default=1, help='Attention mask - max number of random steps. Basically teacher forcing')
+parser.add_argument('--mask_pitchdur', action='store_true', help='Mask either pitch or duration')
 
 args = parser.parse_args()
 args.path = Path(args.path)
@@ -56,13 +57,13 @@ path = Path(args.path)
 
 from musicautobot import config
 config = getattr(config, args.config)()
-config['mask_size'] = args.mask_size
+config['mask_steps'] = args.mask_steps
 
 
 datasets = []
 transpose_range = None if args.no_transpose else (0,12)
 
-mlm_tfm = partial(mask_lm_tfm_default, mask_p=0.4)
+mlm_tfm = mask_pitchdur if args.mask_pitchdur else partial(mask_lm_tfm_default, mask_p=0.4)
 data = load_data(args.path, Path('piano_duet')/args.data_file, 
                  bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range,
                  encode_position=True, dl_tfms=mlm_tfm, num_workers=args.num_workers)
