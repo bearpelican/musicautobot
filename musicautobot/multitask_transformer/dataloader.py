@@ -96,7 +96,7 @@ def mask_tfm(b, mask_range, mask_idx, pad_idx, p=0.3):
 def mask_lm_tfm_default(b, vocab, mask_p=0.3):
     return mask_lm_tfm(b, mask_range=vocab.npenc_range, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, mask_p=mask_p)
 
-def mask_lm_tfm_pitchdur(b, vocab, mask_p=0.95):
+def mask_lm_tfm_pitchdur(b, vocab, mask_p=0.9):
     mask_range = vocab.dur_range if np.random.rand() < 0.5 else vocab.note_range
     return mask_lm_tfm(b, mask_range=mask_range, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, mask_p=mask_p)
 
