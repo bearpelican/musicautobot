@@ -72,13 +72,13 @@ class MusicLearner(LanguageLearner):
         vocab = self.data.vocab
 
         repeat_count = 0
-        encode_position = self.model.encode_position
+        encode_position = self.model[0].encode_position
 
         for i in progress_bar(range(n_words), leave=True):
             with torch.no_grad():
                 if encode_position:
-                    batch = { 'lm': { 'x': x[None], 'pos': pos[None] } }, y
-                    logits = self.model(batch=batch)[0][-1][-1]
+                    batch = { 'x': x[None], 'pos': pos[None] }
+                    logits = self.model(batch)[0][-1][-1]
                 else:
                     logits = self.model(x[None])[0][-1][-1]
 
