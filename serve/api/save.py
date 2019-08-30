@@ -9,9 +9,8 @@ from flask import Response, send_from_directory, send_file, request, jsonify
 s3 = boto3.client('s3')
 bucket = app.config['S3_BUCKET']
 
-def to_s3(file, args):
+def to_s3(file, args, base_dir='generated/'):
     s3_id = str(uuid.uuid4()).replace('-', '')
-    base_dir = 'generated/'
     s3_file = base_dir + s3_id + '.mid'
     s3_json = base_dir + s3_id + '.json'
     

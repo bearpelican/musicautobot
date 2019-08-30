@@ -268,7 +268,8 @@ class MemMultiHeadRelativeAttentionKV(nn.Module):
         if self.scale: attn_score = (AC + BD).mul_(1/(self.d_head ** 0.5))
         if mask is not None: 
             mask = mask[...,-seq_len:]
-            attn_score = attn_score.float().masked_fill(mask.bool(), -float('inf')).type_as(attn_score)
+            if hasattr(mask, 'bool'): mask = mask.bool()
+            attn_score = attn_score.float().masked_fill(mask, -float('inf')).type_as(attn_score)
         attn_prob = self.drop_att(F.softmax(attn_score, dim=-1))
         attn_vec = torch.matmul(attn_prob, wv)
         return attn_vec.permute(0, 2, 1, 3).contiguous().view(bs, x_len, -1)
