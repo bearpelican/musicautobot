@@ -101,6 +101,10 @@ class MusicItem():
         self._stream = separate_melody_chord(self.stream)
         return self.stream
 
+    def remove_eos(self):
+        if self.data[-1] == self.vocab.stoi[EOS]: return self.new(self.data, stream=self.stream)
+        return self
+
     def split_parts(self):
         return self.new(self.data, stream=separate_melody_chord(self.stream), position=self.position)
         
