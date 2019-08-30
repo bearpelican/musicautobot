@@ -50,6 +50,10 @@ Training on multiple tasks means we can generate some really cool predictions (C
  * [multitask_transformer.py](musicautobot/multitask_transformer) - Submodule structure similar to fastai's library.
    * Learner, Model, Transform - MusicItem, Dataloader
 
+## Pretrained [Model](https://ashaw-midi-web-server.s3-us-west-2.amazonaws.com/pretrained.tgz)
+
+* Generate.ipynb automatically downloads pretrained model.
+
 ## Scripts
 
 CLI scripts for training models:  
@@ -59,7 +63,7 @@ python run_multitask.py --epochs 14 --save multitask_model --batch_size=16 --bpt
 ```
 **[run_music_transformer.py](scripts/run_music_transformer.py)** - music model training
 ```
-python run_multitask.py --epochs 14 --save music_model --batch_size=16 --bptt=512 --lr 1e-4
+python run_music_transformer.py --epochs 14 --save music_model --batch_size=16 --bptt=512 --lr 1e-4
 ```
 **[run_ddp.sh](scripts/run_ddp.sh)** - Helper method to train with mulitple GPUs (DistributedDataParallel). Only works with run_music_transformer.py  
 ```

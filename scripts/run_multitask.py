@@ -17,8 +17,8 @@ from musicautobot.utils.stacked_dataloader import StackedDataBunch
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='../data/midi/v20/')
-parser.add_argument('--data_file', type=str, default='cached/all.pkl')
+parser.add_argument('--path', type=str, default='../data/numpy/')
+parser.add_argument('--data_file', type=str, default='musicitem_data_save.pkl')
 parser.add_argument('--s2s_data_file', type=str, default='multiitem_data_save.pkl')
 parser.add_argument('--save', type=str, default='first_run')
 parser.add_argument('--load', type=str, default=None)

@@ -130,59 +130,6 @@ class MusicLearner(LanguageLearner):
         pred = vocab.to_music_item(np.array(new_idx))
         full = item.append(pred)
         return pred, full
-
-    def predict_old(self, item:MusicItem, n_words:int=128,
-                     temperatures:float=(1.0,1.0), min_bars=4,
-                     top_k=40, top_p=0.9):
-        "Return the `n_words` that come after `text`."
-        self.model.reset()
-        y = torch.tensor([0])
-        new_idx = []
-
-        sep_count = 0
-
-        bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
-        vocab = self.data.vocab
-        x = item.to_tensor()
-        with torch.no_grad():
-            for i in progress_bar(range(n_words), leave=True):
-                # Predict
-                with torch.no_grad():
-                    logits = self.model(x[None])[0][-1][-1]
-                # res = self.pred_batch(batch=(x[None],y))[0][-1] # returns softmax values which we don't wnat
-
-                # Temperature
-                # Use first temperatures value if last prediction was duration
-                prev_idx = new_idx[-1] if len(new_idx) else x[-1].item()
-                temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
-                if temperature != 1.: logits = logits / temperature
-
-                # Filter
-                filter_value = -float('Inf')
-                # bar = 16 beats
-                if (sep_count // 16) <= min_bars: logits[vocab.bos_idx] = filter_value
-                logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
-                logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
-
-                # Sample
-                probs = F.softmax(logits, dim=-1)
-                idx = torch.multinomial(probs, 1).item()
-
-                if new_idx and new_idx[-1]==vocab.sep_idx: 
-                    duration = idx - vocab.dur_range[0]
-                    sep_count += duration
-                    # print('Bars', duration, sep_count // 16)
-
-                if idx==vocab.bos_idx: 
-                    print('Predicted BOS token. Returning prediction...')
-                    break
-
-
-                new_idx.append(idx)
-                x = x.new_tensor([idx])
-        pred = vocab.to_music_item(np.array(new_idx))
-        full = item.append(pred)
-        return pred, full
     
 # High level prediction functions from midi file
 def predict_from_midi(learn, midi=None, n_words=400, 
