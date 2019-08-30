@@ -3,7 +3,6 @@ from fastai.text.models.transformer import tfmerXL_lm_config, Activation
 
 def default_config():
     config = tfmerXL_lm_config.copy()
-    config['transpose_range'] = (0,12)
     config['act'] = Activation.GeLU
 
     config['mem_len'] = 512
@@ -24,3 +23,22 @@ def multitask_config():
     config['dec_layers'] = 8
     del config['n_layers']
     return config
+
+def defaultm_config():
+    config = default_config()
+    config['d_model'] = 768
+    config['d_inner'] = 3072
+    config['n_heads'] = 12
+    config['d_head'] = 64
+    config['n_layers'] = 12
+    return config
+    
+
+def multitaskm_config():
+    config = defaultm_config()
+    config['bias'] = True
+    config['enc_layers'] = 12
+    config['dec_layers'] = 12
+    del config['n_layers']
+    return config
+

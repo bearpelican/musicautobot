@@ -14,7 +14,7 @@ class MultitrackItem():
     def from_stream(cls, stream, vocab):
         if not isinstance(stream, music21.stream.Score): stream = stream.voicesToParts()
         num_parts = len(stream.parts)
-        sort_pitch = True
+        sort_pitch = False
         if num_parts > 2: 
             raise ValueError('Could not extract melody and chords from midi file. Please make sure file contains exactly 2 tracks')
         elif num_parts == 1: 
@@ -27,8 +27,8 @@ class MultitrackItem():
         
     @classmethod
     def from_npenc_parts(cls, mpart, cpart, vocab, stream=None):
-        mpart = npenc2idxenc(mpart, seq_type=SEQType.Melody, vocab=vocab, add_eos=True)
-        cpart = npenc2idxenc(cpart, seq_type=SEQType.Chords, vocab=vocab, add_eos=True)
+        mpart = npenc2idxenc(mpart, seq_type=SEQType.Melody, vocab=vocab, add_eos=False)
+        cpart = npenc2idxenc(cpart, seq_type=SEQType.Chords, vocab=vocab, add_eos=False)
         return MultitrackItem(MusicItem(mpart, vocab), MusicItem(cpart, vocab), stream)
         
     @classmethod

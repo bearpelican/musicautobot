@@ -45,7 +45,7 @@ class Midi2MultitrackProcessor(PreProcessor):
     
 class S2SPreloader(Callback):
     def __init__(self, dataset:LabelList, bptt:int=512, 
-                 transpose_range=(0,12), **kwargs):
+                 transpose_range=None, **kwargs):
         self.dataset,self.bptt = dataset,bptt
         self.vocab = self.dataset.vocab
         self.transpose_range = transpose_range
@@ -76,7 +76,7 @@ class S2SItemList(MusicItemList):
 # DATALOADING AND TRANSFORMATIONS
 # These transforms happen on batch
 
-def mask_tfm(b, mask_range, mask_idx, pad_idx, p=0.15):
+def mask_tfm(b, mask_range, mask_idx, pad_idx, p=0.3):
     # mask range (min, max)
     # replacement vals - [x_replace, y_replace]. Usually [mask_idx, pad_idx]
     # p = replacement probability
@@ -93,15 +93,20 @@ def mask_tfm(b, mask_range, mask_idx, pad_idx, p=0.15):
     x[wrong_word] = torch.randint(*mask_range, [wrong_word.sum().item()], device=x.device)
     return x, y
 
-# def mask_lm_tfm(b, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p_mask=0.2):
-def mask_lm_tfm(b, vocab, p_mask=0.3):
+def mask_lm_tfm_default(b, vocab, mask_p=0.3):
+    return mask_lm_tfm(b, mask_range=vocab.npenc_range, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, mask_p=mask_p)
+
+def mask_lm_tfm_pitchdur(b, vocab, mask_p=0.9):
+    mask_range = vocab.dur_range if np.random.rand() < 0.5 else vocab.note_range
+    return mask_lm_tfm(b, mask_range=mask_range, mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, mask_p=mask_p)
+
+def mask_lm_tfm(b, mask_range, mask_idx, pad_idx, mask_p):
     x,y = b
     x_lm,x_pos = x[...,0], x[...,1]
     y_lm,y_pos = y[...,0], y[...,1]
     
     # Note: masking y_lm instead of x_lm. Just in case we ever do sequential s2s training
-    x_msk, y_msk = mask_tfm((y_lm, y_lm), mask_range=vocab.npenc_range, 
-                            mask_idx=vocab.mask_idx, pad_idx=vocab.pad_idx, p=p_mask)
+    x_msk, y_msk = mask_tfm((y_lm, y_lm), mask_range=mask_range, mask_idx=mask_idx, pad_idx=pad_idx, p=mask_p)
     msk_pos = y_pos
     
     x_dict = { 

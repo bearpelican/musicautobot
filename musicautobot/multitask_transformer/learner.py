@@ -52,7 +52,7 @@ class MultitaskLearner(Learner):
             # Temperature
             # Use first temperatures value if last prediction was duration
             temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
-            repeat_penalty = max(0, np.log(repeat_count/4)/5) * temperature
+            repeat_penalty = max(0, np.log((repeat_count+1)/4)/5) * temperature
             temperature += repeat_penalty
             if temperature != 1.: logits = logits / temperature
                 
@@ -72,7 +72,7 @@ class MultitaskLearner(Learner):
             # Update repeat count
             num_choices = len(probs.nonzero().view(-1))
             if num_choices <= 2: repeat_count += 1
-            else: repeat_count = 0
+            else: repeat_count = repeat_count // 2
 
             if prev_idx==vocab.sep_idx: 
                 duration = idx - vocab.dur_range[0]
@@ -120,7 +120,7 @@ class MultitaskLearner(Learner):
             # Temperature
             # Use first temperatures value if last prediction was duration
             temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
-            repeat_penalty = max(0, np.log(repeat_count/4)/5) * temperature
+            repeat_penalty = max(0, np.log((repeat_count+1)/4)/5) * temperature
             temperature += repeat_penalty
             if temperature != 1.: logits = logits / temperature
 
@@ -138,7 +138,7 @@ class MultitaskLearner(Learner):
             # Update repeat count
             num_choices = len(probs.nonzero().view(-1))
             if num_choices <= 2: repeat_count += 1
-            else: repeat_count = 0
+            else: repeat_count = repeat_count // 2
 
             x[midx] = idx
 
@@ -175,7 +175,7 @@ class MultitaskLearner(Learner):
             # Use first temperatures value if last prediction was duration
             prev_idx = targ[-1] if len(targ) else vocab.pad_idx
             temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
-            repeat_penalty = max(0, np.log(repeat_count/4)/5) * temperature
+            repeat_penalty = max(0, np.log((repeat_count+1)/4)/5) * temperature
             temperature += repeat_penalty
             if temperature != 1.: logits = logits / temperature
                 
@@ -191,7 +191,7 @@ class MultitaskLearner(Learner):
             # Update repeat count
             num_choices = len(probs.nonzero().view(-1))
             if num_choices <= 2: repeat_count += 1
-            else: repeat_count = 0
+            else: repeat_count = repeat_count // 2
 
             if idx == vocab.bos_idx | idx == vocab.stoi[EOS]: 
                 print('Predicting BOS/EOS')
@@ -231,7 +231,6 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
                       temperatures=(1.0,1.0), top_k=24, top_p=0.7, seed_len=None, pred_melody=True, **kwargs):
     multitrack_item = MultitrackItem.from_file(midi, learn.data.vocab)
     melody, chords = multitrack_item.melody, multitrack_item.chords
-    
     inp, targ = (chords, melody) if pred_melody else (melody, chords)
     
     # if seed_len is passed, cutoff sequence so we can predict the rest
@@ -310,7 +309,7 @@ class MTTrainer(LearnerCallback):
         "Reset the hidden state of the model."
         model = get_model(self.learn.model)
         model.reset()
-        model.encoder.mask_size = max(self.count+self.mw_start, 100)
+        model.encoder.mask_steps = max(self.count+self.mw_start, 100)
         
     def on_epoch_end(self, last_metrics, **kwargs):
         "Finish the computation and sends the result to the Recorder."
