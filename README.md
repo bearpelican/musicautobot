@@ -137,4 +137,6 @@ Here's some suggestions:
 
 This project is built on top of [fast.ai's](https://github.com/fastai/fastai) deep learning library and music21's incredible musicology [library](https://web.mit.edu/music21/).
 
+Inspired by [bachbot](https://github.com/feynmanliang/bachbot) and [clara](http://christinemcleavey.com/clara-a-neural-net-music-generator/)
+
 Special thanks to [SPC](https://southparkcommons.com) and [PalapaVC](https://www.palapavc.com/)
