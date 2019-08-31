@@ -56,53 +56,77 @@ class MusicLearner(LanguageLearner):
 
     def predict(self, item:MusicItem, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
-                     top_k=40, top_p=0.9):
+                     top_k=30, top_p=0.6):
         "Return the `n_words` that come after `text`."
         self.model.reset()
-        y = torch.tensor([0])
         new_idx = []
+        vocab = self.data.vocab
+        x, pos = item.to_tensor(), item.get_pos_tensor()
+        last_pos = pos[-1] if len(pos) else 0
+        y = torch.tensor([0])
+
+        start_pos = last_pos
 
         sep_count = 0
-
         bar_len = SAMPLE_FREQ * 4 # assuming 4/4 time
         vocab = self.data.vocab
-        x = item.to_tensor()
-        with torch.no_grad():
-            for i in progress_bar(range(n_words), leave=True):
-                # Predict
-                with torch.no_grad():
+
+        repeat_count = 0
+        encode_position = self.model[0].encode_position
+
+        for i in progress_bar(range(n_words), leave=True):
+            with torch.no_grad():
+                if encode_position:
+                    batch = { 'x': x[None], 'pos': pos[None] }
+                    logits = self.model(batch)[0][-1][-1]
+                else:
                     logits = self.model(x[None])[0][-1][-1]
-                # res = self.pred_batch(batch=(x[None],y))[0][-1] # returns softmax values which we don't wnat
 
-                # Temperature
-                # Use first temperatures value if last prediction was duration
-                prev_idx = new_idx[-1] if len(new_idx) else x[-1].item()
-                temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
-                if temperature != 1.: logits = logits / temperature
+            prev_idx = new_idx[-1] if len(new_idx) else vocab.pad_idx
 
-                # Filter
-                filter_value = -float('Inf')
-                # bar = 16 beats
-                if (sep_count // 16) <= min_bars: logits[vocab.bos_idx] = filter_value
-                logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
-                logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
+            # Temperature
+            # Use first temperatures value if last prediction was duration
+            temperature = temperatures[0] if vocab.is_duration_or_pad(prev_idx) else temperatures[1]
+            repeat_penalty = max(0, np.log((repeat_count+1)/4)/5) * temperature
+            temperature += repeat_penalty
+            if temperature != 1.: logits = logits / temperature
+                
 
-                # Sample
-                probs = F.softmax(logits, dim=-1)
-                idx = torch.multinomial(probs, 1).item()
+            # Filter
+            # bar = 16 beats
+            filter_value = -float('Inf')
+            if ((last_pos - start_pos) // 16) <= min_bars: logits[vocab.bos_idx] = filter_value
 
-                if new_idx and new_idx[-1]==vocab.sep_idx: 
-                    duration = idx - vocab.dur_range[0]
-                    sep_count += duration
-                    # print('Bars', duration, sep_count // 16)
+            logits = filter_invalid_indexes(logits, prev_idx, vocab, filter_value=filter_value)
+            logits = top_k_top_p(logits, top_k=top_k, top_p=top_p, filter_value=filter_value)
+            
+            # Sample
+            probs = F.softmax(logits, dim=-1)
+            idx = torch.multinomial(probs, 1).item()
 
-                if idx==vocab.bos_idx: 
-                    print('Predicted BOS token. Returning prediction...')
-                    break
+            # Update repeat count
+            num_choices = len(probs.nonzero().view(-1))
+            if num_choices <= 2: repeat_count += 1
+            else: repeat_count = repeat_count // 2
+
+            if prev_idx==vocab.sep_idx: 
+                duration = idx - vocab.dur_range[0]
+                last_pos = last_pos + duration
+
+                bars_pred = (last_pos - start_pos) // 16
+                abs_bar = last_pos // 16
+                # if (bars % 8 == 0) and (bars_pred > min_bars): break
+                if (i / n_words > 0.80) and (abs_bar % 4 == 0): break
 
 
-                new_idx.append(idx)
-                x = x.new_tensor([idx])
+            if idx==vocab.bos_idx: 
+                print('Predicted BOS token. Returning prediction...')
+                break
+
+            new_idx.append(idx)
+            x = x.new_tensor([idx])
+            pos = pos.new_tensor([last_pos])
+
         pred = vocab.to_music_item(np.array(new_idx))
         full = item.append(pred)
         return pred, full

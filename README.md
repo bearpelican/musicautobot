@@ -50,6 +50,10 @@ Training on multiple tasks means we can generate some really cool predictions (C
  * [multitask_transformer.py](musicautobot/multitask_transformer) - Submodule structure similar to fastai's library.
    * Learner, Model, Transform - MusicItem, Dataloader
 
+## Pretrained [Model](https://ashaw-midi-web-server.s3-us-west-2.amazonaws.com/pretrained.tgz)
+
+* Generate.ipynb automatically downloads pretrained model.
+
 ## Scripts
 
 CLI scripts for training models:  
@@ -59,7 +63,7 @@ python run_multitask.py --epochs 14 --save multitask_model --batch_size=16 --bpt
 ```
 **[run_music_transformer.py](scripts/run_music_transformer.py)** - music model training
 ```
-python run_multitask.py --epochs 14 --save music_model --batch_size=16 --bptt=512 --lr 1e-4
+python run_music_transformer.py --epochs 14 --save music_model --batch_size=16 --bptt=512 --lr 1e-4
 ```
 **[run_ddp.sh](scripts/run_ddp.sh)** - Helper method to train with mulitple GPUs (DistributedDataParallel). Only works with run_music_transformer.py  
 ```
@@ -132,5 +136,7 @@ Here's some suggestions:
 ## Acknowledgements
 
 This project is built on top of [fast.ai's](https://github.com/fastai/fastai) deep learning library and music21's incredible musicology [library](https://web.mit.edu/music21/).
+
+Inspired by [bachbot](https://github.com/feynmanliang/bachbot) and [clara](http://christinemcleavey.com/clara-a-neural-net-music-generator/)
 
 Special thanks to [SPC](https://southparkcommons.com) and [PalapaVC](https://www.palapavc.com/)

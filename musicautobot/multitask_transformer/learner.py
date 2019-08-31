@@ -235,6 +235,7 @@ def s2s_predict_from_midi(learn, midi=None, n_words=200,
     
     # if seed_len is passed, cutoff sequence so we can predict the rest
     if seed_len is not None: targ = targ.trim_to_beat(seed_len)
+    targ = targ.remove_eos()
         
     pred = learn.predict_s2s(inp, targ, n_words=n_words, temperatures=temperatures, top_k=top_k, top_p=top_p, **kwargs)
     
