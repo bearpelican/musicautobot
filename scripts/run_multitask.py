@@ -66,7 +66,7 @@ transpose_range = None if args.no_transpose else (0,12)
 mlm_tfm = mask_lm_tfm_pitchdur if args.mask_pitchdur else partial(mask_lm_tfm_default, mask_p=0.4)
 data = load_data(args.path, Path('piano_duet')/args.data_file, 
                  bs=args.batch_size, bptt=args.bptt, transpose_range=transpose_range,
-                 encode_position=True, dl_tfms=mlm_tfm, num_workers=args.num_workers)
+                 dl_tfms=mlm_tfm, num_workers=args.num_workers)
 
 datasets.append(data)
 
@@ -86,13 +86,10 @@ if args.lamb:
     opt_func = partial(Lamb, eps=eps)
     
 # Load Learner
-learn = multitask_model_learner(combined_data, config.copy(), opt_func=opt_func)
-if not args.half: learn.clip_grad(1.0)
+load_path = path/args.load if args.load else None
+learn = multitask_model_learner(combined_data, config.copy(), opt_func=opt_func, pretrained_path=load_path)
 
-if args.load:
-    state = torch.load(path/args.load, map_location='cpu')
-    get_model(learn.model).load_state_dict(state['model'], strict=False)
-    learn.model.cuda()
+if not args.half: learn.clip_grad(1.0)
 if args.save:
     save_path = path/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,4 +100,4 @@ if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=.3, final_div=50, wd=args.wd)
 
-if args.local_rank == 0: learn.save(f'{args.save}')
+if args.local_rank == 0: learn.save(f'{args.save}', config=config)

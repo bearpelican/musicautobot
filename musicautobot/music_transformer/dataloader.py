@@ -38,8 +38,13 @@ class MusicDataBunch(DataBunch):
                 .split_by_rand_pct(split_pct, seed=6)
                 .label_const(label_cls=LMLabelList))
         return src.databunch(**kwargs)
-        
 
+    @classmethod
+    def empty(cls, path, **kwargs):
+        vocab = MusicVocab.create()
+        src = MusicItemList([], path=path, vocab=vocab, ignore_empty=True).split_none()
+        return src.label_const(label_cls=LMLabelList).databunch()
+        
 def partially_apply_vocab(tfm, vocab):
     if 'vocab' in inspect.getfullargspec(tfm).args:
         return partial(tfm, vocab=vocab)
@@ -103,7 +108,7 @@ class MusicPreloader(Callback):
     def __init__(self, dataset:LabelList, lengths:Collection[int]=None, bs:int=32, bptt:int=70, backwards:bool=False, 
                  shuffle:bool=False, y_offset:int=1, 
                  transpose_range=None, transpose_p=0.5,
-                 encode_position=False,
+                 encode_position=True,
                  **kwargs):
         self.dataset,self.bs,self.bptt,self.shuffle,self.backwards,self.lengths = dataset,bs,bptt,shuffle,backwards,lengths
         self.vocab = self.dataset.vocab

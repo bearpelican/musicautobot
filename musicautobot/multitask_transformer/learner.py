@@ -12,18 +12,38 @@ def multitask_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.
     "Create a `Learner` with a language model from `data` and `arch`."
     vocab = data.vocab
     vocab_size = len(vocab)
+
+    if pretrained_path: 
+        state = torch.load(pretrained_path, map_location='cpu')
+        if config is None: config = state['config']
+
     model = get_multitask_model(vocab_size, config=config, drop_mult=drop_mult, pad_idx=vocab.pad_idx)
     metrics = [AverageMultiMetric(partial(m, pad_idx=vocab.pad_idx)) for m in [mask_acc, lm_acc, c2m_acc, m2c_acc]]
     loss_func = MultiLoss(ignore_index=data.vocab.pad_idx)
     learn = MultitaskLearner(data, model, loss_func=loss_func, metrics=metrics, **learn_kwargs)
     
-    if pretrained_path:
-        state = torch.load(pretrained_path, map_location='cpu')
+    if pretrained_path: 
         get_model(model).load_state_dict(state['model'], strict=False)
+        if not hasattr(learn, 'opt'): learn.create_opt(defaults.lr, learn.wd)
+        try:    learn.opt.load_state_dict(state['opt'])
+        except: pass
+        del state
+        gc.collect()
         
     return learn
 
 class MultitaskLearner(Learner):
+    def save(self, file:PathLikeOrBinaryStream=None, with_opt:bool=True, config=None):
+        "Save model and optimizer state (if `with_opt`) with `file` to `self.model_dir`. `file` can be file-like (file or buffer)"
+        out_path = super().save(file, return_path=True, with_opt=with_opt)
+        if config and out_path:
+            state = torch.load(out_path)
+            state['config'] = config
+            torch.save(state, out_path)
+            del state
+            gc.collect()
+        return out_path
+
     def predict_nw(self, item:MusicItem, n_words:int=128,
                      temperatures:float=(1.0,1.0), min_bars=4,
                      top_k=30, top_p=0.6):
