@@ -12,18 +12,38 @@ def music_model_learner(data:DataBunch, arch=MusicTransformerXL, config:dict=Non
                         pretrained_path:PathOrStr=None, **learn_kwargs) -> 'LanguageLearner':
     "Create a `Learner` with a language model from `data` and `arch`."
     meta = _model_meta[arch]
+
+    if pretrained_path: 
+        state = torch.load(pretrained_path, map_location='cpu')
+        if config is None: config = state['config']
+        
     model = get_language_model(arch, len(data.vocab.itos), config=config, drop_mult=drop_mult)
     learn = MusicLearner(data, model, split_func=meta['split_lm'], **learn_kwargs)
 
-    if pretrained_path:
-        state = torch.load(pretrained_path, map_location='cpu')
+    if pretrained_path: 
         get_model(model).load_state_dict(state['model'], strict=False)
-        
+        if not hasattr(learn, 'opt'): learn.create_opt(defaults.lr, learn.wd)
+        try:    learn.opt.load_state_dict(state['opt'])
+        except: pass
+        del state
+        gc.collect()
+
     return learn
 
 # Predictions
 from fastai import basic_train # for predictions
 class MusicLearner(LanguageLearner):
+    def save(self, file:PathLikeOrBinaryStream=None, with_opt:bool=True, config=None):
+        "Save model and optimizer state (if `with_opt`) with `file` to `self.model_dir`. `file` can be file-like (file or buffer)"
+        out_path = super().save(file, return_path=True, with_opt=with_opt)
+        if config and out_path:
+            state = torch.load(out_path)
+            state['config'] = config
+            torch.save(state, out_path)
+            del state
+            gc.collect()
+        return out_path
+
     def beam_search(self, xb:Tensor, n_words:int, top_k:int=10, beam_sz:int=10, temperature:float=1.,
                     ):
         "Return the `n_words` that come after `text` using beam search."

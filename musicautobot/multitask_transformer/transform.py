@@ -27,8 +27,8 @@ class MultitrackItem():
         
     @classmethod
     def from_npenc_parts(cls, mpart, cpart, vocab, stream=None):
-        mpart = npenc2idxenc(mpart, seq_type=SEQType.Melody, vocab=vocab, add_eos=True)
-        cpart = npenc2idxenc(cpart, seq_type=SEQType.Chords, vocab=vocab, add_eos=True)
+        mpart = npenc2idxenc(mpart, seq_type=SEQType.Melody, vocab=vocab, add_eos=False)
+        cpart = npenc2idxenc(cpart, seq_type=SEQType.Chords, vocab=vocab, add_eos=False)
         return MultitrackItem(MusicItem(mpart, vocab), MusicItem(cpart, vocab), stream)
         
     @classmethod
