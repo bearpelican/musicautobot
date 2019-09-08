@@ -66,13 +66,10 @@ if args.lamb:
     from musicautobot.utils.lamb import Lamb
     opt_func = partial(Lamb, eps=eps)
     
-learn = music_model_learner(data, config=config, drop_mult=1.5, opt_func=opt_func)
+load_path = path/args.load if args.load else None
+learn = music_model_learner(data, config=config, drop_mult=1.5, opt_func=opt_func, pretrained_path=load_path)
 if not args.half: learn.clip_grad(1.0)
 
-if args.load:
-    state = torch.load(path/args.load, map_location='cpu')
-    get_model(learn.model).load_state_dict(state['model'], strict=False)
-    learn.model.cuda()
 if args.save:
     save_path = path/learn.model_dir/args.save
     save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,4 +80,4 @@ if args.local_rank == 0: learn.callbacks.append(SaveModelCallback(learn, name=f'
 
 learn.fit_one_cycle(args.epochs, args.lr, div_factor=args.div_factor, pct_start=0.2, final_div=200, wd=args.wd)
 
-if args.local_rank == 0: learn.save(f'{args.save}')
+if args.local_rank == 0: learn.save(f'{args.save}', config=config)
