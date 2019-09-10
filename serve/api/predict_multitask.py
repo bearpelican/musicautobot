@@ -13,10 +13,8 @@ import torch
 import traceback
 torch.set_num_threads(4)
 
-config = multitask_config()
-config['mem_len'] = 512
 data = load_data(app.config['DATA_PATH'], app.config['DATA_SAVE_NAME'], num_workers=1)
-learn = multitask_model_learner(data, config.copy(), pretrained_path=app.config['MULTITASK_MODEL_PATH'])
+learn = multitask_model_learner(data, pretrained_path=app.config['MULTITASK_MODEL_PATH'])
 
 if torch.cuda.is_available(): learn.model.cuda()
 
