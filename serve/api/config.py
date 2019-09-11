@@ -14,7 +14,7 @@ class Config(object):
     LIB_PATH = project_path
     DATA_PATH = project_path/'data/numpy'
     DATA_SAVE_NAME = 'musicitem_data_save.pkl'
-    MULTITASK_MODEL_PATH = DATA_PATH/'pretrained/MultitaskTransformerKeyC.pth'
+    MULTITASK_MODEL_PATH = DATA_PATH/'pretrained/MultitaskSmallKeyC.pth'
     MUSIC_MODEL_PATH = DATA_PATH/'pretrained/MusicTransformerKeyC.pth'
 
 app.config.from_object('api.config.Config')
