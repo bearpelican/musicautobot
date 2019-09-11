@@ -6,7 +6,7 @@ from pathlib import Path
 from . import app
 
 s3 = boto3.client('s3')
-bucket = app.config['S3_BUCKET']
+bucket = app.config['S3_BUCKET_NAME']
 
 def to_s3(file, args):
     s3_id = str(uuid.uuid4()).replace('-', '')
