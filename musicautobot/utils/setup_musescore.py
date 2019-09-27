@@ -15,7 +15,7 @@ def setup_musescore(musescore_path=None):
     if musescore_path is None:
         if system == 'Darwin':
             app_paths = list(Path('/Applications').glob('MuseScore *.app'))
-            if len(musescore_app): musescore_path = app_paths[-1]/'Contents/MacOS/mscore'
+            if len(app_paths): musescore_path = app_paths[-1]/'Contents/MacOS/mscore'
         elif system == 'Linux':
             musescore_path = '/usr/bin/musescore'
     
