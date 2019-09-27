@@ -4,7 +4,7 @@ from ..utils.attention_mask import rand_window_mask
 
 class MusicTransformerXL(TransformerXL):
     "Exactly like fastai's TransformerXL, but with more aggressive attention mask: see `rand_window_mask`"
-    def __init__(self, *args, encode_position=False, mask_steps=1, **kwargs):
+    def __init__(self, *args, encode_position=True, mask_steps=1, **kwargs):
         import inspect
         sig = inspect.signature(TransformerXL)
         arg_params = { k:kwargs[k] for k in sig.parameters if k in kwargs }

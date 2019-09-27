@@ -172,7 +172,7 @@ class MTEncoderBlock(nn.Module):
     "Decoder block of a Transformer model."
     #Can't use Sequential directly cause more than one input...
     def __init__(self, n_heads:int, d_model:int, d_head:int, d_inner:int, resid_p:float=0., attn_p:float=0., ff_p:float=0.,
-                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512, **kwargs):
+                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512, act:Activation=Activation.GeLU, **kwargs):
         super().__init__()
         attn_cls = MemMultiHeadRelativeAttentionKV
         self.mha1 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=False)
@@ -186,10 +186,6 @@ class MTEncoderBlock(nn.Module):
         y_lm = self.mha1(enc_lm, enc_lm, enc_lm, r, g_u, g_v, mask=lm_mask)
         if enc_msk is None: return y_lm
         return self.ff(self.mha2(y_lm, enc_msk, enc_msk, r, g_u, g_v, mask=msk_mask))
-    
-
-    # Attention Layer
-
 
 # Attn
 

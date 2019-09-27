@@ -12,10 +12,8 @@ import torch
 import traceback
 torch.set_num_threads(4)
 
-config = default_config()
-config['mem_len'] = 512
 data = load_data(app.config['DATA_PATH'], app.config['DATA_SAVE_NAME'], num_workers=1)
-learn = music_model_learner(data, config=config.copy(), pretrained_path=app.config['MUSIC_MODEL_PATH'])
+learn = music_model_learner(data, pretrained_path=app.config['MUSIC_MODEL_PATH'])
 
 if torch.cuda.is_available(): learn.model.cuda()
 # learn.to_fp16(loss_scale=512) # fp16 not supported for cpu - https://github.com/pytorch/pytorch/issues/17699
