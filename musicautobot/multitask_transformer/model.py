@@ -54,28 +54,11 @@ class MultiTransformer(nn.Module):
     def reset(self):
         for module in self.children(): 
             reset_children(module)
-            
-    def update_mem_len(self, use_mem):
-        # Only Next word predictions should have memory
-        next_mem_len = self.default_mem_len if use_mem else 0
-        if self.current_mem_len == next_mem_len: return
-        # print('Updating mem length to:', next_mem_len)
-        for module in self.children(): 
-            update_mem_len(module, next_mem_len)
-        self.current_mem_len = next_mem_len
-        self.reset()
-        
         
 def reset_children(mod):
     if hasattr(mod, 'reset'): mod.reset()
     for module in mod.children(): 
         reset_children(module)
-        
-def update_mem_len(mod, mem_len):
-    if hasattr(mod, 'mem_len'): mod.mem_len = mem_len
-    for module in mod.children(): 
-        update_mem_len(module, mem_len)
-
 
  # COMPONENTS
 class TransformerEmbedding(nn.Module):
@@ -172,11 +155,11 @@ class MTEncoderBlock(nn.Module):
     "Decoder block of a Transformer model."
     #Can't use Sequential directly cause more than one input...
     def __init__(self, n_heads:int, d_model:int, d_head:int, d_inner:int, resid_p:float=0., attn_p:float=0., ff_p:float=0.,
-                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512, **kwargs):
+                 bias:bool=True, scale:bool=True, double_drop:bool=True, mem_len:int=512, mha2_mem_len=0, **kwargs):
         super().__init__()
         attn_cls = MemMultiHeadRelativeAttentionKV
         self.mha1 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=False)
-        self.mha2 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mem_len, r_mask=True)
+        self.mha2 = attn_cls(n_heads, d_model, d_head, resid_p=resid_p, attn_p=attn_p, bias=bias, scale=scale, mem_len=mha2_mem_len, r_mask=True)
         self.ff   = feed_forward(d_model, d_inner, ff_p=ff_p, double_drop=double_drop)
     
     def forward(self, enc_lm:Tensor, enc_msk:Tensor,
