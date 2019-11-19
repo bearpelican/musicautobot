@@ -10,6 +10,7 @@ dependencies:
 - jupyter
 - ipyparallel
 - pip
+- python>=3.7
 - pip:
   - music21
   - pebble
