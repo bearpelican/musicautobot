@@ -4,6 +4,8 @@ Using Deep Learning to generate pop music!
 
 You can also experiment through the web app - [musicautobot.com](http://musicautobot.com)
 
+![Screenshot](images/musicautobot_screenshot.png)
+
 ## Overview
 
 Recent advances in NLP have produced amazing [results](https://transformer.huggingface.co/) in generating text. 
