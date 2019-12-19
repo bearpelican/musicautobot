@@ -29,3 +29,18 @@ def is_ipython():
     try: get_ipython
     except: return False
     return True
+
+def is_colab():
+    try: import google.colab
+    except: return False
+    return True
+
+def setup_fluidsynth():
+    from midi2audio import FluidSynth
+    from IPython.display import Audio
+
+def play_wav(stream):
+    out_midi = stream.write('midi')
+    out_wav = str(Path(out_midi).with_suffix('.wav'))
+    FluidSynth("font.sf2").midi_to_audio(out_midi, out_wav)
+    return Audio(out_wav)
