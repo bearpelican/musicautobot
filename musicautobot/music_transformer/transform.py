@@ -115,7 +115,7 @@ def to_tensor(t, device=None):
     t = t if isinstance(t, torch.Tensor) else torch.tensor(t)
     if device is None and torch.cuda.is_available(): t = t.cuda()
     else: t.to(device)
-    return t
+    return t.long()
     
 def midi2idxenc(midi_file, vocab):
     "Converts midi file to index encoding for training"
