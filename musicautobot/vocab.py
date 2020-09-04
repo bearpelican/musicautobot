@@ -5,13 +5,15 @@ from .music_transformer import transform
 BOS = 'xxbos'
 PAD = 'xxpad'
 EOS = 'xxeos'
-S2SCLS = 'xxs2scls' # used for sequence2sequence start of translation
-MASK = 'xxmask'
-CSEQ = 'xxcseq'
-MSEQ = 'xxmseq'
-NSCLS = 'xxnscls'
+MASK = 'xxmask' # Used for BERT masked language modeling. 
+CSEQ = 'xxcseq' # Used for Seq2Seq translation - denotes start of chord sequence
+MSEQ = 'xxmseq' # Used for Seq2Seq translation - denotes start of melody sequence
 
-SEP = 'xxsep' # separator idx = -1 (part of notes)
+# Deprecated tokens. Kept for compatibility 
+S2SCLS = 'xxs2scls' # deprecated
+NSCLS = 'xxnscls' # deprecated
+
+SEP = 'xxsep' # Used to denote end of timestep (required for polyphony). separator idx = -1 (part of notes)
 
 SPECIAL_TOKS = [BOS, PAD, EOS, S2SCLS, MASK, CSEQ, MSEQ, NSCLS, SEP] # Important: SEP token must be last
 

@@ -92,7 +92,9 @@ class MusicLearner(LanguageLearner):
         vocab = self.data.vocab
 
         repeat_count = 0
-        encode_position = self.model[0].encode_position
+        if hasattr(self.model[0], 'encode_position'):
+            encode_position = self.model[0].encode_position
+        else: encode_position = False
 
         for i in progress_bar(range(n_words), leave=True):
             with torch.no_grad():

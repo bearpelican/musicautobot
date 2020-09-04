@@ -1,4 +1,3 @@
-from __future__ import annotations
 from ..numpy_encode import *
 import numpy as np
 from enum import Enum
@@ -78,7 +77,7 @@ class MusicItem():
     def transpose(self, interval):
         return self.new(tfm_transpose(self.data, interval, self.vocab), position=self._position)
     
-    def append(self, item:MusicItem):
+    def append(self, item):
         return self.new(np.concatenate((self.data, item.data), axis=0))
     
     def mask_pitch(self, section=None):
@@ -116,7 +115,7 @@ def to_tensor(t, device=None):
     t = t if isinstance(t, torch.Tensor) else torch.tensor(t)
     if device is None and torch.cuda.is_available(): t = t.cuda()
     else: t.to(device)
-    return t
+    return t.long()
     
 def midi2idxenc(midi_file, vocab):
     "Converts midi file to index encoding for training"

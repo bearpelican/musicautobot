@@ -4,6 +4,8 @@ Using Deep Learning to generate pop music!
 
 You can also experiment through the web app - [musicautobot.com](http://musicautobot.com)
 
+![Screenshot](images/musicautobot_screenshot.png)
+
 ## Overview
 
 Recent advances in NLP have produced amazing [results](https://transformer.huggingface.co/) in generating text. 
@@ -38,15 +40,19 @@ Details are explained in this 4 part series:
 
 ## Example Notebooks
 
-1. MusicTransformer
+1. Play with predictions on Google Colab
+ * [MusicTransformer Generate](https://colab.research.google.com/github/bearpelican/musicautobot/blob/master/notebooks/music_transformer/Generate_colab.ipynb) - Loads a pretrained model and shows how to generate/predict new notes
+ * [MultitaskTransformer Generate](https://colab.research.google.com/github/bearpelican/musicautobot/blob/master/notebooks/multitask_transformer/Generate_colab.ipynb) - Loads a pretrained model and shows how to harmonize, generate new melodies, and remix existing songs.
+
+2. MusicTransformer
  * [Train](notebooks/music_transformer/Train.ipynb) - End to end example on how to create a dataset from midi files and train a model from scratch
  * [Generate](notebooks/music_tranformer/Generate.ipynb) - Loads a pretrained model and shows how to generate/predict new notes
  
-2. MultitaskTransformer
+3. MultitaskTransformer
  * [Train](notebooks/multitask_transformer/Train.ipynb) - End to end example on creating a seq2seq and masked dataset for multitask training.
  * [Generate](notebooks/multitask_tranformer/Generate.ipynb) - Loads a pretrained model and shows how to harmonize, generate new melodies, and remix existing songs.
  
-3. Data Encoding
+4. Data Encoding
  * [Midi2Tensor](notebooks/data_encoding/Midi2Tensor.ipynb) - Shows how the libary internally encodes midi files to tensors for training.
  * [MusicItem](notebooks/data_encoding/MusicItem-Transforms.ipynb) - MusicItem is a wrapper that makes it easy to manipulate midi data. Convert midi to tensor, apply data transformations, even play music or display the notes within browser.
 
