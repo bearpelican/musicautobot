@@ -6,7 +6,7 @@ channels:
 - defaults
 dependencies:
 - pytorch
-- fastai
+- fastai=1.0.61
 - jupyter
 - ipyparallel
 - pip
