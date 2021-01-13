@@ -1,16 +1,18 @@
 # To Run: conda env create -f environment.yml
-name: musicautobot
+name: musicautobot_v1
 channels:
 - fastai
 - pytorch
 - defaults
 dependencies:
 - pytorch
+#- fastai
 - fastai=1.0.61
+- nbdev
 - jupyter
 - ipyparallel
 - pip
-- python>=3.6
+- python
 - pip:
   - music21
   - pebble

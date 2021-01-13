@@ -1,3 +1,4 @@
-from .utils.setup_musescore import setup_musescore
+__version__ = "1.0"
 
+from .utils.env_setup import setup_musescore
 setup_musescore()
