@@ -48,10 +48,6 @@ class MusicVocab():
         items = [self.itos[i] for i in nums]
         return sep.join(items) if sep is not None else items
 
-# TODO: put this inside music_transformer code
-#     def to_music_item(self, idxenc):
-#         return transform.MusicItem(idxenc, self)
-
     @property
     def mask_idx(self): return self.stoi[MASK]
     @property

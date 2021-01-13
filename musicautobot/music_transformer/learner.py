@@ -157,7 +157,7 @@ class MusicLearner(LanguageLearner):
             x = x.new_tensor([idx])
             pos = pos.new_tensor([last_pos])
 
-        pred = vocab.to_music_item(np.array(new_idx))
+        pred = MusicItem(np.array(new_idx), vocab)
         full = item.append(pred)
         return pred, full
 

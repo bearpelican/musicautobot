@@ -14,6 +14,7 @@ from ..music_transformer.transform import *
 from ..music_transformer.learner import filter_invalid_indexes
 from .model import get_multitask_model
 from .dataloader import *
+from .transform import *
 
 def multitask_model_learner(data:DataBunch, config:dict=None, drop_mult:float=1.,
                             pretrained_path:PathOrStr=None, **learn_kwargs) -> 'LanguageLearner':
@@ -120,7 +121,7 @@ class MultitaskLearner(Learner):
             x = x.new_tensor([idx])
             pos = pos.new_tensor([last_pos])
 
-        pred = vocab.to_music_item(np.array(new_idx))
+        pred = MusicItem(np.array(new_idx), vocab)
         full = item.append(pred)
         return pred, full
 
@@ -170,7 +171,7 @@ class MultitaskLearner(Learner):
 
             x[midx] = idx
 
-        return vocab.to_music_item(x.cpu().numpy())
+        return MusicItem(x.cpu().numpy(), vocab)
 
     def predict_s2s(self, input_item:MusicItem, target_item:MusicItem, n_words:int=256,
                         temperatures:float=(1.0,1.0), top_k=30, top_p=0.8,
@@ -243,7 +244,7 @@ class MultitaskLearner(Learner):
                 self.model.reset()
                 x, pos = inp.new_tensor(targ), inp_pos.new_tensor(targ_pos)
 
-        return vocab.to_music_item(np.array(targ))
+        return MusicItem(np.array(targ), vocab)
 
 # High level prediction functions from midi file
 def nw_predict_from_midi(learn, midi=None, n_words=400,

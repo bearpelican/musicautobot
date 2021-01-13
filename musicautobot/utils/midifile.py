@@ -9,6 +9,7 @@ __all__ = ['Track', 'file2mf', 'mf2stream', 'is_empty_midi', 'num_piano_tracks',
 "Transform functions for raw midi files"
 from enum import Enum
 import music21
+from music21.midi import ChannelVoiceMessages
 
 PIANO_TYPES = list(range(24)) + list(range(80, 96)) # Piano, Synths
 PLUCK_TYPES = list(range(24, 40)) + list(range(104, 112)) # Guitar, Bass, Ethnic
@@ -79,6 +80,7 @@ def compress_midi_file(fp, cutoff=6, min_variation=3, supported_types=set([Track
 
     supported_tracks = []
     for idx,t in enumerate(note_tracks):
+#         pdb.set_trace()
         if len(supported_tracks) >= cutoff: break
         track_type = get_track_type(t)
         if track_type not in supported_types: continue
@@ -93,7 +95,7 @@ def compress_midi_file(fp, cutoff=6, min_variation=3, supported_types=set([Track
     return music_file
 
 def get_track_type(t):
-    if is_channel(t, 10): return Track.PERC
+#     if is_channel(t, 10): return Track.PERC # disabling until music21 fix. See cell below
     i = get_track_instrument(t)
     if i in PIANO_TYPES: return Track.PIANO
     if i in PLUCK_TYPES: return Track.PLUCK
@@ -102,12 +104,12 @@ def get_track_type(t):
 
 def get_track_instrument(t):
     for idx,e in enumerate(t.events):
-        if e.type == 'PROGRAM_CHANGE': return e.data
+        if e.type == ChannelVoiceMessages.PROGRAM_CHANGE: return e.data
     return None
 
 def change_track_instrument(t, value):
     for idx,e in enumerate(t.events):
-        if e.type == 'PROGRAM_CHANGE': e.data = value
+        if e.type == ChannelVoiceMessages.PROGRAM_CHANGE: e.data = value
 
 def print_music21_instruments():
     for i in range(200):
