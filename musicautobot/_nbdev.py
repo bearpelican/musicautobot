@@ -143,7 +143,23 @@ index = {"default_config": "config.ipynb",
          "StackedDataBunch": "stacked_dataloader.ipynb",
          "StackedDataset": "stacked_dataloader.ipynb",
          "StackedDataloader": "stacked_dataloader.ipynb",
-         "top_k_top_p": "top_k_top_p.ipynb"}
+         "top_k_top_p": "top_k_top_p.ipynb",
+         "MusicVocab": "vocab.ipynb",
+         "BOS": "vocab.ipynb",
+         "PAD": "vocab.ipynb",
+         "EOS": "vocab.ipynb",
+         "MASK": "vocab.ipynb",
+         "CSEQ": "vocab.ipynb",
+         "MSEQ": "vocab.ipynb",
+         "S2SCLS": "vocab.ipynb",
+         "NSCLS": "vocab.ipynb",
+         "SEP": "vocab.ipynb",
+         "SPECIAL_TOKS": "vocab.ipynb",
+         "NOTE_TOKS": "vocab.ipynb",
+         "DUR_TOKS": "vocab.ipynb",
+         "MTEMPO_SIZE": "vocab.ipynb",
+         "MTEMPO_OFF": "vocab.ipynb",
+         "MTEMPO_TOKS": "vocab.ipynb"}
 
 modules = ["config.py",
            "multitask_transformer/dataloader.py",
@@ -161,7 +177,8 @@ modules = ["config.py",
            "utils/lamb.py",
            "utils/midifile.py",
            "utils/stacked_dataloader.py",
-           "utils/top_k_top_p.py"]
+           "utils/top_k_top_p.py",
+           "vocab.py"]
 
 doc_url = "https://bearpelican.github.io/musicautobot/"
 

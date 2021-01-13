@@ -7,6 +7,7 @@ __all__ = ['multitask_model_learner', 'MultitaskLearner', 'nw_predict_from_midi'
 # Cell
 from fastai.basics import *
 from ..vocab import *
+from ..numpy_encode import SAMPLE_FREQ
 from ..utils.top_k_top_p import top_k_top_p
 from ..utils.midifile import is_empty_midi
 from ..music_transformer.transform import *

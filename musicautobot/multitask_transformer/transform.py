@@ -3,7 +3,9 @@
 __all__ = ['MultitrackItem', 'combine2chordarr']
 
 # Cell
+from ..imports import *
 from ..music_transformer.transform import *
+from ..numpy_encode import *
 
 class MultitrackItem():
     def __init__(self, melody:MusicItem, chords:MusicItem, stream=None):

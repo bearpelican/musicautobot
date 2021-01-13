@@ -6,10 +6,12 @@ __all__ = ['MusicItem', 'pad_seq', 'to_tensor', 'midi2idxenc', 'idxenc2stream', 
 
 # Cell
 from ..numpy_encode import *
+from ..vocab import *
+
+import music21
 import numpy as np
 from enum import Enum
 import torch
-from ..vocab import *
 from functools import partial
 
 SEQType = Enum('SEQType', 'Mask, Sentence, Melody, Chords, Empty')

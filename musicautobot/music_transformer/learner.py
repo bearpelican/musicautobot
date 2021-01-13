@@ -5,12 +5,15 @@ __all__ = ['music_model_learner', 'MusicLearner', 'predict_from_midi', 'filter_i
 # Cell
 from fastai.basics import *
 from fastai.text.learner import LanguageLearner, get_language_model, _model_meta
+from fastai.text.models.transformer import *
+
 from .model import *
 from .transform import MusicItem
 from ..numpy_encode import SAMPLE_FREQ
 from ..utils.top_k_top_p import top_k_top_p
 from ..utils.midifile import is_empty_midi
 
+# Cell
 _model_meta[MusicTransformerXL] = _model_meta[TransformerXL] # copy over fastai's model metadata
 
 def music_model_learner(data:DataBunch, arch=MusicTransformerXL, config:dict=None, drop_mult:float=1.,
