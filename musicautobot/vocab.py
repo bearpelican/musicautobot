@@ -4,9 +4,8 @@ __all__ = ['MusicVocab', 'BOS', 'PAD', 'EOS', 'MASK', 'CSEQ', 'MSEQ', 'S2SCLS', 
            'NOTE_TOKS', 'DUR_TOKS', 'MTEMPO_SIZE', 'MTEMPO_OFF', 'MTEMPO_TOKS']
 
 # Cell
-from fastai.basics import *
+from typing import Collection, List, Dict
 from .numpy_encode import *
-# from musicautobot.music_transformer import transform
 
 BOS = 'xxbos'
 PAD = 'xxpad'
