@@ -67,6 +67,9 @@ class MultitrackItem():
     def trim_to_beat(self, beat):
         return MultitrackItem(self.melody.trim_to_beat(beat), self.chords.trim_to_beat(beat))
 
+    def __len__(self):
+        return max([len(self.melody), len(self.chords)])
+
 def combine2chordarr(np1, np2, vocab):
     if len(np1.shape) == 1: np1 = idxenc2npenc(np1, vocab)
     if len(np2.shape) == 1: np2 = idxenc2npenc(np2, vocab)

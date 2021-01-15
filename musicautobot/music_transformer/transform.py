@@ -116,9 +116,12 @@ class MusicItem():
     def split_parts(self):
         return self.new(self.data, stream=separate_melody_chord(self.stream), position=self.position)
 
-def pad_seq(seq, bptt, value):
+def pad_seq(seq, bptt, value=0, truncate=True):
     pad_len = max(bptt-seq.shape[0], 0)
-    return np.pad(seq, (0, pad_len), 'constant', constant_values=value)[:bptt]
+    seq = np.pad(seq, (0, pad_len), 'constant', constant_values=value)
+    if truncate: seq = seq[:bptt]
+    return seq
+
 
 def to_tensor(t, device=None):
     t = t if isinstance(t, torch.Tensor) else torch.tensor(t)
