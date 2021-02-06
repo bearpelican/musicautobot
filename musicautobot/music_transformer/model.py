@@ -4,7 +4,7 @@ __all__ = ['MusicTransformerXL', 'BeatPositionEncoder']
 
 # Cell
 from fastai.basics import *
-from fastai.text.models.transformer import TransformerXL
+from ..utils.fastai_transformer import *
 from ..utils.attention_mask import rand_window_mask
 
 class MusicTransformerXL(TransformerXL):
