@@ -23,7 +23,7 @@ class MTTTransformer(nn.Module):
 
     def forward(self, inp):
         # data order: mask, next word, melody, chord
-        outputs = {}
+        outputs = { key:[] for key in ['msk', 'lm', 'c2m', 'm2c'] }
         msk, lm, c2m, m2c = [inp.get(key) for key in ['msk', 'lm', 'c2m', 'm2c']]
 
         if msk is not None:
