@@ -2,7 +2,7 @@
 
 __all__ = ['MusicItem', 'pad_seq', 'to_tensor', 'midi2idxenc', 'idxenc2stream', 'npenc2idxenc', 'seq_prefix',
            'idxenc2npenc', 'to_valid_idxenc', 'to_valid_npenc', 'position_enc', 'beat2index', 'find_beat',
-           'tfm_transpose', 'trim_to_beat', 'mask_input', 'mask_section', 'SEQType']
+           'tfm_transpose', 'trim_to_beat', 'mask_input', 'mask_section', 'SEQType', 'validate_stream', 'is_valid_part']
 
 # Cell
 from ..numpy_encode import *
@@ -30,12 +30,26 @@ class MusicItem():
     @classmethod
     def from_file(cls, midi_file, vocab):
         return cls.from_stream(file2stream(midi_file), vocab)
+
     @classmethod
-    def from_stream(cls, stream, vocab):
-        if not isinstance(stream, music21.stream.Score): stream = stream.voicesToParts()
-        chordarr = stream2chordarr(stream) # 2.
-        npenc = chordarr2npenc(chordarr) # 3.
+    def from_stream(cls, stream, vocab, midi_file=None):
+        try:
+            stream = validate_stream(stream)
+        except Exception as e:
+            return print('Could not parse stream:', e)
+
+        try:
+            chordarr = stream2chordarr(stream) # 2. max_dur = quarter_len * sample_freq (4). 128 = 8 bars
+            chordarr = trim_chordarr_rests(chordarr)
+            chordarr = shorten_chordarr_rests(chordarr)
+        except Exception as e:
+            return print('Could not encode to chordarr:', e)
+
+        npenc = chordarr2npenc(chordarr)
+        if not is_valid_npenc(npenc):
+            return print('Could not encode to npenc')
         return cls.from_npenc(npenc, vocab, stream)
+
     @classmethod
     def from_npenc(cls, npenc, vocab, stream=None): return MusicItem(npenc2idxenc(npenc, vocab), vocab, stream)
 
@@ -75,6 +89,10 @@ class MusicItem():
     def show(self, format:str=None):
         return self.stream.show(format)
     def play(self): self.stream.show('midi')
+
+    def save(self, path):
+        if path.suffix == '.npy': np.save(path, self.to_idx())
+        if path.suffix == '.mid': self.stream.write('midi', path)
 
     @property
     def new(self):
@@ -241,3 +259,19 @@ def mask_section(xb, pos, token_range, replacement_idx, section_range=None):
 
     xb[token_mask & section_mask] = replacement_idx
     return xb
+
+
+# Cell
+def validate_stream(stream, verbose=True):
+    if not isinstance(stream, music21.stream.Score): stream = stream.voicesToParts()
+    invalid_parts = [p for p in stream.parts if not is_valid_part(p)]
+    if invalid_parts and verbose: print(f'Found {len(invalid_parts)} invalid parts')
+    stream.remove(invalid_parts)
+    return stream
+
+def is_valid_part(p, min_pitch_var=3, min_notes=9):
+    if isinstance(p.getInstrument(), music21.instrument.Percussion): return False
+    pitches = p.pitches
+    if len(set(pitches)) < min_pitch_var: return False
+    if len(p.pitches) < min_notes: return False
+    return True

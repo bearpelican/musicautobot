@@ -4,7 +4,7 @@ __all__ = ['StackedDataBunch', 'StackedDataset', 'StackedDataloader']
 
 # Cell
 "Dataloader wrapper that can combine and handle multiple dataloaders for multitask training"
-from fastai.callback import Callback
+from fastai.callback.all import Callback
 from typing import Callable
 
 # DataLoading

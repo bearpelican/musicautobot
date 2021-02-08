@@ -5,7 +5,7 @@ __all__ = ['BPB', 'TIMESIG', 'PIANO_RANGE', 'VALTSEP', 'VALTCONT', 'SAMPLE_FREQ'
            'timestep2npenc', 'npenc2chordarr', 'npenc_len', 'chordarr2stream', 'partarr2stream',
            'part_append_duration_notes', 'group_notes_by_duration', 'is_valid_npenc', 'remove_overlaps',
            'separate_melody_chord', 'compress_chordarr', 'trim_chordarr_rests', 'shorten_chordarr_rests',
-           'stream2npenc_parts', 'chordarr_combine_parts', 'pad_part_to', 'part_enc', 'avg_tempo', 'avg_pitch']
+           'chordarr_combine_parts', 'pad_part_to', 'part_enc', 'avg_tempo', 'avg_pitch', 'is_valid_npenc']
 
 # Cell
 "Encoding music21 streams -> numpy array -> text"
@@ -285,13 +285,8 @@ def shorten_chordarr_rests(arr, max_rests=8, sample_freq=SAMPLE_FREQ):
     for i in range(rest_count): result.append(np.zeros(timestep.shape))
     return np.array(result)
 
+# Cell
 # sequence 2 sequence convenience functions
-
-def stream2npenc_parts(stream, sort_pitch=True):
-    chordarr = stream2chordarr(stream)
-    _,num_parts,_ = chordarr.shape
-    parts = [part_enc(chordarr, i) for i in range(num_parts)]
-    return sorted(parts, key=avg_pitch, reverse=True) if sort_pitch else parts
 
 def chordarr_combine_parts(parts):
     max_ts = max([p.shape[0] for p in parts])
@@ -315,3 +310,12 @@ def avg_tempo(t, sep_idx=VALTSEP):
 
 def avg_pitch(t, sep_idx=VALTSEP):
     return t[t[:, 0] > sep_idx][:, 0].mean()
+
+# Cell
+def is_valid_npenc(npenc, min_notes=9, note_range=PIANO_RANGE, max_dur=DUR_SIZE):
+    if len(npenc) < min_notes: return False
+
+    if (npenc[:,1] >= max_dur).any(): return False
+    # https://en.wikipedia.org/wiki/Scientific_pitch_notation - 88 key range - 21 = A0, 108 = C8
+    if ((npenc[...,0] > VALTSEP) & ((npenc[...,0] < note_range[0]) | (npenc[...,0] >= note_range[1]))).any(): return False
+    return True
